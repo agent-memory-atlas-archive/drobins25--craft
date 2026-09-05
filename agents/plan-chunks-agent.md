@@ -569,6 +569,7 @@ updated: [today's date — YYYY-MM-DD]
 cycle: [preserved if present]
 story_number: [preserved if present]
 decisions: [preserved from original]
+alignment: [preserved from original]
 chunks_total: [N — from your plan]
 chunks_complete: 0
 current_chunk: 0
@@ -582,6 +583,7 @@ current_chunk: 0
 ## The Pitch
 [NEW — your sell + conditions table from Phase 3.6]
 
+## Alignment                    ← preserved VERBATIM if present
 ## Scope                        ← preserved VERBATIM if present
 ## Preserve                     ← preserved VERBATIM if present
 ## Hardest Constraint           ← preserved VERBATIM if present
@@ -641,6 +643,7 @@ ones. E.g., "Parser handles attribute selectors" becomes
 | Scope | Preserve VERBATIM |
 | Preserve | Preserve VERBATIM |
 | Hardest Constraint | Preserve VERBATIM |
+| Alignment | Preserve VERBATIM |
 | Dependencies | Preserve VERBATIM |
 | Acceptance | REPLACE with detailed criteria |
 | Definition of Done | Preserve VERBATIM |

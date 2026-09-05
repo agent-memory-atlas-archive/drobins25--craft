@@ -2,6 +2,16 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.6.1 - 2026-09-04
+
+Stories now remember why they exist. Until today a story and the decision it came from were two files that happened to agree; from this release every new story carries a link to the approved decisions it was built from, and craft reads those decisions before it reads anything else about the story.
+
+- Added a link from every new story to the decisions behind it. When craft plans the story, the planner opens each linked decision first and treats its ruling as the frame the story fills in, before it reads the story's own notes.
+- Added a check that the planner really did: a plan for a story that carries decisions but shows no sign of having read them stops and asks you before going further, the same way any other gap in a plan does.
+- Changed the alignment check to hand those rulings to the exploring agent up front, so it stops asking you product questions a decision already answered.
+- Changed every path that creates a story to write its header in one consistent order, so a story looks the same whether it came from a template, a cycle plan, the backlog, or a planning concept.
+- Existing stories are untouched. A story without the link behaves exactly as it did before: no warnings, no rewrites, nothing to migrate.
+
 ## 2.6.0 - 2026-08-29
 
 The galaxy grew up in one day. This morning the dashboard was a bloom of orange; tonight your records gather into colored neighborhoods, your finished work cools into quiet grey texture, and the color belongs to what's alive. The whole look was designed live against real project data - riffed, dialed, mocked up, annotated with pins on the actual page - and then ported with every value verbatim.
