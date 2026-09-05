@@ -208,6 +208,7 @@ created: [date]
 updated: [date]
 cycle: [cycle-name]
 story_number: [N]
+decisions: []
 chunks_total: 1
 chunks_complete: 0
 current_chunk: 0

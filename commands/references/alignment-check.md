@@ -66,11 +66,11 @@ After harvesting questions from the Notes section, **skip ahead to Step 3 (Surfa
 
 If the codebase has any source files: continue to Step 0.5 as normal.
 
-### Step 0.5: Planning Context Injection (Planning-Sourced Stories Only)
+### Step 0.5: Planning Context Injection
 
-Before spawning the Explore agent, check whether this story was created from a planning concept. If so, build a Planning Context block from the story's Reference Materials so the agent doesn't surface false-positive product questions for decisions already captured in planning.
+Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials and decision records so the agent doesn't surface false-positive product questions for decisions already captured in planning.
 
-**Detection:** Read the story frontmatter. If `source_concept:` is populated, this is a planning-sourced story - continue with the injection. If not, skip directly to Step 1 with the existing prompt unchanged.
+**Detection:** Read the story frontmatter. If `source_concept:` is populated OR the story's `decisions:` list is non-empty, continue with the injection below. Otherwise, skip directly to Step 1 with the existing prompt unchanged.
 
 **Build the Planning Context block (orchestrator-level work, NOT delegated to the Explore agent):**
 
@@ -102,17 +102,20 @@ Before spawning the Explore agent, check whether this story was created from a p
 
    "Skip" -> proceed without that excerpt; "Re-extract" -> exit alignment-check with instruction to re-run story-from-planning; "Provide replacement anchor" -> capture user's input, retry the Read, continue.
 
+4a. **Record extraction (decision records).** For each slug in the story's `decisions:` frontmatter list, read `## Decision` and `## Consequences` from `.craft/decisions/approved/<slug>.md` under the project root. Add each record to the Planning Context block using the existing `=== From [basename] ([anchor]) ===` format, with the slug as the basename and `Decision, Consequences` as the anchor. This step is separate from the Reference Materials anchor-aware loop in step 3 - decision records are not Reference Materials, and step 3's anchor-type list gains no entry for them. If a slug does not resolve to a file in `approved/`, note it inside the Planning Context block (e.g. "NOTE: decision record [slug] not found in approved/") and continue - this does NOT raise the stale-anchor AskUserQuestion from step 4, which applies to Reference Materials anchors only.
+
 5. Concatenate resolved excerpts into the Planning Context block.
 
 6. **Hard 2000-token cap.** If excerpts would exceed 2000 tokens, prioritize in this order and drop lowest-priority until under cap:
-   1. active.md dated entries (highest authority - current state)
-   2. Concept Locked Decisions sections
-   3. Sibling story precedents
-   4. Mockups (visual contracts, less critical for product-question evaluation)
+   1. Approved decision records (ruled before the story existed - the frame the story fills in)
+   2. active.md dated entries (highest authority - current state)
+   3. Concept Locked Decisions sections
+   4. Sibling story precedents
+   5. Mockups (visual contracts, less critical for product-question evaluation)
    
    If citations are dropped, note this in the Planning Context block so the agent knows content was elided.
 
-**Format of the Planning Context block:**
+**Format of the Planning Context block (decision records included, same shape):**
 
 ```
 PLANNING CONTEXT (from story Reference Materials, capped at 2000 tokens):

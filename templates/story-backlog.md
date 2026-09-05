@@ -5,6 +5,7 @@ status: backlog
 priority: {{PRIORITY}}
 created: {{DATE}}
 updated: {{DATE}}
+decisions: []
 alignment: pending
 chunks_total: 0
 chunks_complete: 0

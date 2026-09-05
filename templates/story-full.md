@@ -7,6 +7,7 @@ created: {{DATE}}
 updated: {{DATE}}
 cycle: {{CYCLE_NAME}}
 story_number: {{STORY_NUMBER}}
+decisions: []
 alignment: pending
 chunks_total: 0
 chunks_complete: 0

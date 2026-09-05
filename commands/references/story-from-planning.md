@@ -436,6 +436,7 @@ cycle: [cycle name without leading number - ONLY if in cycle]
 story_number: [N - ONLY if in cycle]
 source_concept: [ABSOLUTE path to concept file]
 source_concept_last_updated: [SNAPSHOT of concept file's last_updated frontmatter value AT TIME OF STORY CREATION - omit if the concept has no last_updated field]
+decisions: []
 alignment: pending
 chunks_total: 0
 chunks_complete: 0
