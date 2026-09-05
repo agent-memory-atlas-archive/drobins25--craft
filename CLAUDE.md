@@ -10,7 +10,6 @@ This file is the operating contract for Claude working in this repo. Routing and
 
 ## Safety rules
 
-- **Never use `/craft:story-implement` in this repo.** It invokes the implementer agent against the plugin's own files, which is self-modification mid-work and breaks the harness. Contributors: see CONTRIBUTING.md for the manual implementation procedure.
 - **Walkthrough quick-fixes are the only exception to "always invoke implementer via Task."** Findings with `complexity: quick-fix` and a `fix_hint` can be implemented directly by the orchestrator. Scope: trivial CSS or attribute edits, 1-5 lines, single file. Story-fix findings still go through the implementer agent.
 
 ## Conventions
@@ -19,6 +18,7 @@ This file is the operating contract for Claude working in this repo. Routing and
   - Bad: `fix: chain break when content-spark invokes via Skill tool`
   - Good: `fix: prevent skill nesting from breaking control flow back to caller`
 - **Use regular dashes (-) only, never em dashes.** Em dashes are an AI-text tell.
+- **Craft runs from the installed plugin copy, not this working tree.** Stories here go through `/craft:story-implement` like any other project. A change to craft's own files takes effect at the next reinstall, so a story that changes the implement loop is exercised by the story after it, not by itself.
 - **Bump `.claude-plugin/plugin.json` version once per feature or fix** - one bump per logical change (a story, an adhoc fix), in that change's final commit. Never per chunk; intermediate chunk commits do not bump.
 - **`CHANGELOG.md` entries are notable-only** - features and user-visible fixes get a `## <version> - <YYYY-MM-DD>` heading with verb-first, user-facing bullets ("Added...", "Fixed...", "Changed...", "Improved..."). Internal changes (tests, refactors, doc drift, contributor tooling) bump the version with no entry, and no entry is ever about the repo itself (changelog edits, doc restructures, contributor tooling). Same audience rule as commit messages. `check-doc-drift.sh` blocks a changelog that's ahead of plugin.json, and blocks pushing a `feat:` commit with no changelog change.
   - **Write every bullet for a craft user, not for us.** The test: no internal mechanism names (CDN hosts, metadata fields, gate names, file paths), lead with what the user gets, and say what it feels like to use ("icons now arrive in seconds instead of minutes"), not how it works. The `## 1.99.54` entry is the exemplar - match its register.
