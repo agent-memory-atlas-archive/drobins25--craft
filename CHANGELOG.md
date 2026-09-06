@@ -4,7 +4,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 ## 2.6.1 - 2026-09-04
 
-Stories now remember why they exist. Until today a story and the decision it came from were two files that happened to agree; from this release every new story carries a link to the approved decisions it was built from, and craft reads those decisions before it reads anything else about the story.
+Craft is learning to keep its decisions. This release lays the first plank: a story can now carry the approved decisions it was built from, and craft treats those decisions as the frame the story fills in. Rule something once, and every story that grows out of that ruling knows about it before planning begins. The rest of the feature - filing decisions, listing them, watching them become real as stories ship - lands over the coming releases.
 
 - Added a link from every new story to the decisions behind it. When craft plans the story, the planner opens each linked decision first and treats its ruling as the frame the story fills in, before it reads the story's own notes.
 - Added a check that the planner really did: a plan for a story that carries decisions but shows no sign of having read them stops and asks you before going further, the same way any other gap in a plan does.
