@@ -95,6 +95,7 @@ Read the story file completely. Extract everything available:
 - **Scope** — Included / excluded
 - **Preserve list** — What must NOT break
 - **Hardest constraint** — Identified risk/challenge
+- **Decision records** - for each slug in the story's `decisions:` field, read `.craft/decisions/approved/<slug>.md` under the project root - its `## Decision` and `## Consequences` sections - before the story's own locked decisions below, since those records were ruled before the story existed. A missing or empty `decisions:` field means `[]` - no CONCERN, no warning, no error, and the story file is never rewritten to add it. A slug that does not resolve to a file raises a CONCERN naming the slug and the story's `created:` date, and planning continues - never a guess, never a silent skip.
 - **Decisions** — Locked decisions from the Creative Phase
 - **Visual Direction** — Vibe, feel, inspiration, motion, and the **Element Binding Table** of per-element token assignments (UI stories). Read every table row; a row whose Token is `TBD` is a low-confidence assignment — resolve it from the codebase (what the sibling or existing component uses), or if it is user-visible and unresolved, route it to the Pitch conditions table (batch mode: a Critical Blocker, product-stake `ask`).
 - **Wireframe** — ASCII art layout (UI stories)
@@ -350,6 +351,8 @@ For each locked decision in the story, check it's technically feasible against t
 - `concern` — technically possible but has issues (flag as a concern with recommendation)
 - `invalid` — can't work as specified (flag as a low-confidence concern with alternative)
 
+Each decision record carried in the story's `decisions:` field is validated in this same pass - valid / concern / invalid - and appears in the Design Decision Validation table, keyed by its full dated slug.
+
 **Don't silently "fix" design decisions.** If a decision doesn't work, flag it so the orchestrator can surface it to the user.
 
 ### 2.6 Make Clarification Decisions
@@ -565,6 +568,8 @@ created: [preserved from original]
 updated: [today's date — YYYY-MM-DD]
 cycle: [preserved if present]
 story_number: [preserved if present]
+decisions: [preserved from original]
+alignment: [preserved from original]
 chunks_total: [N — from your plan]
 chunks_complete: 0
 current_chunk: 0
@@ -578,6 +583,7 @@ current_chunk: 0
 ## The Pitch
 [NEW — your sell + conditions table from Phase 3.6]
 
+## Alignment                    ← preserved VERBATIM if present
 ## Scope                        ← preserved VERBATIM if present
 ## Preserve                     ← preserved VERBATIM if present
 ## Hardest Constraint           ← preserved VERBATIM if present
@@ -637,6 +643,7 @@ ones. E.g., "Parser handles attribute selectors" becomes
 | Scope | Preserve VERBATIM |
 | Preserve | Preserve VERBATIM |
 | Hardest Constraint | Preserve VERBATIM |
+| Alignment | Preserve VERBATIM |
 | Dependencies | Preserve VERBATIM |
 | Acceptance | REPLACE with detailed criteria |
 | Definition of Done | Preserve VERBATIM |

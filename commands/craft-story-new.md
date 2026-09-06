@@ -423,9 +423,10 @@ name: [kebab-case-name]
 title: "[Full title]"
 type: [ui/technical/content]
 status: planning
+priority: [priority]
 created: [date]
 updated: [date]
-priority: [priority]
+decisions: []
 alignment: pending
 chunks_total: 0
 chunks_complete: 0

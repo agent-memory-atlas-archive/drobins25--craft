@@ -726,7 +726,7 @@ After all chunks:
    RECEIPT
    ```
 
-   **Extract bare claims.** Build CLAIMS as newline-delimited bare assertion strings: take each cashed Pitch condition, the validator's overall verdict, and every completion statement you intend to present ("all tests pass", "only touched agents/ and commands/", "acceptance criteria met"), and reduce each to its bare claim. **Strip ALL narrative justification - drop every "because..." clause.** The auditor re-derives truth from artifacts; it must not inherit your reasoning.
+   **Extract bare claims.** Build CLAIMS as newline-delimited bare assertion strings: take each cashed Pitch condition, the validator's overall verdict, and every completion statement you intend to present ("all tests pass", "only touched agents/ and commands/", "acceptance criteria met"), and reduce each to its bare claim. **Strip ALL narrative justification - drop every "because..." clause.** The auditor re-derives truth from artifacts; it must not inherit your reasoning. When the story's frontmatter `decisions:` list is non-empty, add the bare claim `frontmatter decisions: present and equals [slug, ...]`; an empty or absent list adds no claim.
 
    **Invoke the auditor.** Pass ONLY the claim list and artifact paths - NEVER your narrative summary, self-critique, or reasoning. Including them contaminates the audit and defeats its purpose.
    ```

@@ -71,6 +71,8 @@ created: [date]
 updated: [date]
 cycle: [cycle-name]
 story_number: [N]
+decisions: []
+alignment: pending
 chunks_total: 0
 chunks_complete: 0
 current_chunk: 0

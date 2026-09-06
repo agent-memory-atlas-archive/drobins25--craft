@@ -23,9 +23,7 @@ If you want craft installed as a plugin in another project to dogfood it, point 
 
 ## Implementing a story (manual procedure)
 
-Craft can't be developed via `/craft:story-implement` - that would invoke the implementer agent against the plugin's own files, which is self-modification mid-work. Instead, you (or your Claude session) implement stories manually using the harness scripts.
-
-The `/implement` command in `.claude/commands/implement.md` encodes this procedure as an interactive workflow. The steps below are the same flow done by hand.
+Craft stories go through `/craft:story-implement` like any other project. Craft runs from the installed plugin copy, so editing craft's own files during a story does not touch the running flow, and a change takes effect at the next reinstall. The steps below are the same flow done by hand, for when you want to drive a story manually.
 
 ### 1. Activate the cycle
 
@@ -81,7 +79,7 @@ bash hooks/scripts/complete-story.sh <story-file-path>
 
 This sets the story status to `complete` and clears `CURRENT_STORY`. The story commit is staged from `.craft/.commit-manifest` (a validated file list with a `story:` identity header) - never from a working-tree sweep, so leftover untracked files stay out of the commit.
 
-**Self-hosting note:** the manifest-write sub-step lives in `commands/craft-story-implement.md` (7b), which is never run in this repo (see the safety rule above). `/implement` has no manifest-write step, so `complete-story.sh` here takes the absent-manifest path by design: it logs "no manifest found, no commit made" and makes NO commit. Commit your story changes manually per the conventions below (or write a manifest yourself before running the script if you want it to create the commit).
+**Self-hosting note:** the manifest-write sub-step lives in `commands/craft-story-implement.md` (7b), which does not run on the manual path. The manual procedure has no manifest-write step, so `complete-story.sh` here takes the absent-manifest path by design: it logs "no manifest found, no commit made" and makes NO commit. Commit your story changes manually per the conventions below (or write a manifest yourself before running the script if you want it to create the commit).
 
 ### 7. Commit
 
