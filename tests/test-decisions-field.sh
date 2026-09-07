@@ -613,33 +613,34 @@ assert_file_not_contains "old heading suffix is gone" 'Planning-Sourced Stories 
 assert_file_contains "Step 0.5 heading still present" '^### Step 0\.5: Planning Context Injection$' "$ALIGNMENT_CHECK"
 
 # --- Record extraction is its own numbered step, reading the two record headings ---
-begin_test "record extraction reads ## Decision and ## Consequences from approved/"
-RECORD_STEP_LINE=$(grep -n -F '4a. **Record extraction' "$ALIGNMENT_CHECK" | head -1 | cut -d: -f1)
+begin_test "record pointer step hands paths and the read-first sentence, never excerpts"
+RECORD_STEP_LINE=$(grep -n -F '4a. **Decision records (pointer, not extraction)' "$ALIGNMENT_CHECK" | head -1 | cut -d: -f1)
 RECORD_STEP_TEXT=""
 if [ -n "$RECORD_STEP_LINE" ]; then
   RECORD_STEP_TEXT=$(sed -n "${RECORD_STEP_LINE}p" "$ALIGNMENT_CHECK")
 fi
-assert_contains_literal "record step reads ## Decision" '## Decision' "$RECORD_STEP_TEXT"
-assert_contains_literal "record step reads ## Consequences" '## Consequences' "$RECORD_STEP_TEXT"
+assert_contains_literal "record step tells the agent to read Decision and Consequences first" 'Read the Decision and Consequences of each record above before investigating' "$RECORD_STEP_TEXT"
+assert_contains_literal "record step tells the agent to raise contradictions as CONFLICT" 'report it as a CONFLICT naming the record' "$RECORD_STEP_TEXT"
+assert_contains_literal "records never enter the Planning Context block or its cap" 'never enter the Planning Context block or its token cap' "$RECORD_STEP_TEXT"
 assert_contains_literal "record step names the approved/ path shape" '.craft/decisions/approved/' "$RECORD_STEP_TEXT"
 assert_contains_literal "record step keys off the decisions: frontmatter list" "story's \`decisions:\`" "$RECORD_STEP_TEXT"
 
 # --- Record extraction is NOT folded into the Reference Materials anchor loop ---
 begin_test "record extraction is not folded into the Reference Materials anchor rules"
-ANCHOR_LOOP_TEXT=$(extract_section_text "$ALIGNMENT_CHECK" '3. For each cited file + anchor' '4a. **Record extraction')
+ANCHOR_LOOP_TEXT=$(extract_section_text "$ALIGNMENT_CHECK" '3. For each cited file + anchor' '4a. **Decision records (pointer')
 assert_not_contains "step 3's anchor-type list gains no decisions entry" 'approved/' "$ANCHOR_LOOP_TEXT"
 assert_not_contains "step 3's anchor-type list names no decision record type" 'decision record' "$ANCHOR_LOOP_TEXT"
-assert_contains_literal "the record step is its own numbered entry (4a), not folded into step 3 or 4" '4a. **Record extraction' "$RECORD_STEP_TEXT"
+assert_contains_literal "the record step is its own numbered entry (4a), not folded into step 3 or 4" '4a. **Decision records (pointer' "$RECORD_STEP_TEXT"
 
 # --- Unresolvable slug: noted in the block, not raised as a stale-anchor question ---
-begin_test "an unresolvable slug is noted in the block, not raised as a stale-anchor question"
-assert_contains_literal "an unresolvable slug is noted inside the Planning Context block" 'note it inside the Planning Context block' "$RECORD_STEP_TEXT"
+begin_test "an unresolvable slug is listed as (not found), not raised as a stale-anchor question"
+assert_contains_literal "an unresolvable slug is listed with (not found)" 'listed anyway with "(not found)"' "$RECORD_STEP_TEXT"
 assert_contains_literal "it explicitly does not raise the stale-anchor AskUserQuestion" 'does NOT raise the stale-anchor AskUserQuestion' "$RECORD_STEP_TEXT"
 
 # --- Approved records lead the keep-order; the four existing tiers survive in order ---
-begin_test "approved records lead the keep-order and the four existing tiers survive in order"
+begin_test "the keep-order holds the four Reference Materials tiers in order; records are not in it"
+assert_not_contains "records no longer compete for the cap" 'Approved decision records' "$(sed -n '/Hard 2000-token cap/,/If citations are dropped/p' "$ALIGNMENT_CHECK")"
 KEEP_ORDER_STRINGS=(
-  'Approved decision records'
   'active.md dated entries'
   'Concept Locked Decisions sections'
   'Sibling story precedents'
@@ -658,7 +659,7 @@ for tier in "${KEEP_ORDER_STRINGS[@]}"; do
   PREV_LINE="$line"
 done
 if [ "$KEEP_ORDER_OK" = "1" ]; then
-  echo "  PASS: keep-order runs records, active.md, Concept Locked Decisions, Sibling story, Mockups, in ascending line order"
+  echo "  PASS: keep-order runs active.md, Concept Locked Decisions, Sibling story, Mockups, in ascending line order"
   PASS=$((PASS + 1))
 else
   echo "  FAIL: keep-order out of order or missing a tier"
