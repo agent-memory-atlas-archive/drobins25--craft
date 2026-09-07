@@ -6,7 +6,7 @@
 
 > **Stop Vibing. Start Crafting.**
 
-A Claude Code plugin whose workshop of expert agents learns as it builds: repeated fixes become permanent rules, loved tweaks become taste it remembers - and every change waits behind a write gate you control.
+A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.
 
 Your codebase is read-only by default. Changes never land as a side effect of asking a question - every write goes through a channel you opened: a planned story, an investigated fix, a live tweak, or an approved one-off.
 
