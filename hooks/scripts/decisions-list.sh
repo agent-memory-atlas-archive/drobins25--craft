@@ -6,7 +6,17 @@
 # Usage: decisions-list.sh [--room=root|approved|archive] [--tag=<tag>]
 #          [--status=pending|accepted|declined|deprecated]
 #          [--disposition=open|claimed|crafted] [--slug=<full-dated-slug>]
+#          [--no-scan]
 #   Filters AND together. Unknown flags are ignored.
+#
+#   --no-scan skips the story-claim scan entirely, for callers that only
+#   need the records and their tags (decisions-capture.sh's additional-tag
+#   existence check, decisions-transition.sh's record lookup). Every block
+#   still prints all nine keys in the same order; DISPOSITION and STORIES
+#   print empty, because with no scan there is nothing to derive them from.
+#   Without the flag, behaviour is exactly as it has always been. A
+#   --disposition= filter is therefore meaningless alongside --no-scan and
+#   will match nothing.
 #
 # Output (stdout): key=value blocks, one per record, separated by a blank
 # line. Keys are always present (empty value when unknown), in this order:
@@ -63,6 +73,7 @@ TAG_FILTER=""
 STATUS_FILTER=""
 DISPOSITION_FILTER=""
 SLUG_FILTER=""
+NO_SCAN=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --room=*)        ROOM_FILTER="${1#*=}"; shift ;;
@@ -70,6 +81,7 @@ while [ $# -gt 0 ]; do
     --status=*)      STATUS_FILTER="${1#*=}"; shift ;;
     --disposition=*) DISPOSITION_FILTER="${1#*=}"; shift ;;
     --slug=*)        SLUG_FILTER="${1#*=}"; shift ;;
+    --no-scan)       NO_SCAN="1"; shift ;;
     *) shift ;;
   esac
 done
@@ -80,10 +92,12 @@ if [ ! -d "$DECISIONS_DIR" ]; then
   exit 0
 fi
 
-python3 - "$ROOT" "$ROOM_FILTER" "$TAG_FILTER" "$STATUS_FILTER" "$DISPOSITION_FILTER" "$SLUG_FILTER" <<'PYEOF'
+python3 - "$ROOT" "$ROOM_FILTER" "$TAG_FILTER" "$STATUS_FILTER" "$DISPOSITION_FILTER" "$SLUG_FILTER" "$NO_SCAN" <<'PYEOF'
 import sys, os, re, glob
 
-root, room_filter, tag_filter, status_filter, disposition_filter, slug_filter = sys.argv[1:7]
+(root, room_filter, tag_filter, status_filter, disposition_filter, slug_filter,
+ no_scan_raw) = sys.argv[1:8]
+no_scan = bool(no_scan_raw)
 
 FENCE_RE = re.compile(r'^---\n(.*?)\n---\n?(.*)$', re.DOTALL)
 
@@ -128,10 +142,13 @@ def story_identity(story_path, frontmatter):
 
 # Build slug -> [claiming story names] for every non-complete story that
 # lists the slug in its decisions: field. One glob, one pass, memoized
-# before any record is emitted.
+# before any record is emitted. Under --no-scan the whole block is skipped
+# - no glob, no story reads - and DISPOSITION/STORIES emit empty.
 story_map = {}
-story_files = glob.glob(os.path.join(root, '.craft/cycles/*/stories/*.md'))
-story_files += glob.glob(os.path.join(root, '.craft/backlog/*.md'))
+story_files = []
+if not no_scan:
+    story_files = glob.glob(os.path.join(root, '.craft/cycles/*/stories/*.md'))
+    story_files += glob.glob(os.path.join(root, '.craft/backlog/*.md'))
 for story_path in story_files:
     content = read(story_path)
     if content is None:
@@ -189,7 +206,10 @@ for room_name, dir_path in ROOMS:
         tags = parse_inline_list(get(fm, 'tags'))
 
         fm_disposition = get(fm, 'disposition')
-        if fm_disposition == 'crafted':
+        if no_scan:
+            disposition = ''
+            stories = []
+        elif fm_disposition == 'crafted':
             disposition = 'crafted'
             stories = parse_inline_list(get(fm, 'stories'))
         else:

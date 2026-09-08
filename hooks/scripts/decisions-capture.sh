@@ -129,7 +129,10 @@ fi
 
 if [ "$MODE" = "create" ]; then
   # First --tag= is free; every additional one must already exist on some
-  # other record's tags: field, verified through decisions-list.sh.
+  # other record's tags: field, verified through decisions-list.sh. The
+  # check needs only tags, so it passes --no-scan and the story-claim scan
+  # never runs for it. The --reopen= lookup below deliberately does NOT -
+  # it prints the claiming stories.
   FIRST_TAG=""
   ADDITIONAL_TAGS=""
   IDX=0
@@ -145,7 +148,7 @@ if [ "$MODE" = "create" ]; then
 
   while IFS= read -r t; do
     [ -z "$t" ] && continue
-    EXISTS=$(list --tag="$t")
+    EXISTS=$(list --tag="$t" --no-scan)
     if [ -z "$EXISTS" ]; then
       echo "Error: tag '$t' does not exist on any other record" >&2
       exit 1

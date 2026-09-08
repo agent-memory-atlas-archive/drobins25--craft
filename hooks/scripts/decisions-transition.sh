@@ -97,9 +97,10 @@ case "$SLUG_ARG" in
 esac
 
 # ── Find the record. decisions-list.sh is the single source of truth for
-# room/status/title/disposition - re-implementing the parse here would let
-# the two scripts drift apart. ─────────────────────────────────────────
-LOOKUP=$(list --slug="$SLUG")
+# room/status/title - re-implementing the parse here would let the two
+# scripts drift apart. Only room and status are read below, so the lookup
+# passes --no-scan and never pays for the story-claim scan. ────────────
+LOOKUP=$(list --slug="$SLUG" --no-scan)
 if [ -z "$LOOKUP" ]; then
   echo "Error: $SLUG not found in .craft/decisions (root, approved/, or archive/)" >&2
   exit 1
@@ -117,7 +118,6 @@ CUR_FILE=$(echo "$LOOKUP" | sed -n 's/^FILE=//p')
 CUR_ROOM=$(echo "$LOOKUP" | sed -n 's/^ROOM=//p')
 CUR_STATUS=$(echo "$LOOKUP" | sed -n 's/^STATUS=//p')
 CUR_TITLE=$(echo "$LOOKUP" | sed -n 's/^TITLE=//p')
-CUR_DISPOSITION=$(echo "$LOOKUP" | sed -n 's/^DISPOSITION=//p')
 
 # ── Preconditions per action, validated before any write or mv ───────
 case "$ACTION" in

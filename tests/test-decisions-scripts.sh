@@ -225,6 +225,44 @@ echo "$OUT" | grep -q "README" && fail "no README leakage" "absent" "present" ||
 echo "$OUT" | grep -q "decoy" && fail "no assets/ leakage" "absent" "present" || pass "no assets/ leakage"
 rm -rf "$ROOT"
 
+echo "-- Test: --no-scan returns the same SLUG and TAGS with DISPOSITION and STORIES empty --"
+fresh_root
+write_record "root" "scan-pending" "2026-01-01" "Scan pending" "pending" "alpha, beta"
+write_record "approved" "scan-claimed" "2026-01-02" "Scan claimed" "accepted" "gamma"
+write_record "approved" "scan-crafted" "2026-01-03" "Scan crafted" "accepted" "delta" "crafted" "shipping-story"
+write_story "claiming-story" "planning" "2026-01-02-scan-claimed"
+set +e
+OUT_PLAIN=$(bash "$LIST")
+RC_PLAIN=$?
+OUT_NOSCAN=$(bash "$LIST" --no-scan)
+RC_NOSCAN=$?
+set -e
+[ "$RC_NOSCAN" -eq 0 ] && pass "--no-scan exits 0" || fail "--no-scan exits 0" "0" "$RC_NOSCAN"
+
+SLUGS_PLAIN=$(echo "$OUT_PLAIN" | grep "^SLUG=" | tr '\n' ',')
+SLUGS_NOSCAN=$(echo "$OUT_NOSCAN" | grep "^SLUG=" | tr '\n' ',')
+[ "$SLUGS_NOSCAN" = "$SLUGS_PLAIN" ] && pass "--no-scan returns the same SLUG values" || fail "--no-scan returns the same SLUG values" "$SLUGS_PLAIN" "$SLUGS_NOSCAN"
+
+TAGS_PLAIN=$(echo "$OUT_PLAIN" | grep "^TAGS=" | tr '\n' ',')
+TAGS_NOSCAN=$(echo "$OUT_NOSCAN" | grep "^TAGS=" | tr '\n' ',')
+[ "$TAGS_NOSCAN" = "$TAGS_PLAIN" ] && pass "--no-scan returns the same TAGS values" || fail "--no-scan returns the same TAGS values" "$TAGS_PLAIN" "$TAGS_NOSCAN"
+
+KEYS_NOSCAN=$(echo "$OUT_NOSCAN" | grep -v '^$' | sed -E 's/=.*$//' | tr '\n' ',')
+EXPECTED_KEYS="FILE,ROOM,SLUG,DATE,TITLE,STATUS,TAGS,DISPOSITION,STORIES,FILE,ROOM,SLUG,DATE,TITLE,STATUS,TAGS,DISPOSITION,STORIES,FILE,ROOM,SLUG,DATE,TITLE,STATUS,TAGS,DISPOSITION,STORIES,"
+[ "$KEYS_NOSCAN" = "$EXPECTED_KEYS" ] && pass "--no-scan still prints all nine keys in order on every block" || fail "--no-scan still prints all nine keys in order on every block" "$EXPECTED_KEYS" "$KEYS_NOSCAN"
+
+BAD_DISP=$(echo "$OUT_NOSCAN" | grep "^DISPOSITION=" | grep -vc "^DISPOSITION=$" || true)
+[ "$BAD_DISP" -eq 0 ] && pass "--no-scan leaves DISPOSITION empty on every block" || fail "--no-scan leaves DISPOSITION empty on every block" "0 non-empty" "$BAD_DISP non-empty"
+
+BAD_STORIES=$(echo "$OUT_NOSCAN" | grep "^STORIES=" | grep -vc "^STORIES=$" || true)
+[ "$BAD_STORIES" -eq 0 ] && pass "--no-scan leaves STORIES empty on every block" || fail "--no-scan leaves STORIES empty on every block" "0 non-empty" "$BAD_STORIES non-empty"
+
+[ "$RC_PLAIN" -eq 0 ] && pass "the plain call still exits 0" || fail "the plain call still exits 0" "0" "$RC_PLAIN"
+echo "$OUT_PLAIN" | grep -q "^DISPOSITION=claimed$" && pass "the plain call still derives claimed" || fail "the plain call still derives claimed" "DISPOSITION=claimed" "$(echo "$OUT_PLAIN" | grep '^DISPOSITION=' | tr '\n' ',')"
+echo "$OUT_PLAIN" | grep -q "^STORIES=claiming-story$" && pass "the plain call still names the claiming story" || fail "the plain call still names the claiming story" "STORIES=claiming-story" "$(echo "$OUT_PLAIN" | grep '^STORIES=' | tr '\n' ',')"
+echo "$OUT_PLAIN" | grep -q "^DISPOSITION=crafted$" && pass "the plain call still reads crafted from frontmatter" || fail "the plain call still reads crafted from frontmatter" "DISPOSITION=crafted" "$(echo "$OUT_PLAIN" | grep '^DISPOSITION=' | tr '\n' ',')"
+rm -rf "$ROOT"
+
 echo "=== decisions-capture.sh (Chunk 2) ==="
 echo ""
 
