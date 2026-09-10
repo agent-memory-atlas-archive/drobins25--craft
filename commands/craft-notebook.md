@@ -13,6 +13,7 @@ when_to_use: |
   Idea-vs-todo: todos are imperative + concrete ("rename X"); ideas speculative ("what if we"). Recall: "what's in notebook?" When ambiguous, ask.
 
   List triggers: "notebook?", "what's open?", "show my todos."
+  Not for: product rulings (decisions) - those belong to /craft:decisions.
 argument-hint: "[idea|todo \"text\"] or empty for list"
 ---
 

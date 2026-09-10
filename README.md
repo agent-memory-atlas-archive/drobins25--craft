@@ -307,6 +307,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:status` | Terminal snapshot of progress - cycles, stories, backlog |
 | `/craft:dashboard` | Opens the project graph page in your browser - cycles, stories, and every record, all connected |
 | `/craft:notebook` | Low-ceremony capture for ideas, todos, and notes (durable project facts). Graduate / mark done conversationally - no subcommands needed for lifecycle. |
+| `/craft:decisions` | The Shelf - what waits on you, what's ruled, what's claimed, what became real. Rule on a card, or graduate a selection into a cycle. |
 | `/craft:riff` | Riff on an idea together - a two-player conversation in small beats, one concept at a time, until it's ready to build. Bare invocation opens from the oldest open notebook idea. |
 | `/craft:story-new` | Create story (lands in backlog) |
 | `/craft:story-implement` | Implement a story (interactive) |

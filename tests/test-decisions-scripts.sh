@@ -399,6 +399,178 @@ AFTER_CONTENT=$(cat "$STORY_FILE")
 [ "$BEFORE_CONTENT" = "$AFTER_CONTENT" ] && pass "story file untouched by capture" || fail "story file untouched by capture" "unchanged" "changed"
 rm -rf "$ROOT"
 
+echo "=== decisions-capture.sh --dry-run and cross-room collisions (Chunk 1) ==="
+echo ""
+
+echo "-- Test: dry-run body is capture's file byte for byte --"
+fresh_root
+OUT_DRY=$(bash "$CAPTURE" "Dry run matches file" --tag=alpha --context="ctx body" --options="opts body" --decision="dec body" --consequences="cons body" --quote="approve words" --dry-run)
+OUT_REAL=$(bash "$CAPTURE" "Dry run matches file" --tag=alpha --context="ctx body" --options="opts body" --decision="dec body" --consequences="cons body" --quote="approve words")
+REAL_FILE=$(echo "$OUT_REAL" | tail -1)
+DRY_LINE1=$(echo "$OUT_DRY" | head -1)
+EXPECTED_SLUG_LINE="SLUG=$(basename "$REAL_FILE" .md)"
+[ "$DRY_LINE1" = "$EXPECTED_SLUG_LINE" ] && pass "dry-run line 1 is SLUG= matching the real basename" || fail "dry-run line 1 is SLUG= matching the real basename" "$EXPECTED_SLUG_LINE" "$DRY_LINE1"
+DRY_BODY=$(echo "$OUT_DRY" | tail -n +2)
+REAL_BODY=$(cat "$REAL_FILE")
+[ "$DRY_BODY" = "$REAL_BODY" ] && pass "dry-run body equals the real file byte for byte" || fail "dry-run body equals the real file byte for byte" "$REAL_BODY" "$DRY_BODY"
+rm -rf "$ROOT"
+
+echo "-- Test: dry-run creates no file and no room directory --"
+fresh_root
+bash "$CAPTURE" "Dry run writes nothing" --tag=alpha --context=c --options=o --decision=d --consequences=k --quote="a" --dry-run >/dev/null
+[ ! -d "$ROOT/.craft/decisions" ] && pass "dry-run: .craft/decisions still absent" || fail "dry-run: .craft/decisions still absent" "absent" "present"
+[ ! -d "$ROOT/.craft/decisions/approved" ] && pass "dry-run: .craft/decisions/approved still absent" || fail "dry-run: .craft/decisions/approved still absent" "absent" "present"
+rm -rf "$ROOT"
+
+echo "-- Test: the same title yields the same slug with and without --quote= --"
+fresh_root
+write_record "root" "collide-me" "2026-04-01" "Collide me" "pending" "tag-a"
+OUT=$(bash "$CAPTURE" "Collide me" --tag=tag-a --context=c --options=o --decision=d --consequences=k --quote="a" --dry-run --created=2026-04-01)
+SLUG=$(echo "$OUT" | head -1)
+echo "$SLUG" | grep -q -- "-2$" && pass "collision loop sees the root from the approved side" || fail "collision loop sees the root from the approved side" "SLUG=...-2" "$SLUG"
+rm -rf "$ROOT"
+
+echo "-- Test: the collision loop sees approved/ from the root side too --"
+fresh_root
+write_record "approved" "collide-me-2" "2026-04-02" "Collide me 2" "accepted" "tag-a"
+OUT=$(bash "$CAPTURE" "Collide me 2" --tag=tag-a --context=c --options=o --decision=d --consequences=k --dry-run --created=2026-04-02)
+SLUG=$(echo "$OUT" | head -1)
+echo "$SLUG" | grep -q -- "-2$" && pass "collision loop sees approved/ from the root side" || fail "collision loop sees approved/ from the root side" "SLUG=...-2" "$SLUG"
+rm -rf "$ROOT"
+
+echo "-- Test: dry-run reports the pending room when no quote is given --"
+fresh_root
+OUT=$(bash "$CAPTURE" "Dry run pending room" --tag=alpha --context=c --options=o --decision=d --consequences=k --dry-run)
+echo "$OUT" | grep -q "^status: pending$" && pass "dry-run body carries status: pending with no quote" || fail "dry-run body carries status: pending with no quote" "status: pending" "$OUT"
+echo "$OUT" | grep -q '^> "' && fail "dry-run body has no approval quote line with no quote" "(none)" "$OUT" || pass "dry-run body has no approval quote line with no quote"
+rm -rf "$ROOT"
+
+echo "-- Test: dry-run enforces every required flag --"
+fresh_root
+set +e
+ERR=$(bash "$CAPTURE" "Missing decision" --tag=alpha --context=c --options=o --consequences=k --dry-run 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "dry-run enforces --decision=" || fail "dry-run enforces --decision=" "non-zero" "$RC"
+echo "$ERR" | grep -qi "decision" && pass "dry-run's error names --decision" || fail "dry-run's error names --decision" "mentions decision" "$ERR"
+rm -rf "$ROOT"
+
+echo "-- Test: dry-run enforces the additional-tag rule --"
+fresh_root
+set +e
+ERR=$(bash "$CAPTURE" "Dry run bad tag" --tag=new-group --tag=neverseen --context=c --options=o --decision=d --consequences=k --dry-run 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "dry-run enforces the additional-tag rule" || fail "dry-run enforces the additional-tag rule" "non-zero" "$RC"
+echo "$ERR" | grep -q "neverseen" && pass "dry-run's tag error names the tag" || fail "dry-run's tag error names the tag" "neverseen" "$ERR"
+[ ! -d "$ROOT/.craft/decisions" ] && pass "dry-run's tag error writes nothing" || fail "dry-run's tag error writes nothing" "absent" "present"
+rm -rf "$ROOT"
+
+echo "-- Test: --dry-run with --reopen= is refused and the target file is unchanged --"
+fresh_root
+write_record "approved" "dry-reopen-refused" "2026-04-03" "Dry reopen refused" "accepted" "tag-a"
+FILE="$ROOT/.craft/decisions/approved/2026-04-03-dry-reopen-refused.md"
+BEFORE=$(cat "$FILE")
+set +e
+ERR=$(bash "$CAPTURE" --reopen=2026-04-03-dry-reopen-refused --context=c --options=o --decision=d --consequences=k --quote="x" --dry-run 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "--dry-run with --reopen= is refused" || fail "--dry-run with --reopen= is refused" "non-zero" "$RC"
+echo "$ERR" | grep -qi "dry-run" && echo "$ERR" | grep -qi "reopen" && pass "the refusal names both flags" || fail "the refusal names both flags" "mentions dry-run and reopen" "$ERR"
+AFTER=$(cat "$FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "--dry-run --reopen= leaves the target file byte-identical" || fail "--dry-run --reopen= leaves the target file byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: unknown flags remain a hard error alongside --dry-run --"
+fresh_root
+set +e
+ERR=$(bash "$CAPTURE" "Unknown flag check" --tag=alpha --context=c --options=o --decision=d --consequences=k --dry-run --nope=1 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "unknown flag alongside --dry-run is a hard error" || fail "unknown flag alongside --dry-run is a hard error" "non-zero" "$RC"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen in approved/ is unchanged --"
+fresh_root
+write_record "approved" "reopen-approved-unchanged" "2026-04-04" "Reopen approved unchanged" "accepted" "tag-a"
+OUT=$(bash "$CAPTURE" --reopen=2026-04-04-reopen-approved-unchanged --context=c --options=o --decision="new dec" --consequences=k --quote="new words")
+FILE=$(echo "$OUT" | tail -1)
+[ "$FILE" = "$ROOT/.craft/decisions/approved/2026-04-04-reopen-approved-unchanged.md" ] && pass "reopen in approved/ keeps the same file" || fail "reopen in approved/ keeps the same file" "same path" "$FILE"
+grep -q '^> Reopen: "new words"' "$FILE" && pass "reopen in approved/ still appends the Reopen line" || fail "reopen in approved/ still appends the Reopen line" "> Reopen: \"new words\" ..." "$(grep '^> Reopen' "$FILE" || echo missing)"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen in the root is a reshape --"
+fresh_root
+PARK_OUT=$(bash "$CAPTURE" "Parked proposal" --tag=tag-a --context="orig ctx" --options="orig opts" --decision="orig dec" --consequences="orig cons")
+PARK_FILE=$(echo "$PARK_OUT" | tail -1)
+PARK_SLUG=$(basename "$PARK_FILE" .md)
+RESHAPE_OUT=$(bash "$CAPTURE" --reopen="$PARK_SLUG" --context="new ctx" --options="new opts" --decision="new dec" --consequences="new cons")
+RESHAPE_FILE=$(echo "$RESHAPE_OUT" | tail -1)
+[ "$RESHAPE_FILE" = "$PARK_FILE" ] && pass "root reshape leaves the record in the root" || fail "root reshape leaves the record in the root" "$PARK_FILE" "$RESHAPE_FILE"
+grep -qF "new dec" "$RESHAPE_FILE" && pass "root reshape rewrites the body" || fail "root reshape rewrites the body" "new dec" "$(cat "$RESHAPE_FILE")"
+grep -q "^status: pending$" "$RESHAPE_FILE" && pass "root reshape leaves status: pending intact" || fail "root reshape leaves status: pending intact" "status: pending" "$(grep '^status:' "$RESHAPE_FILE" || echo missing)"
+grep -q "^> Reopen:" "$RESHAPE_FILE" && fail "root reshape writes no Reopen line" "(none)" "$(cat "$RESHAPE_FILE")" || pass "root reshape writes no Reopen line"
+ACCEPT_OUT=$(bash "$TRANSITION" "$PARK_SLUG" accept --quote="a")
+ACCEPTED_FILE=$(echo "$ACCEPT_OUT" | tail -1)
+grep -qF "new dec" "$ACCEPTED_FILE" && pass "accept after reshape carries the changed Decision" || fail "accept after reshape carries the changed Decision" "new dec" "$(cat "$ACCEPTED_FILE")"
+APPROVAL_COUNT=$(grep -c '^> "' "$ACCEPTED_FILE" || true)
+[ "$APPROVAL_COUNT" -eq 1 ] && pass "accept after reshape writes exactly one approval line" || fail "accept after reshape writes exactly one approval line" "1" "$APPROVAL_COUNT"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen in the root refuses --quote= --"
+fresh_root
+PARK_OUT=$(bash "$CAPTURE" "Parked with quote attempt" --tag=tag-a --context=c --options=o --decision=d --consequences=k)
+PARK_FILE=$(echo "$PARK_OUT" | tail -1)
+PARK_SLUG=$(basename "$PARK_FILE" .md)
+BEFORE=$(cat "$PARK_FILE")
+set +e
+ERR=$(bash "$CAPTURE" --reopen="$PARK_SLUG" --context=c --options=o --decision="attempted dec" --consequences=k --quote="not allowed" 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "reopen in the root refuses --quote=" || fail "reopen in the root refuses --quote=" "non-zero" "$RC"
+AFTER=$(cat "$PARK_FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "reopen in the root refusing --quote= leaves the file byte-identical" || fail "reopen in the root refusing --quote= leaves the file byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen in archive/ is refused --"
+fresh_root
+write_record "archive" "reopen-archive-refused" "2026-04-05" "Reopen archive refused" "declined" "tag-a"
+FILE="$ROOT/.craft/decisions/archive/2026-04-05-reopen-archive-refused.md"
+BEFORE=$(cat "$FILE")
+set +e
+ERR=$(bash "$CAPTURE" --reopen=2026-04-05-reopen-archive-refused --context=c --options=o --decision=d --consequences=k --quote="x" 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "reopen in archive/ is refused" || fail "reopen in archive/ is refused" "non-zero" "$RC"
+AFTER=$(cat "$FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "reopen in archive/ leaves the file byte-identical" || fail "reopen in archive/ leaves the file byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: deprecate refuses crafted law and names the shipping story --"
+fresh_root
+write_record "approved" "deprecate-crafted" "2026-04-06" "Deprecate crafted" "accepted" "tag-a" "crafted" "shipping-story"
+FILE="$ROOT/.craft/decisions/approved/2026-04-06-deprecate-crafted.md"
+BEFORE=$(cat "$FILE")
+set +e
+ERR=$(bash "$TRANSITION" 2026-04-06-deprecate-crafted deprecate --quote="x" 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "deprecate refuses crafted law" || fail "deprecate refuses crafted law" "non-zero" "$RC"
+echo "$ERR" | grep -q "shipping-story" && pass "deprecate's refusal names the shipping story" || fail "deprecate's refusal names the shipping story" "shipping-story" "$ERR"
+AFTER=$(cat "$FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "deprecate's refusal leaves the crafted record byte-identical" || fail "deprecate's refusal leaves the crafted record byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: deprecate still retires claimed law --"
+fresh_root
+write_record "approved" "deprecate-claimed" "2026-04-07" "Deprecate claimed" "accepted" "tag-a"
+write_story "claiming-story-d" "planning" "2026-04-07-deprecate-claimed"
+OUT=$(bash "$TRANSITION" 2026-04-07-deprecate-claimed deprecate --quote="x")
+DEST="$ROOT/.craft/decisions/archive/2026-04-07-deprecate-claimed.md"
+[ -f "$DEST" ] && pass "deprecate still retires claimed law" || fail "deprecate still retires claimed law" "present" "missing"
+grep -q "^status: deprecated$" "$DEST" && pass "deprecate on claimed law writes status: deprecated" || fail "deprecate on claimed law writes status: deprecated" "status: deprecated" "$(grep '^status:' "$DEST" || echo missing)"
+rm -rf "$ROOT"
+
 echo "=== decisions-transition.sh (Chunk 3) ==="
 echo ""
 

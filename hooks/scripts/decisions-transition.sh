@@ -7,6 +7,9 @@
 #   accept:    root, status: pending      -> approved/, status: accepted   (--quote required)
 #   decline:   root, status: pending      -> archive/,  status: declined   (--quote required)
 #   deprecate: approved/, status: accepted -> archive/, status: deprecated (--quote required)
+#              refused on a record whose derived disposition is "crafted"
+#              (exit non-zero, names the shipping story, writes nothing) -
+#              shipped law is not retired.
 #   craft:     approved/, status: accepted -> unchanged room; writes
 #              disposition: crafted and appends --story= to stories: in ONE
 #              act, without moving the file. (--story required)
@@ -98,9 +101,15 @@ esac
 
 # ── Find the record. decisions-list.sh is the single source of truth for
 # room/status/title - re-implementing the parse here would let the two
-# scripts drift apart. Only room and status are read below, so the lookup
-# passes --no-scan and never pays for the story-claim scan. ────────────
-LOOKUP=$(list --slug="$SLUG" --no-scan)
+# scripts drift apart. Only room and status are needed for accept, decline
+# and craft, so those actions pass --no-scan and never pay for the
+# story-claim scan. deprecate additionally needs the derived disposition
+# to refuse a crafted record, so it runs WITH the scan. ────────────────
+if [ "$ACTION" = "deprecate" ]; then
+  LOOKUP=$(list --slug="$SLUG")
+else
+  LOOKUP=$(list --slug="$SLUG" --no-scan)
+fi
 if [ -z "$LOOKUP" ]; then
   echo "Error: $SLUG not found in .craft/decisions (root, approved/, or archive/)" >&2
   exit 1
@@ -118,6 +127,16 @@ CUR_FILE=$(echo "$LOOKUP" | sed -n 's/^FILE=//p')
 CUR_ROOM=$(echo "$LOOKUP" | sed -n 's/^ROOM=//p')
 CUR_STATUS=$(echo "$LOOKUP" | sed -n 's/^STATUS=//p')
 CUR_TITLE=$(echo "$LOOKUP" | sed -n 's/^TITLE=//p')
+
+if [ "$ACTION" = "deprecate" ]; then
+  CUR_DISPOSITION=$(echo "$LOOKUP" | sed -n 's/^DISPOSITION=//p')
+  CUR_STORIES=$(echo "$LOOKUP" | sed -n 's/^STORIES=//p')
+  if [ "$CUR_DISPOSITION" = "crafted" ]; then
+    STORY_NAMES=$(printf '%s' "$CUR_STORIES" | tr ';' ',' | sed 's/,/, /g')
+    echo "Error: $SLUG is crafted (shipped by $STORY_NAMES) - shipped law is not retired" >&2
+    exit 1
+  fi
+fi
 
 # ── Preconditions per action, validated before any write or mv ───────
 case "$ACTION" in

@@ -16,14 +16,34 @@
 # Reopen:
 #   decisions-capture.sh --reopen=<full-dated-slug|path> [--title="<new title>"] \
 #     --context="..." --options="..." --decision="..." --consequences="..." \
-#     --quote="<words>" [--source=session|dossier]
+#     [--quote="<words>"] [--source=session|dossier]
 #
 #   Rewrites the body in place at the same filename: created:, status:, and
-#   tags: are left untouched, and a "> Reopen: ..." line is appended to the
-#   existing ## Approval block. A record whose derived disposition is
-#   "crafted" is refused (exit non-zero, names the shipping story, writes
-#   nothing). A "claimed" record is written, then one "Claimed: <story>"
-#   line per claiming story prints to stdout before the path line.
+#   tags: are left untouched. Reopen is room-aware:
+#     approved/ - today's ceremony: --quote= is required and a
+#       "> Reopen: ..." line is appended to the existing ## Approval block.
+#     root      - a quiet reshape: the body is rewritten, status: pending
+#       stays untouched, no quote line is written, and --quote= is refused
+#       (the quote belongs to the accept that follows).
+#     archive/  - refused outright (exit non-zero, file untouched) - the
+#       archive is what was deliberately not done.
+#   A record whose derived disposition is "crafted" is refused in every
+#   room (exit non-zero, names the shipping story, writes nothing). A
+#   "claimed" record is written, then one "Claimed: <story>" line per
+#   claiming story prints to stdout before the path line.
+#
+# Dry run:
+#   decisions-capture.sh "<title>" --tag=<tag> ... --dry-run
+#
+#   Runs every create-mode step - required-flag checks, the additional-tag
+#   rule, room/status selection, the collision-suffixed slug - and writes
+#   nothing: no file, no room directory. Stdout is "SLUG=<dated-slug>" on
+#   line 1, then the record body exactly as the real write would have
+#   produced it. Create-mode only; combined with --reopen= it is refused.
+#   The collision check that derives the slug scans the root and approved/
+#   together, on the dry run and the real write alike, so the slug a dry
+#   run reports is the slug the file will actually get whichever room the
+#   next call targets.
 #
 # There is no --by= flag and no attribution of any kind: the approval line
 # is always "> "<words>" - <date>, <source>", never a name. Any unrecognized
@@ -79,6 +99,7 @@ QUOTE=""
 SOURCE="session"
 CREATED=""
 TAGS_LIST=""
+DRY_RUN=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,6 +113,7 @@ while [ $# -gt 0 ]; do
     --created=*)      CREATED="${1#*=}"; shift ;;
     --reopen=*)       REOPEN="${1#*=}"; shift ;;
     --title=*)        TITLE_OVERRIDE="${1#*=}"; shift ;;
+    --dry-run)        DRY_RUN=1; shift ;;
     --*)
       echo "Error: unknown flag '$1'" >&2
       exit 1
@@ -105,10 +127,56 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -n "$DRY_RUN" ] && [ -n "$REOPEN" ]; then
+  echo "Error: --dry-run cannot be combined with --reopen= - dry-run only answers what a NEW record would be" >&2
+  exit 1
+fi
+
 if [ -n "$REOPEN" ]; then
   MODE="reopen"
 else
   MODE="create"
+fi
+
+# ── Reopen lookup - runs before validation so the room is known before the
+# quote requirement (approved/ requires one, the root refuses one, archive/
+# is refused outright) can be checked. The crafted refusal happens here
+# too, before any write. ──────────────────────────────────────────────
+CLAIMED_STORIES=""
+CUR_ROOM=""
+if [ "$MODE" = "reopen" ]; then
+  case "$REOPEN" in
+    */*) SLUG="$(basename "$REOPEN")"; SLUG="${SLUG%.md}" ;;
+    *.md) SLUG="${REOPEN%.md}" ;;
+    *) SLUG="$REOPEN" ;;
+  esac
+
+  LOOKUP=$(list --slug="$SLUG")
+  if [ -z "$LOOKUP" ]; then
+    echo "Error: $SLUG not found" >&2
+    exit 1
+  fi
+
+  TARGET_FILE=$(echo "$LOOKUP" | sed -n 's/^FILE=//p')
+  CUR_ROOM=$(echo "$LOOKUP" | sed -n 's/^ROOM=//p')
+  CUR_DISPOSITION=$(echo "$LOOKUP" | sed -n 's/^DISPOSITION=//p')
+  CUR_STORIES=$(echo "$LOOKUP" | sed -n 's/^STORIES=//p')
+  CUR_TITLE=$(echo "$LOOKUP" | sed -n 's/^TITLE=//p')
+
+  if [ "$CUR_DISPOSITION" = "crafted" ]; then
+    STORY_NAMES=$(printf '%s' "$CUR_STORIES" | tr ';' ',' | sed 's/,/, /g')
+    echo "Error: $SLUG is crafted (shipped by $STORY_NAMES) - frozen law needs a new record" >&2
+    exit 1
+  fi
+
+  if [ "$CUR_ROOM" = "archive" ]; then
+    echo "Error: $SLUG is in archive/ - reopen cannot touch a declined or retired record" >&2
+    exit 1
+  fi
+
+  if [ "$CUR_DISPOSITION" = "claimed" ]; then
+    CLAIMED_STORIES="$CUR_STORIES"
+  fi
 fi
 
 # ── Validation - runs before any mkdir or write ──────────────────────
@@ -124,7 +192,11 @@ else
   [ -z "$OPTIONS" ] && { echo "Error: --options is required" >&2; exit 1; }
   [ -z "$DECISION" ] && { echo "Error: --decision is required" >&2; exit 1; }
   [ -z "$CONSEQUENCES" ] && { echo "Error: --consequences is required" >&2; exit 1; }
-  [ -z "$QUOTE" ] && { echo "Error: --quote is required for a reopen" >&2; exit 1; }
+  if [ "$CUR_ROOM" = "approved" ]; then
+    [ -z "$QUOTE" ] && { echo "Error: --quote is required for a reopen" >&2; exit 1; }
+  else
+    [ -n "$QUOTE" ] && { echo "Error: --quote= is refused for a reopen in the root - the quote belongs to the accept that follows" >&2; exit 1; }
+  fi
 fi
 
 if [ "$MODE" = "create" ]; then
@@ -160,36 +232,6 @@ if [ "$MODE" = "create" ]; then
     [ -z "$t" ] && continue
     ALL_TAGS="${ALL_TAGS}, ${t}"
   done <<< "$ADDITIONAL_TAGS"
-fi
-
-CLAIMED_STORIES=""
-if [ "$MODE" = "reopen" ]; then
-  case "$REOPEN" in
-    */*) SLUG="$(basename "$REOPEN")"; SLUG="${SLUG%.md}" ;;
-    *.md) SLUG="${REOPEN%.md}" ;;
-    *) SLUG="$REOPEN" ;;
-  esac
-
-  LOOKUP=$(list --slug="$SLUG")
-  if [ -z "$LOOKUP" ]; then
-    echo "Error: $SLUG not found" >&2
-    exit 1
-  fi
-
-  TARGET_FILE=$(echo "$LOOKUP" | sed -n 's/^FILE=//p')
-  CUR_DISPOSITION=$(echo "$LOOKUP" | sed -n 's/^DISPOSITION=//p')
-  CUR_STORIES=$(echo "$LOOKUP" | sed -n 's/^STORIES=//p')
-  CUR_TITLE=$(echo "$LOOKUP" | sed -n 's/^TITLE=//p')
-
-  if [ "$CUR_DISPOSITION" = "crafted" ]; then
-    STORY_NAMES=$(printf '%s' "$CUR_STORIES" | tr ';' ',' | sed 's/,/, /g')
-    echo "Error: $SLUG is crafted (shipped by $STORY_NAMES) - frozen law needs a new record" >&2
-    exit 1
-  fi
-
-  if [ "$CUR_DISPOSITION" = "claimed" ]; then
-    CLAIMED_STORIES="$CUR_STORIES"
-  fi
 fi
 
 # ── Write ──────────────────────────────────────────────────────────────
@@ -228,16 +270,33 @@ if [ "$MODE" = "create" ]; then
     ROOM_DIR="$ROOT/.craft/decisions"
     STATUS="pending"
   fi
-  mkdir -p "$ROOM_DIR"
+
+  if [ -z "$DRY_RUN" ]; then
+    mkdir -p "$ROOM_DIR"
+  fi
+
+  # The letter picked chooses the room, but the slug shown before that
+  # letter is typed must be the slug the file actually gets whichever
+  # room is chosen - so the collision check scans the root and approved/
+  # together, not just ROOM_DIR.
+  ROOT_ROOM_DIR="$ROOT/.craft/decisions"
+  APPROVED_ROOM_DIR="$ROOT/.craft/decisions/approved"
 
   FINAL_SLUG="$SLUG"
   TARGET_FILE="$ROOM_DIR/${DATE}-${FINAL_SLUG}.md"
   COUNTER=2
-  while [ -e "$TARGET_FILE" ]; do
+  while [ -e "$ROOT_ROOM_DIR/${DATE}-${FINAL_SLUG}.md" ] || [ -e "$APPROVED_ROOM_DIR/${DATE}-${FINAL_SLUG}.md" ]; do
     FINAL_SLUG="${SLUG}-${COUNTER}"
     TARGET_FILE="$ROOM_DIR/${DATE}-${FINAL_SLUG}.md"
     COUNTER=$((COUNTER + 1))
   done
+
+  if [ -n "$DRY_RUN" ]; then
+    echo "SLUG=${DATE}-${FINAL_SLUG}"
+    OUT_TARGET=/dev/stdout
+  else
+    OUT_TARGET="$TARGET_FILE"
+  fi
 
   {
     echo "---"
@@ -265,17 +324,19 @@ if [ "$MODE" = "create" ]; then
     if [ -n "$QUOTE" ]; then
       echo "> \"$QUOTE\" - $DATE, $SOURCE"
     fi
-  } > "$TARGET_FILE"
+  } > "$OUT_TARGET"
 
-  echo "$TARGET_FILE"
+  if [ -z "$DRY_RUN" ]; then
+    echo "$TARGET_FILE"
+  fi
 else
   REOPEN_DATE=$(date +%Y-%m-%d)
   TITLE_FOR_BODY="${TITLE_OVERRIDE:-$CUR_TITLE}"
 
-  python3 - "$TARGET_FILE" "$TITLE_FOR_BODY" "$CONTEXT" "$OPTIONS" "$DECISION" "$CONSEQUENCES" "$QUOTE" "$REOPEN_DATE" "$SOURCE" <<'PYEOF'
+  python3 - "$TARGET_FILE" "$TITLE_FOR_BODY" "$CONTEXT" "$OPTIONS" "$DECISION" "$CONSEQUENCES" "$QUOTE" "$REOPEN_DATE" "$SOURCE" "$CUR_ROOM" <<'PYEOF'
 import sys, re
 
-path, title, context, options, decision, consequences, quote, date, source = sys.argv[1:10]
+path, title, context, options, decision, consequences, quote, date, source, room = sys.argv[1:11]
 
 with open(path, 'r') as f:
     content = f.read()
@@ -287,8 +348,14 @@ body = m.group(2)
 approval_match = re.search(r'(## Approval\n.*)$', body, re.DOTALL)
 existing_approval = approval_match.group(1) if approval_match else "## Approval\n"
 
-new_reopen_line = '> Reopen: "{}" - {}, {}\n'.format(quote, date, source)
-approval_section = existing_approval.rstrip('\n') + '\n' + new_reopen_line
+# Today's ceremony in approved/: append a "> Reopen: ..." quote line. The
+# root reshape carries no quote and leaves the Approval block untouched -
+# the quote belongs to the accept that follows.
+if room == "approved":
+    new_reopen_line = '> Reopen: "{}" - {}, {}\n'.format(quote, date, source)
+    approval_section = existing_approval.rstrip('\n') + '\n' + new_reopen_line
+else:
+    approval_section = existing_approval
 
 new_body = (
     "# {title}\n\n"
