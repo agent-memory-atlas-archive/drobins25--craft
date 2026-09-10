@@ -222,6 +222,12 @@ grep_pass_below_fence "Context verified against disk at presentation" "[Cc]ontex
 grep_pass_below_fence "words redraw the whole card" "redraw the whole card|whole card"
 grep_pass_below_fence "reopen redraws the diff instead" "reopen.*redraw.*diff|redraw.*diff.*reopen"
 
+echo "-- Test: the four card-caliber rules --"
+grep_pass_below_fence "card stands alone for a reader who was not in the room" "not in the room"
+grep_pass_below_fence "Context states the situation as it stands on disk today" "as it stands on disk today"
+grep_pass_below_fence "options are complete alternatives in plain words" "complete alternative in plain words"
+grep_pass_below_fence "consequences name each option by what it cost, not its label" "why not the other options"
+
 echo "-- Test: both write scripts named, no direct record-writing instruction --"
 grep_pass_below_fence "decisions-capture.sh named" "decisions-capture\.sh"
 grep_pass_below_fence "decisions-transition.sh named" "decisions-transition\.sh"

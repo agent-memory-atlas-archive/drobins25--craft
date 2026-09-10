@@ -111,6 +111,10 @@ decline" maps to `decisions-list.sh --room=archive` piped into
 ## The card
 
 - One ruling per card - a card carrying several decisions is split into two cards; Context is verified against disk at presentation time.
+- The card is the record it would become, framed - never a summary, never polished on the way to disk. Test it before drawing: a reader who was not in the room, given only this card, can rule on it - no scrollback, no session memory, no second record open beside it. A card that fails that test is rewritten, not trimmed.
+- Context states the situation the decision answers, as it stands on disk today. The pending-format record's "why this is in front of you" is read as the state of the files right now, not the history of the conversation that arrived here - never "we discussed", never a session narrative, never a reference to what was on screen a moment ago.
+- Every option is a complete alternative in plain words - a reader chooses between them without opening anything else. An option that only reads as a modification of the one above it is not an alternative; either write it out whole or fold it in.
+- Consequences say what follows from the ruling, including why not the other options - each named by what it would have cost, not by its label. Concrete implementation specifics that surface while writing them do not belong here: they go in the Decision's `Ideas to consider, not ruled:` block, which is the outlet for exactly that material.
 - The answer is typed into the prompt - AskUserQuestion is never used anywhere in this flow. A typed letter is always a move, never a reference to `(a)`/`(b)`/`(c)` text sitting inside a record's own Options section.
 - Any other words are the user's words: they redraw the whole card and file nothing - except on a reopen card, where they redraw the diff instead.
 - A sentence that plainly names exactly one writing move (approve, keep pending, decline, retire) performs it, after any pick or reshape it carries; a sentence naming two writing moves, or naming one ambiguously, redraws the card and asks - it does not guess.
