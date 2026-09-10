@@ -47,8 +47,7 @@
 # story-claim scan, and the block emission all happen inside it, so store
 # and story-corpus scale never costs more than one interpreter spawn.
 #
-# README.md in the decisions root and anything under assets/ are never
-# treated as records.
+# Anything under assets/ is never treated as a record.
 # Exit: 0 always (empty output if .craft/decisions is absent, or a filter
 # matches nothing).
 
@@ -174,7 +173,7 @@ for room_name, dir_path in ROOMS:
     if not os.path.isdir(dir_path):
         continue
     for fname in sorted(os.listdir(dir_path)):
-        if not fname.endswith('.md') or fname == 'README.md':
+        if not fname.endswith('.md'):
             continue
         full = os.path.join(dir_path, fname)
         if not os.path.isfile(full):

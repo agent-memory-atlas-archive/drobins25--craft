@@ -212,16 +212,14 @@ set -e
 [ -z "$OUT" ] && pass "unmatched tag prints nothing" || fail "unmatched tag prints nothing" "(empty)" "$OUT"
 rm -rf "$ROOT"
 
-echo "-- Test: README.md and assets/ never appear in output --"
+echo "-- Test: assets/ never appears in output --"
 fresh_root
 write_record "root" "real-record" "2026-01-01" "Real record" "pending" "tag-a"
-echo "# Decisions" > "$ROOT/.craft/decisions/README.md"
 mkdir -p "$ROOT/.craft/decisions/assets"
 echo "not-a-record" > "$ROOT/.craft/decisions/assets/2026-01-01-decoy.md"
 OUT=$(bash "$LIST")
 COUNT=$(echo "$OUT" | grep -c "^SLUG=" || true)
-[ "$COUNT" -eq 1 ] && pass "README.md and assets/ excluded from output" || fail "README.md and assets/ excluded from output" "1" "$COUNT"
-echo "$OUT" | grep -q "README" && fail "no README leakage" "absent" "present" || pass "no README leakage"
+[ "$COUNT" -eq 1 ] && pass "assets/ excluded from output" || fail "assets/ excluded from output" "1" "$COUNT"
 echo "$OUT" | grep -q "decoy" && fail "no assets/ leakage" "absent" "present" || pass "no assets/ leakage"
 rm -rf "$ROOT"
 
@@ -302,13 +300,13 @@ fi
 [ "$COUNT" -eq 0 ] && pass "store unchanged after rejected call" || fail "store unchanged after rejected call" "0" "$COUNT"
 rm -rf "$ROOT"
 
-echo "-- Test: the five section headings are written in README order --"
+echo "-- Test: the five section headings are written in record order --"
 fresh_root
 OUT=$(bash "$CAPTURE" "Heading order check" --tag=alpha --context="ctx body" --options="opts body" --decision="dec body" --consequences="cons body")
 FILE=$(echo "$OUT" | tail -1)
 HEADINGS=$(grep -E "^## " "$FILE" | tr '\n' ',')
 EXPECTED="## Context,## Options considered,## Decision,## Consequences,## Approval,"
-[ "$HEADINGS" = "$EXPECTED" ] && pass "five section headings in README order" || fail "five section headings in README order" "$EXPECTED" "$HEADINGS"
+[ "$HEADINGS" = "$EXPECTED" ] && pass "five section headings in record order" || fail "five section headings in record order" "$EXPECTED" "$HEADINGS"
 rm -rf "$ROOT"
 
 echo "-- Test: the path is the last stdout line --"

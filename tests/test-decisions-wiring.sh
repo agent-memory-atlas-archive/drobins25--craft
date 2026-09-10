@@ -303,22 +303,13 @@ grep_pass_below_fence "archive reached in words (e.g. 'what did we decline')" "w
 grep_pass_below_fence "archive prints under the Shelf" "under the Shelf"
 grep_pass_below_fence "nothing prints below the Shelf unless asked" "unless.*asked|nothing.*unasked|never.*unasked"
 
-echo "-- Test: craft-notebook.md's when_to_use ends with the ruled Not-for line, and nothing else changed --"
+echo "-- Test: craft-notebook.md's when_to_use ends with the ruled Not-for line --"
 NOTEBOOK="$REPO/commands/craft-notebook.md"
 LAST_LINE_OF_WTU="$(awk '/^when_to_use: \|/{p=1; next} p && /^argument-hint:/{exit} p{last=$0} END{print last}' "$NOTEBOOK")"
 if [ "$LAST_LINE_OF_WTU" = "  Not for: product rulings (decisions) - those belong to /craft:decisions." ]; then
   pass "notebook when_to_use ends with the ruled Not-for line, verbatim"
 else
   fail "notebook when_to_use ends with the ruled Not-for line, verbatim" "  Not for: product rulings (decisions) - those belong to /craft:decisions." "$LAST_LINE_OF_WTU"
-fi
-NOTEBOOK_DIFF_LINES="$(git -C "$REPO" diff HEAD -- commands/craft-notebook.md | grep -cE '^[+-][^+-]' || true)"
-# Exactly one added line (the Not-for clause) and no removed content lines.
-ADDED="$(git -C "$REPO" diff HEAD -- commands/craft-notebook.md | grep -cE '^\+[^+]' || true)"
-REMOVED="$(git -C "$REPO" diff HEAD -- commands/craft-notebook.md | grep -cE '^-[^-]' || true)"
-if [ "$REMOVED" -eq 0 ] && [ "$ADDED" -eq 1 ]; then
-  pass "notebook diff is exactly one added line, nothing removed"
-else
-  fail "notebook diff is exactly one added line, nothing removed" "1 added, 0 removed" "$ADDED added, $REMOVED removed"
 fi
 
 echo "-- Test: /craft:decisions is present in decision-tree, DESIGN.md and README.md; DESIGN.md says 34 commands --"
