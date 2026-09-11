@@ -169,23 +169,6 @@ write_archive_record() {
   } > "$dir/$date-$slug.md"
 }
 
-# strip_card_frame - reads a card's stdout and prints the content-field
-# text of every non-border, non-color line: "│  " and trailing "  │"
-# removed, right padding stripped. TOP/BOT/DIV (box-drawing) lines are
-# dropped entirely, so what remains is a list of content rows in order.
-strip_card_frame() {
-  python3 -c "
-import sys, re
-esc = re.compile(r'\x1b\[[0-9;]*m')
-for raw in sys.stdin.read().split(chr(10)):
-    line = esc.sub('', raw)
-    if line == '' or line[0] in '┌└├':
-        continue
-    inner = line[3:-3] if len(line) >= 6 else ''
-    print(inner.rstrip())
-"
-}
-
 # write_options_record ROOM SLUG DATE TITLE STATUS TAGS_CSV OPTIONS_TEXT
 # Like write_record, but with an explicit ## Options considered body so
 # the pending-state detection tests can pin lettered / dashed / empty
