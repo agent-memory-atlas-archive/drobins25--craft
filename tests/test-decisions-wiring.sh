@@ -329,6 +329,8 @@ else
   fail "digraph routes a crafted reopen to Refused: crafted law is frozen, then offers a fresh card" "both edge labels present" "missing"
 fi
 grep_pass_below_fence "crafted retire offers a fresh decision card too, the same offer" "fresh decision card, the same as a crafted reopen"
+grep_pass_below_fence "crafted reopen refuses at a) with the ruled words, the diff carried forward" "happy to draw it up with these changes"
+grep_pass_below_fence "crafted reopen seeds the fresh card from its own diff and never relays the script's error line" "seeded from the reopen's own diff.*never relayed as the answer"
 
 echo "-- Test: the archive is reached in words and printed under the Shelf, never unasked --"
 grep_pass_below_fence "archive reached in words (e.g. 'what did we decline')" "what did we decline|what did we retire"
