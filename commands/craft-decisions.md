@@ -20,11 +20,13 @@ argument-hint: "[tag or topic] or empty for the Shelf"
 
 # Decisions
 
-The desk of decisions. Every frame the user sees is `decisions-render.sh`
-stdout, relayed exactly as printed - never re-typed, re-flowed, or
-summarised, and never hand-padded. A decision is presented as a card: the
-exact record it would become, framed. Nothing here writes a record file
-directly - every write is `decisions-capture.sh` or `decisions-transition.sh`.
+The desk of decisions. Claude draws every frame from `decisions-view.sh`'s
+data, following the `### The drawing rule` section below - a left rail
+with horizontal rules, no right edge, no fixed width, quoted words
+verbatim. A decision is
+presented as a card: the exact record it would become. Nothing here writes
+a record file directly - every write is `decisions-capture.sh` or
+`decisions-transition.sh`.
 
 This shell owns only routing.
 
@@ -32,7 +34,7 @@ This shell owns only routing.
 
 ```dot
 digraph decisions {
-    "Draw the Shelf (list | render shelf)" [shape=box];
+    "Draw the Shelf (list | view shelf)" [shape=box];
     "Selection in words -> list filters" [shape=box];
     "Draw the archive under the Shelf" [shape=box];
     "Draw the question card" [shape=box];
@@ -49,7 +51,7 @@ digraph decisions {
     "Retired to archive/" [shape=doublecircle];
     "Refused: crafted law is frozen" [shape=box];
 
-    "Draw the Shelf (list | render shelf)" -> "Selection in words -> list filters";
+    "Draw the Shelf (list | view shelf)" -> "Selection in words -> list filters";
     "Selection in words -> list filters" -> "Draw the archive under the Shelf" [label="'declined', 'retired'"];
     "Selection in words -> list filters" -> "Draw the question card" [label="pending, lettered options"];
     "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
@@ -91,15 +93,67 @@ digraph decisions {
 ```
 
 Boxes are things this shell draws, diamonds are the two questions it ever
-asks itself, double circles are the writes. Every box runs
-`decisions-render.sh` and relays its stdout untouched - never re-typed,
-re-flowed, or summarised. "Changed" means the card as last drawn differs
-from the file it came from.
+asks itself, double circles are the writes. The Shelf, archive and
+retag-receipt boxes are drawn by Claude from `decisions-view.sh`'s data,
+following the `### The drawing rule` section below. The question, decision,
+reopen and retire card boxes all draw the same way, from `decisions-view.sh
+card`'s data. The reopen card's diff rows carry a `MARK=` key the drawing
+rule below colours; `decisions-view.sh` itself emits no colour.
+"Changed" means the card as last drawn differs from the file it came from.
+
+### The drawing rule
+
+- **Rail:** every line inside a frame begins with `│` (U+2502). Content
+  follows after two spaces (`│  `).
+- **Header band:** `┌─ ` + TITLE + ` ` + `─` repeated to roughly 50
+  columns. The Shelf's title is `DECISION SHELF`; the card's is its status
+  word in caps, then ` · tags: <tag> · source: <source>`. Nothing is
+  right-aligned; the trailing rule is decoration and its length is not an
+  invariant.
+- **Closing:** `└` + `─` repeated to match the header band's length,
+  roughly.
+- **Section and group dividers:** `├─ ` + NAME. For a Shelf group: `├─
+  <tag> ── <glyph strip> <total>` - one space, `──`, one space, the strip,
+  one space, the count. The strip is every glyph in ? ○ ● ✓ order, never
+  truncated. For a card section: `├─ CONTEXT` etc., the label in caps,
+  nothing after it.
+- **Rows under a group:** four spaces after the rail, glyph, one space,
+  date-stripped slug: `│    ○ slug`. The "+N more" row: six spaces after
+  the rail: `│      +7 more`.
+- **Body under a card section:** four spaces after the rail, text wrapped
+  at about 70 columns (a preference, not an invariant - a long word or
+  path may exceed it). Bullet continuation lines indent two more. Approval
+  quote lines print exactly as the file holds them, `> ` prefix included,
+  never re-wrapped.
+- **Reopen diff:** each diff row carries a `MARK=` key alongside its
+  `ROW=`/`HEAD=` value - a removed row draws red, an added row draws
+  green, an unmarked row draws plain. `decisions-view.sh` emits the marker
+  only; colour is drawn here, never by the script.
+- **Blank rail lines:** `│` alone (no trailing spaces) between groups,
+  between card sections, after the header band's content, and before the
+  closing line of YOUR MOVE.
+- **Card identity:** the dated slug on the first line under the header
+  band, a blank rail, the title, a blank rail, then the first section
+  divider. Never on the header band.
+- **YOUR MOVE:** letters and their effects as today, two-space-aligned as
+  today, then a blank rail, then the closing line `a, b, c, or just tell
+  me what to change.` (or the face's own closing line) at two spaces.
+- **Receipt drawer:** the group's divider and its rows exactly as they
+  would appear on the Shelf, no header band, no closing line.
+- **Left-anchored fixed columns survive.** No fixed width means no line is
+  padded to a frame edge. A column padded from the LEFT to line up its
+  neighbours is fine: the retire face's claimants table keeps `<story>`
+  padded to a fixed width with the status after it, the archive keeps its
+  9-column exit-label field, and YOUR MOVE keeps its two-space-aligned
+  effects.
+- **No right edge. No padding to a right edge. No ellipsis. No
+  box-drawing character in any script's stdout.** This file, by contrast,
+  MUST show the rail characters - it is where Claude reads the shape from.
 
 ## Selection
 
 Bare invocation is one unfiltered `decisions-list.sh` call piped into
-`decisions-render.sh shelf`. Nothing renders below the Shelf unless asked.
+`decisions-view.sh shelf`. Nothing renders below the Shelf unless asked.
 
 Selection is conversational and maps to `decisions-list.sh`'s own filters -
 `--tag=` `--status=` `--slug=` `--room=` `--disposition=` - never subcommand
@@ -107,7 +161,7 @@ syntax.
 
 The archive is reached only in words, printed under the Shelf: "what did we
 decline" maps to `decisions-list.sh --room=archive` piped into
-`decisions-render.sh archive --only=declined`; "what did we retire" to
+`decisions-view.sh archive --only=declined`; "what did we retire" to
 `--only=retired`; "show the archive" or "what's in the archive" prints both.
 
 Words naming one or more records and a tag - "move decision-1 to
@@ -120,10 +174,9 @@ comma-separated positional list; the script itself takes no separate flag
 for the source. The NEW GROUP check (`decisions-list.sh --tag=<target>
 --no-scan`, empty before the write) runs before the move, exactly as it does
 on a card. After the write, the receipt line is followed by the target
-group's rows, typed plainly from `decisions-list.sh --tag=<target>` output:
-the tag on its own line, then one indented line per record with its Shelf
-glyph and date-stripped slug, in the Shelf's row order. No frame, no
-header - the rows only.
+group's rows, drawn from `decisions-list.sh --tag=<target> |
+decisions-view.sh group` - one Shelf drawer with no header band and no
+closing line, per the `### The drawing rule` section above.
 
 ## The card
 
@@ -137,7 +190,7 @@ header - the rows only.
 - A sentence that plainly names exactly one writing move (approve, keep pending, decline, retire) performs it, after any pick or reshape it carries; a sentence naming two writing moves, or naming one ambiguously, redraws the card and asks - it does not guess.
 - A fresh card with a live fork draws first in the question state and redraws in the decision state once a letter lands; a card with no real alternatives draws straight in the decision state. The question card's own keep-pending letter is `decisions-capture.sh` with no quote - the same call the decision card's b) makes.
 - A pending record picked from the Shelf draws `--variant=pending`; options lettered `(a)`, `(b)`, `(c)` with one `Proposed:` draws the question state, `- ` dashes draws the decision state - the file's own shape tells the two apart, and picking a letter re-authors the Options as dashes and the Decision as the pick.
-- Sections handed to `decisions-capture.sh` are authored wrapped at 55 columns, one paragraph per idea, so the card's reflow reproduces the file's own line breaks. A card with one option or none has no fork and is authored dashed from the start.
+- Sections handed to `decisions-capture.sh` are authored wrapped at 55 columns, one paragraph per idea. A card with one option or none has no fork and is authored dashed from the start.
 - Consequences are always the chosen option's; once the options are dashes, they name the other options by what they are, never by letter.
 - The Decision section opens with the ruling in the human's terms and nothing they did not agree to, optionally followed, inside the same section, by the fixed label `Ideas to consider, not ruled:` with two to four lines of the writer's own specifics, taken from the first draft and never invented for the block - that block is not law.
 - Every decision carries exactly one tag; a second tag is offered only when an existing record can be named as the reason. A tag no record carries is announced NEW GROUP - checked with `decisions-list.sh --tag=<tag> --no-scan` and passed as `--new-group=` to the card when the answer is empty - and the user can rename it in words like anything else on the card.

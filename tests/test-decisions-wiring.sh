@@ -68,7 +68,7 @@ fi
 # ---------------------------------------------------------------------
 EXPECTED_DIGRAPH='```dot
 digraph decisions {
-    "Draw the Shelf (list | render shelf)" [shape=box];
+    "Draw the Shelf (list | view shelf)" [shape=box];
     "Selection in words -> list filters" [shape=box];
     "Draw the archive under the Shelf" [shape=box];
     "Draw the question card" [shape=box];
@@ -85,7 +85,7 @@ digraph decisions {
     "Retired to archive/" [shape=doublecircle];
     "Refused: crafted law is frozen" [shape=box];
 
-    "Draw the Shelf (list | render shelf)" -> "Selection in words -> list filters";
+    "Draw the Shelf (list | view shelf)" -> "Selection in words -> list filters";
     "Selection in words -> list filters" -> "Draw the archive under the Shelf" [label="'"'"'declined'"'"', '"'"'retired'"'"'"];
     "Selection in words -> list filters" -> "Draw the question card" [label="pending, lettered options"];
     "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
@@ -186,14 +186,32 @@ grep_fail_below_fence() { # asserts pattern does NOT appear below the closing fr
   fi
 }
 
-echo "-- Test: verbatim relay of the render script's stdout, and no box-drawing character --"
-grep_pass_below_fence "file instructs verbatim relay of decisions-render.sh's stdout" "relay.*stdout|stdout.*relay"
-grep_pass_below_fence "file says untouched/unmodified relay, never re-typed/re-flowed/summarised" "untouched|unmodified"
+echo "-- Test: the card's own relay phrases are gone, and the rail characters are present --"
+grep_fail_below_fence "file no longer instructs a verbatim relay of the card's stdout" "relay its stdout untouched"
+grep_fail_below_fence "file no longer says relays its stdout untouched" "relays its stdout untouched"
+grep_fail_below_fence "file no longer says relayed exactly as printed" "relayed exactly as printed"
+grep_fail_below_fence "file no longer says never re-typed of the card" "never re-typed"
+grep_fail_below_fence "file no longer says re-flowed" "re-flowed"
+grep_fail_below_fence "file no longer says hand-padded" "hand-padded"
+grep_pass_below_fence "the question, decision, reopen and retire card boxes draw from the view's data" "decision, reopen and retire card boxes all draw the same way"
+grep_fail_below_fence "the reopen card box is no longer named as a still-framed holdout" "reopen card box still draws its own framed diff"
+
+echo "-- Test: the reopen diff's MARK= key colours red for removed, green for added --"
+grep_pass_below_fence "removed rows draw red" "removed row draws red"
+grep_pass_below_fence "added rows draw green" "added row draws green"
+grep_pass_below_fence "decisions-view.sh emits the marker only, colour is drawn by the command file" "emits the marker only.*colour is drawn here|MARK=.*colour"
+
+echo "-- Test: the command file carries the rail characters in its drawing rule, and requires them absent from script stdout (inverted: the old test forbade them here) --"
+grep_pass_below_fence "### The drawing rule section is present" "### The drawing rule"
 if grep -qP '[\x{250C}\x{2502}\x{2514}\x{251C}]' "$CMD" 2>/dev/null || grep -q '[┌│└├]' "$CMD"; then
-  fail "no box-drawing character anywhere in the file" "absent" "found"
+  pass "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from"
 else
-  pass "no box-drawing character anywhere in the file"
+  fail "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from" "present" "absent"
 fi
+grep_pass_below_fence "the drawing rule says no right edge" "no right edge"
+grep_pass_below_fence "the drawing rule says no fixed width" "no fixed width"
+grep_pass_below_fence "the drawing rule says quote lines print exactly as the file holds them, never re-wrapped" "print exactly as the file holds them"
+grep_pass_below_fence "the drawing rule says no box-drawing character in any script's stdout" "No box-drawing character in any script's stdout"
 
 echo "-- Test: AskUserQuestion is forbidden; answers are typed into the prompt --"
 AUQ_LINES="$(grep -h "AskUserQuestion" "$CMD" || true)"
@@ -246,7 +264,7 @@ grep_pass_below_fence "source-by-tag is resolved through decisions-list.sh --tag
 grep_pass_below_fence "the receipt names what moved and where: 'Okay - moved <slug> to <tag>'" "Okay - moved <slug> to <tag>"
 grep_pass_below_fence "a multi-record receipt reads 'Okay - moved N to <tag>'" "Okay - moved N to <tag>"
 grep_pass_below_fence "the target group's rows follow the receipt, typed from decisions-list.sh --tag= output" "group's rows.*decisions-list\.sh --tag=<target>"
-grep_fail_below_fence "no render-script frame is named for the retag receipt" "decisions-render\.sh group"
+grep_pass_below_fence "the retag receipt is drawn as one Shelf drawer via decisions-view.sh group" "decisions-view\.sh group"
 grep_pass_below_fence "', new group' is earned by the check run before the write" "before the (move|write)"
 grep_pass_below_fence "an all-already-there move prints its own no-op line" "nothing to move"
 grep_fail_below_fence "no --from-tag= flag is named anywhere in the file" "--from-tag"
