@@ -146,6 +146,16 @@ def strip_date(slug):
 
 GLYPH_ORDER = ["?", "○", "●", "✓"]
 
+# Every card face - fresh, pending, reopen and retire - wraps body text
+# at 65 columns with hyphens never treated as a break point: the width
+# and setting that reproduce story 7's card exhibit line for line from a
+# real record on disk (`textwrap.wrap(t, 65, break_on_hyphens=False)`;
+# the default hyphen setting splits "(over-prescriptive)" across lines
+# and the exhibit does not). The rail supplies the four-space gutter
+# these rows draw under, so nothing here bakes in a leading indent of
+# its own. The archive view wraps exit words at this width too.
+CARD_DATA_WIDTH = 65
+
 
 def kv(key, value=''):
     return "{}={}".format(key, value)
@@ -378,10 +388,10 @@ def render_archive_view(blocks, only_filter):
     # The slug's own column: 9 chars for the label field when one prints,
     # 0 when --only= has dropped it - the exit words wrap to that same
     # column (left-anchored fixed columns survive), never to the gutter.
-    # Wrap width is 65 minus that indent, the same width the card wraps
-    # its body at.
+    # Wrap width is CARD_DATA_WIDTH minus that indent - the same width
+    # the card wraps its body at, expressed once.
     slug_column = 0 if only_filter else 9
-    wrap_width = max(65 - slug_column, 1)
+    wrap_width = max(CARD_DATA_WIDTH - slug_column, 1)
 
     for r in records:
         if only_filter:
@@ -500,16 +510,9 @@ def parse_options(text):
     return options, is_lettered
 
 
-# Every card face - fresh, pending, reopen and retire - wraps body text
-# at 65 columns with hyphens never treated as a break point: the width
-# and setting that reproduce story 7's card exhibit line for line from a
-# real record on disk (`textwrap.wrap(t, 65, break_on_hyphens=False)`;
-# the default hyphen setting splits "(over-prescriptive)" across lines
-# and the exhibit does not). The rail supplies the four-space gutter
-# these rows draw under, so nothing here bakes in a leading indent of
-# its own.
-CARD_DATA_WIDTH = 65
-
+# CARD_DATA_WIDTH (65, defined with the module constants above) is the
+# width every face wraps body text at; see its comment for why 65 and
+# why hyphens never break.
 
 def wrap_lines_data(text):
     if not text:
