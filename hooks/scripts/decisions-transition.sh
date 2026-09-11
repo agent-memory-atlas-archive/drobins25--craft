@@ -207,7 +207,9 @@ for slug, path in pairs:
     if not re.search(r'^tags:.*$', fm, re.MULTILINE):
         sys.exit("Error: " + slug + " has no tags: line in its frontmatter - refusing the whole call")
 
-    new_fm = re.sub(r'^tags:.*$', 'tags: [' + target + ']', fm, count=1, flags=re.MULTILINE)
+    # A callable repl is written verbatim - a string repl would parse the
+    # user's tag for group references and crash on a backslash-digit.
+    new_fm = re.sub(r'^tags:.*$', lambda mm: 'tags: [' + target + ']', fm, count=1, flags=re.MULTILINE)
     built.append((path, head + new_fm + fence_tail + body))
 
 for path, new_content in built:

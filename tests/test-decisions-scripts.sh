@@ -984,6 +984,19 @@ grep -q "^tags: \[dest-tag\]$" "$ROOT/.craft/decisions/approved/2026-04-15-sourc
 grep -q "^tags: \[other-tag\]$" "$ROOT/.craft/decisions/2026-04-15-unrelated.md" && pass "source-by-tag: unrelated record untouched" || fail "source-by-tag: unrelated record untouched" "tags: [other-tag]" "$(grep '^tags:' "$ROOT/.craft/decisions/2026-04-15-unrelated.md" || echo missing)"
 rm -rf "$ROOT"
 
+echo "-- Test: retag to a tag containing a backslash-digit writes it literally - no regex group parsing, no traceback --"
+fresh_root
+write_record "root" "backslash-tag" "2026-04-17" "Backslash tag" "pending" "old-tag"
+set +e
+BS_ERR=$(bash "$TRANSITION" 2026-04-17-backslash-tag retag --tag='weird\1tag' 2>&1 >/dev/null)
+BS_EXIT=$?
+set -e
+[ "$BS_EXIT" -eq 0 ] && pass "retag with a backslash-digit tag exits 0" || fail "retag with a backslash-digit tag exits 0" "0" "$BS_EXIT: $BS_ERR"
+echo "$BS_ERR" | grep -q "Traceback" && fail "no Python traceback on stderr" "(none)" "$BS_ERR" || pass "no Python traceback on stderr"
+BS_LINE=$(grep '^tags:' "$ROOT/.craft/decisions/2026-04-17-backslash-tag.md" || echo missing)
+[ "$BS_LINE" = 'tags: [weird\1tag]' ] && pass "the tag is written literally, backslash and digit intact" || fail "the tag is written literally, backslash and digit intact" 'tags: [weird\1tag]' "$BS_LINE"
+rm -rf "$ROOT"
+
 echo "-- Test: an unknown action still exits non-zero and its message names retag among the verbs --"
 fresh_root
 write_record "root" "unknown-action" "2026-04-16" "Unknown action" "pending" "old-tag"
