@@ -166,6 +166,16 @@ ${CHUNK_BODY}"
           echo "Warning: skipping gitignored manifest entry: $entry" >&2
           continue
         fi
+        # An entry gone from the worktree is either a bad manifest line
+        # (abort, below) or the old name of a rename the implementer already
+        # staged with `git mv`. Git records the second case - the old path
+        # appears as the SOURCE of a staged rename - and only that case is
+        # safe to skip: the rename is already in the index and rides the
+        # commit. A path git has no record of still aborts.
+        if [ ! -e "$entry" ] && git diff --cached --name-status -M 2>/dev/null \
+             | awk -F'\t' '$1 ~ /^R/ {print $2}' | grep -qxF -- "$entry"; then
+          continue
+        fi
         if ! git add -- "$entry" 2>/dev/null; then
           echo "Error: failed to stage manifest entry '$entry' - no commit made" >&2
           COMMIT_ABORTED=1

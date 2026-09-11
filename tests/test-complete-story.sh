@@ -218,6 +218,41 @@ assert_eq "global CURRENT_STORY still cleared (no stranded state)" "" "$CURRENT_
 cleanup_test_dir
 echo ""
 
+# Test 9b: A manifest entry that is the OLD name of a staged rename is skipped, not an abort
+begin_test "Manifest entry that git already recorded as a staged-rename source is skipped - the rename rides the commit"
+
+TEST_DIR=$(create_craft_with_story "test-cycle" "login-form" "Login Form" "3" "active")
+STORY_FILE="$TEST_DIR/.craft/cycles/1-test-cycle/stories/1-login-form.md"
+echo "feature" > "$TEST_DIR/old-name.txt"
+git_init_repo "$TEST_DIR"
+(cd "$TEST_DIR" && git mv old-name.txt new-name.txt)
+# The story-final manifest can carry the OLD name when a chunk spec listed a
+# file the implementer later renamed - so both names land in the manifest.
+printf 'story: 1-login-form\nold-name.txt\nnew-name.txt\n' > "$TEST_DIR/.craft/.commit-manifest"
+
+set +e
+STDERR_OUT=$(cd "$TEST_DIR" && bash "$COMPLETE_STORY_SCRIPT" "$STORY_FILE" 2>&1 >/dev/null)
+EXIT_CODE=$?
+set -e
+
+assert_eq "exits 0 - a staged-rename source is not a bad manifest line" "0" "$EXIT_CODE"
+if echo "$STDERR_OUT" | grep -q "failed to stage manifest entry"; then
+  echo "  FAIL: stderr reports a staging failure for the renamed-away path"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: no staging failure reported for the renamed-away path"
+  PASS=$((PASS + 1))
+fi
+COMMIT_COUNT=$(cd "$TEST_DIR" && git log --oneline | wc -l | tr -d ' ')
+assert_eq "the story commit was made" "2" "$COMMIT_COUNT"
+RENAME_IN_COMMIT=$(cd "$TEST_DIR" && git show --name-status --format= -M HEAD | grep -c $'^R[0-9]*\told-name.txt\tnew-name.txt$' || true)
+assert_eq "the commit carries the rename old-name.txt -> new-name.txt" "1" "$RENAME_IN_COMMIT"
+MISSING_STILL_ABORTS=$(cd "$TEST_DIR" && git diff --cached --name-status -M | awk -F'\t' '$1 ~ /^R/ {print $2}' | grep -c 'does-not-exist' || true)
+assert_eq "a path git never recorded is not mistaken for a rename source" "0" "$MISSING_STILL_ABORTS"
+
+cleanup_test_dir
+echo ""
+
 # Test 10: Malformed manifest (comma body line) — treated as absent
 begin_test "Malformed manifest (unsplit comma line) — treated as absent"
 
