@@ -68,7 +68,7 @@ If the codebase has any source files: continue to Step 0.5 as normal.
 
 ### Step 0.5: Planning Context Injection
 
-Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials and decision records so the agent doesn't surface false-positive product questions for decisions already captured in planning.
+Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials, and hand decision records to the agent as paths (see 4a - they never enter the block or its token cap), so the agent doesn't surface false-positive product questions for decisions already captured in planning.
 
 **Detection:** Read the story frontmatter. If `source_concept:` is populated OR the story's `decisions:` list is non-empty, continue with the injection below. Otherwise, skip directly to Step 1 with the existing prompt unchanged.
 
