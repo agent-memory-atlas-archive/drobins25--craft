@@ -1167,6 +1167,20 @@ LONGEST=$(printf '%s\n' "$WIDE_CARD" | grep '^ROW=' | sed 's/^ROW=//' | awk '{ p
 [ "$LONGEST" -le 65 ] && pass "no ROW line exceeds the card's 65-column wrap width" || fail "no ROW line exceeds the card's 65-column wrap width" "<=65" "$LONGEST"
 rm -rf "$ROOT"
 
+echo "-- Test: reopen diff rows never exceed the card's 65-column wrap width either - the diff marker comes off the width first --"
+fresh_root
+write_record "approved" "reopen-width" "2026-01-01" "Reopen width" "accepted" "alpha"
+REOPEN_FILE="$ROOT/.craft/decisions/approved/2026-01-01-reopen-width.md"
+LONG_TEXT=$(printf 'word%.0s ' $(seq 1 120))
+REOPEN_CARD=$(bash "$VIEW" card --variant=reopen --file="$REOPEN_FILE" \
+  --context="$LONG_TEXT" --options="- $LONG_TEXT" --decision="Changed." --consequences="Changed.")
+echo "$REOPEN_CARD" | grep -q '^MARK=+' && pass "the reopen diff carries added rows to measure" || fail "the reopen diff carries added rows to measure" "MARK=+" "$REOPEN_CARD"
+# APPROVAL rows are the file's own "> " lines, verbatim by ruling, and may
+# be any width - measure every body section except that one.
+LONGEST=$(printf '%s\n' "$REOPEN_CARD" | awk -F= '/^DIV=/{sec=$2} /^ROW=/ && sec!="APPROVAL"{print length(substr($0,5))}' | sort -rn | head -1)
+[ "$LONGEST" -le 65 ] && pass "no reopen body ROW line exceeds 65 columns, plain paragraph or bullet (approval quotes excluded)" || fail "no reopen body ROW line exceeds 65 columns (approval quotes excluded)" "<=65" "$LONGEST"
+rm -rf "$ROOT"
+
 echo "-- Test: the CLAIMED BY STORIES / SHIPPED BY STORY band --"
 fresh_root
 mkdir -p "$ROOT/.craft/decisions/approved"

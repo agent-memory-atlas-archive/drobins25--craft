@@ -727,13 +727,18 @@ def emit_diff_rows_data(lines, rows):
     marker_prefix = {'': '  ', '-': '- ', '+': '+ '}
     for diff_marker, para_marker, text in rows:
         outer = marker_prefix[diff_marker]
+        # The outer diff marker is part of the emitted ROW, so it comes
+        # off the wrap width first - the same subtraction prefixed_wrap_data
+        # and the title diff make for their own prefixes. Without it a
+        # reopen row ran up to two columns past every other face's 65.
+        avail_width = max(CARD_DATA_WIDTH - len(outer), 1)
         if para_marker:
-            avail = max(CARD_DATA_WIDTH - len(para_marker), 1)
+            avail = max(avail_width - len(para_marker), 1)
             chunks = textwrap.wrap(text, width=avail, break_on_hyphens=False) or ['']
             physical = [para_marker + chunks[0]]
             physical.extend((' ' * len(para_marker)) + c for c in chunks[1:])
         else:
-            physical = textwrap.wrap(text, width=CARD_DATA_WIDTH, break_on_hyphens=False) or ['']
+            physical = textwrap.wrap(text, width=avail_width, break_on_hyphens=False) or ['']
         for p in physical:
             lines.append(kv("MARK", diff_marker))
             lines.append(kv("ROW", outer + p))
