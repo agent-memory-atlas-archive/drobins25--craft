@@ -45,6 +45,7 @@ digraph decisions {
     "Filed as law in approved/" [shape=doublecircle];
     "Filed declined in archive/" [shape=doublecircle];
     "Rewritten in place" [shape=doublecircle];
+    "Retagged in place" [shape=doublecircle];
     "Retired to archive/" [shape=doublecircle];
     "Refused: crafted law is frozen" [shape=box];
 
@@ -54,6 +55,7 @@ digraph decisions {
     "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
     "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
     "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'retire ...'"];
+    "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
 
     "A ruling in conversation" -> "Draw the question card" [label="live fork"];
     "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
@@ -108,6 +110,21 @@ decline" maps to `decisions-list.sh --room=archive` piped into
 `decisions-render.sh archive --only=declined`; "what did we retire" to
 `--only=retired`; "show the archive" or "what's in the archive" prints both.
 
+Words naming one or more records and a tag - "move decision-1 to
+wright-journal", "put these two in wright-journal" - call
+`decisions-transition.sh <slug>[,<slug>...] retag --tag=<target>`: no card is
+drawn, no quote is taken, and no approval line is written. Naming a source
+group instead of specific records resolves through
+`decisions-list.sh --tag=<source> --no-scan`, whose `SLUG=` lines become the
+comma-separated positional list; the script itself takes no separate flag
+for the source. The NEW GROUP check (`decisions-list.sh --tag=<target>
+--no-scan`, empty before the write) runs before the move, exactly as it does
+on a card. After the write, the receipt line is followed by the target
+group's rows, typed plainly from `decisions-list.sh --tag=<target>` output:
+the tag on its own line, then one indented line per record with its Shelf
+glyph and date-stripped slug, in the Shelf's row order. No frame, no
+header - the rows only.
+
 ## The card
 
 - One ruling per card - a card carrying several decisions is split into two cards; Context is verified against disk at presentation time.
@@ -136,6 +153,15 @@ Every write ends with one line: `Approved:`, `Kept pending:`, `Declined:`
 or `Retired:` followed by the path the script printed as its last stdout
 line. A no-op keep-pending prints `Nothing to save - still on the Shelf.`
 instead.
+
+A retag ends with `Okay - moved <slug> to <tag>` for one record (the slug
+date-stripped, as on the Shelf) or `Okay - moved N to <tag>` for several,
+appending `, new group` when the NEW GROUP check was empty before the
+write, and `, M already there` when M is greater than zero. Under that
+line come the target group's rows - the tag, then each record's glyph and
+slug as the Shelf would show them - so the moved record is seen where it
+landed. When every named record was already on the target, it prints
+`Okay - nothing to move, M already there` instead, and no rows follow.
 
 ## Not this file's job
 

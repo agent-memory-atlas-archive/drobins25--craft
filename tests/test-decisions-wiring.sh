@@ -81,6 +81,7 @@ digraph decisions {
     "Filed as law in approved/" [shape=doublecircle];
     "Filed declined in archive/" [shape=doublecircle];
     "Rewritten in place" [shape=doublecircle];
+    "Retagged in place" [shape=doublecircle];
     "Retired to archive/" [shape=doublecircle];
     "Refused: crafted law is frozen" [shape=box];
 
@@ -90,6 +91,7 @@ digraph decisions {
     "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
     "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
     "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'"'"'retire ...'"'"'"];
+    "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
 
     "A ruling in conversation" -> "Draw the question card" [label="live fork"];
     "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
@@ -144,6 +146,7 @@ DOUBLECIRCLES=(
   "Filed as law in approved/"
   "Filed declined in archive/"
   "Rewritten in place"
+  "Retagged in place"
   "Retired to archive/"
 )
 for node in "${DOUBLECIRCLES[@]}"; do
@@ -236,6 +239,17 @@ grep_fail_below_fence "no direct .craft/decisions/ write path" '> *"?\.craft/dec
 
 echo "-- Test: no graduation flow below the frontmatter fence --"
 grep_fail_below_fence "no 'graduate' verb below the frontmatter fence" '[Gg]raduate'
+
+echo "-- Test: the move's routing, source-by-tag, and receipt wording --"
+grep_pass_below_fence "the move's routing line names decisions-transition.sh retag --tag=" "decisions-transition\.sh.*retag|retag --tag="
+grep_pass_below_fence "source-by-tag is resolved through decisions-list.sh --tag=<source> --no-scan, not a script flag" "decisions-list\.sh --tag=<source>"
+grep_pass_below_fence "the receipt names what moved and where: 'Okay - moved <slug> to <tag>'" "Okay - moved <slug> to <tag>"
+grep_pass_below_fence "a multi-record receipt reads 'Okay - moved N to <tag>'" "Okay - moved N to <tag>"
+grep_pass_below_fence "the target group's rows follow the receipt, typed from decisions-list.sh --tag= output" "group's rows.*decisions-list\.sh --tag=<target>"
+grep_fail_below_fence "no render-script frame is named for the retag receipt" "decisions-render\.sh group"
+grep_pass_below_fence "', new group' is earned by the check run before the write" "before the (move|write)"
+grep_pass_below_fence "an all-already-there move prints its own no-op line" "nothing to move"
+grep_fail_below_fence "no --from-tag= flag is named anywhere in the file" "--from-tag"
 
 echo "-- Test: no story template is touched by this story --"
 for f in commands/craft-story-new.md commands/references/cycle-design/default-mode.md commands/references/cycle-design/roadmap-mode.md; do

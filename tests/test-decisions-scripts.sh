@@ -759,6 +759,242 @@ set -e
 echo "$ERR" | grep -q "root" && echo "$ERR" | grep -q "approved" && pass "slug in two rooms names both rooms" || fail "slug in two rooms names both rooms" "mentions root and approved" "$ERR"
 rm -rf "$ROOT"
 
+echo "=== decisions-transition.sh retag ==="
+echo ""
+
+echo "-- Test: retag with one good and one unknown record writes nothing and leaves the good record byte-identical --"
+fresh_root
+write_record "root" "good-one" "2026-04-01" "Good one" "pending" "old-tag"
+GOOD="$ROOT/.craft/decisions/2026-04-01-good-one.md"
+BEFORE=$(cat "$GOOD")
+set +e
+ERR=$(bash "$TRANSITION" "2026-04-01-good-one,2026-04-01-nope" retag --tag=new-tag 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "retag all-or-nothing: exits non-zero" || fail "retag all-or-nothing: exits non-zero" "non-zero" "$RC"
+echo "$ERR" | grep -q "2026-04-01-nope" && pass "retag all-or-nothing: stderr names the unknown slug" || fail "retag all-or-nothing: stderr names the unknown slug" "2026-04-01-nope" "$ERR"
+AFTER=$(cat "$GOOD")
+[ "$BEFORE" = "$AFTER" ] && pass "retag all-or-nothing: good record byte-identical" || fail "retag all-or-nothing: good record byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: retag sets tags: to exactly the target and prints the path as the last stdout line --"
+fresh_root
+write_record "root" "single-move" "2026-04-02" "Single move" "pending" "old-tag"
+FILE="$ROOT/.craft/decisions/2026-04-02-single-move.md"
+set +e
+OUT=$(bash "$TRANSITION" 2026-04-02-single-move retag --tag=new-tag)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "retag single: exits 0" || fail "retag single: exits 0" "0" "$RC"
+grep -q "^tags: \[new-tag\]$" "$FILE" && pass "retag single: tags: rewritten to exactly the target" || fail "retag single: tags: rewritten to exactly the target" "tags: [new-tag]" "$(grep '^tags:' "$FILE" || echo missing)"
+echo "$OUT" | tail -1 | grep -qF "$FILE" && pass "retag single: last stdout line is the path" || fail "retag single: last stdout line is the path" "$FILE" "$(echo "$OUT" | tail -1)"
+rm -rf "$ROOT"
+
+echo "-- Test: retag on three comma-separated slugs moves all three and prints three path lines --"
+fresh_root
+write_record "root" "multi-a" "2026-04-03" "Multi a" "pending" "old-tag"
+write_record "root" "multi-b" "2026-04-03" "Multi b" "pending" "old-tag"
+write_record "approved" "multi-c" "2026-04-03" "Multi c" "accepted" "old-tag"
+OUT=$(bash "$TRANSITION" "2026-04-03-multi-a,2026-04-03-multi-b,2026-04-03-multi-c" retag --tag=new-tag)
+echo "$OUT" | grep -q "^MOVED=3$" && pass "retag multi: MOVED=3" || fail "retag multi: MOVED=3" "MOVED=3" "$OUT"
+PATH_COUNT=$(echo "$OUT" | grep -c "^$ROOT" || true)
+[ "$PATH_COUNT" -eq 3 ] && pass "retag multi: three path lines" || fail "retag multi: three path lines" "3" "$PATH_COUNT"
+grep -q "^tags: \[new-tag\]$" "$ROOT/.craft/decisions/2026-04-03-multi-a.md" && \
+  grep -q "^tags: \[new-tag\]$" "$ROOT/.craft/decisions/2026-04-03-multi-b.md" && \
+  grep -q "^tags: \[new-tag\]$" "$ROOT/.craft/decisions/approved/2026-04-03-multi-c.md" && \
+  pass "retag multi: all three files carry the target tag" || fail "retag multi: all three files carry the target tag" "all three" "not all"
+rm -rf "$ROOT"
+
+echo "-- Test: retag on a record whose frontmatter has no tags: line refuses the whole call --"
+fresh_root
+mkdir -p "$ROOT/.craft/decisions"
+NOTAGS="$ROOT/.craft/decisions/2026-04-04-no-tags-field.md"
+{
+  echo "---"
+  echo "type: decision"
+  echo "status: pending"
+  echo "created: 2026-04-04"
+  echo "source: session"
+  echo "---"
+  echo "# No tags field"
+  echo ""
+  echo "## Context"
+  echo ""
+  echo "## Options considered"
+  echo "## Decision"
+  echo "## Consequences"
+  echo "## Approval"
+} > "$NOTAGS"
+write_record "root" "good-companion" "2026-04-04" "Good companion" "pending" "old-tag"
+GOOD="$ROOT/.craft/decisions/2026-04-04-good-companion.md"
+BEFORE=$(cat "$GOOD")
+set +e
+ERR=$(bash "$TRANSITION" "2026-04-04-no-tags-field,2026-04-04-good-companion" retag --tag=new-tag 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "retag no-tags-field: exits non-zero" || fail "retag no-tags-field: exits non-zero" "non-zero" "$RC"
+echo "$ERR" | grep -q "2026-04-04-no-tags-field" && pass "retag no-tags-field: stderr names the bad slug" || fail "retag no-tags-field: stderr names the bad slug" "2026-04-04-no-tags-field" "$ERR"
+AFTER=$(cat "$GOOD")
+[ "$BEFORE" = "$AFTER" ] && pass "retag no-tags-field: good record byte-identical" || fail "retag no-tags-field: good record byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: retag skips a record already on the target, counts it, and moves the rest --"
+fresh_root
+write_record "root" "already-there" "2026-04-05" "Already there" "pending" "target-tag"
+write_record "root" "needs-move" "2026-04-05" "Needs move" "pending" "old-tag"
+SKIPPED="$ROOT/.craft/decisions/2026-04-05-already-there.md"
+BEFORE=$(cat "$SKIPPED")
+OUT=$(bash "$TRANSITION" "2026-04-05-already-there,2026-04-05-needs-move" retag --tag=target-tag)
+echo "$OUT" | grep -q "^MOVED=1$" && pass "retag skip: MOVED=1" || fail "retag skip: MOVED=1" "MOVED=1" "$OUT"
+echo "$OUT" | grep -q "^ALREADY=1$" && pass "retag skip: ALREADY=1" || fail "retag skip: ALREADY=1" "ALREADY=1" "$OUT"
+PATH_COUNT=$(echo "$OUT" | grep -c "^$ROOT" || true)
+[ "$PATH_COUNT" -eq 1 ] && pass "retag skip: one path line" || fail "retag skip: one path line" "1" "$PATH_COUNT"
+AFTER=$(cat "$SKIPPED")
+[ "$BEFORE" = "$AFTER" ] && pass "retag skip: skipped file byte-identical" || fail "retag skip: skipped file byte-identical" "unchanged" "changed"
+grep -q "^tags: \[target-tag\]$" "$ROOT/.craft/decisions/2026-04-05-needs-move.md" && pass "retag skip: the other record still moves" || fail "retag skip: the other record still moves" "tags: [target-tag]" "$(grep '^tags:' "$ROOT/.craft/decisions/2026-04-05-needs-move.md" || echo missing)"
+rm -rf "$ROOT"
+
+echo "-- Test: retag where every named record is already on the target prints MOVED=0 and exits 0 --"
+fresh_root
+write_record "root" "already-one" "2026-04-06" "Already one" "pending" "target-tag"
+write_record "root" "already-two" "2026-04-06" "Already two" "pending" "target-tag"
+F1="$ROOT/.craft/decisions/2026-04-06-already-one.md"
+F2="$ROOT/.craft/decisions/2026-04-06-already-two.md"
+B1=$(cat "$F1"); B2=$(cat "$F2")
+set +e
+OUT=$(bash "$TRANSITION" "2026-04-06-already-one,2026-04-06-already-two" retag --tag=target-tag)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "retag all-already: exits 0" || fail "retag all-already: exits 0" "0" "$RC"
+echo "$OUT" | grep -q "^MOVED=0$" && pass "retag all-already: MOVED=0" || fail "retag all-already: MOVED=0" "MOVED=0" "$OUT"
+echo "$OUT" | grep -q "^ALREADY=2$" && pass "retag all-already: ALREADY=2" || fail "retag all-already: ALREADY=2" "ALREADY=2" "$OUT"
+PATH_COUNT=$(echo "$OUT" | grep -c "^$ROOT" || true)
+[ "$PATH_COUNT" -eq 0 ] && pass "retag all-already: no path lines" || fail "retag all-already: no path lines" "0" "$PATH_COUNT"
+[ "$(cat "$F1")" = "$B1" ] && [ "$(cat "$F2")" = "$B2" ] && pass "retag all-already: both files byte-identical" || fail "retag all-already: both files byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: retag collapses a two-tag record to exactly the target --"
+fresh_root
+write_record "root" "two-tags" "2026-04-07" "Two tags" "pending" "alpha, beta"
+FILE="$ROOT/.craft/decisions/2026-04-07-two-tags.md"
+bash "$TRANSITION" 2026-04-07-two-tags retag --tag=target-tag >/dev/null
+grep -q "^tags: \[target-tag\]$" "$FILE" && pass "retag two-tag collapse: exactly the target" || fail "retag two-tag collapse: exactly the target" "tags: [target-tag]" "$(grep '^tags:' "$FILE" || echo missing)"
+grep -q "^tags:.*\(alpha\|beta\)" "$FILE" && fail "retag two-tag collapse: no old tag survives on the tags: line" "(none)" "$(grep '^tags:' "$FILE")" || pass "retag two-tag collapse: no old tag survives on the tags: line"
+rm -rf "$ROOT"
+
+echo "-- Test: retag moves a crafted record --"
+fresh_root
+write_record "approved" "crafted-rec" "2026-04-08" "Crafted rec" "accepted" "old-tag" "crafted" "some-story"
+FILE="$ROOT/.craft/decisions/approved/2026-04-08-crafted-rec.md"
+set +e
+OUT=$(bash "$TRANSITION" 2026-04-08-crafted-rec retag --tag=new-tag)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "retag crafted: exits 0" || fail "retag crafted: exits 0" "0" "$RC"
+grep -q "^tags: \[new-tag\]$" "$FILE" && pass "retag crafted: new tag written" || fail "retag crafted: new tag written" "tags: [new-tag]" "$(grep '^tags:' "$FILE" || echo missing)"
+grep -q "^disposition: crafted$" "$FILE" && pass "retag crafted: disposition: unchanged" || fail "retag crafted: disposition: unchanged" "disposition: crafted" "$(grep '^disposition:' "$FILE" || echo missing)"
+grep -q "^stories: \[some-story\]$" "$FILE" && pass "retag crafted: stories: unchanged" || fail "retag crafted: stories: unchanged" "stories: [some-story]" "$(grep '^stories:' "$FILE" || echo missing)"
+rm -rf "$ROOT"
+
+echo "-- Test: retag moves an archived record --"
+fresh_root
+write_record "archive" "archived-rec" "2026-04-09" "Archived rec" "declined" "old-tag"
+FILE="$ROOT/.craft/decisions/archive/2026-04-09-archived-rec.md"
+set +e
+OUT=$(bash "$TRANSITION" 2026-04-09-archived-rec retag --tag=new-tag)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "retag archived: exits 0" || fail "retag archived: exits 0" "0" "$RC"
+grep -q "^tags: \[new-tag\]$" "$FILE" && pass "retag archived: new tag written" || fail "retag archived: new tag written" "tags: [new-tag]" "$(grep '^tags:' "$FILE" || echo missing)"
+[ -f "$FILE" ] && pass "retag archived: file still in archive/" || fail "retag archived: file still in archive/" "present" "missing"
+rm -rf "$ROOT"
+
+echo "-- Test: retag moves a pending root record and an approved record without changing room or status --"
+fresh_root
+write_record "root" "root-rec" "2026-04-10" "Root rec" "pending" "old-tag"
+write_record "approved" "approved-rec" "2026-04-10" "Approved rec" "accepted" "old-tag"
+ROOT_FILE="$ROOT/.craft/decisions/2026-04-10-root-rec.md"
+APPROVED_FILE="$ROOT/.craft/decisions/approved/2026-04-10-approved-rec.md"
+bash "$TRANSITION" "2026-04-10-root-rec,2026-04-10-approved-rec" retag --tag=new-tag >/dev/null
+[ -f "$ROOT_FILE" ] && pass "retag rooms: root record stays in root" || fail "retag rooms: root record stays in root" "present" "missing"
+[ -f "$APPROVED_FILE" ] && pass "retag rooms: approved record stays in approved/" || fail "retag rooms: approved record stays in approved/" "present" "missing"
+grep -q "^status: pending$" "$ROOT_FILE" && pass "retag rooms: root record keeps status pending" || fail "retag rooms: root record keeps status pending" "status: pending" "$(grep '^status:' "$ROOT_FILE" || echo missing)"
+grep -q "^status: accepted$" "$APPROVED_FILE" && pass "retag rooms: approved record keeps status accepted" || fail "retag rooms: approved record keeps status accepted" "status: accepted" "$(grep '^status:' "$APPROVED_FILE" || echo missing)"
+rm -rf "$ROOT"
+
+echo "-- Test: retag leaves a body line that reads tags: as prose untouched --"
+fresh_root
+write_record "root" "fence-trap-tags" "2026-04-11" "Fence trap tags" "pending" "old-tag" "" "" \
+  "tags: [decoy] - a body line that looks like frontmatter, quoted here on purpose."
+FILE="$ROOT/.craft/decisions/2026-04-11-fence-trap-tags.md"
+bash "$TRANSITION" 2026-04-11-fence-trap-tags retag --tag=new-tag >/dev/null
+grep -q "^tags: \[new-tag\]$" "$FILE" && pass "retag body prose: frontmatter tags: rewritten" || fail "retag body prose: frontmatter tags: rewritten" "tags: [new-tag]" "$(grep '^tags:' "$FILE" || echo missing)"
+DECOY_COUNT=$(grep -c "tags: \[decoy\]" "$FILE")
+[ "$DECOY_COUNT" -eq 1 ] && pass "retag body prose: decoy line survives exactly once" || fail "retag body prose: decoy line survives exactly once" "1" "$DECOY_COUNT"
+rm -rf "$ROOT"
+
+echo "-- Test: retag with no --tag= exits non-zero and writes nothing --"
+fresh_root
+write_record "root" "no-tag-flag" "2026-04-12" "No tag flag" "pending" "old-tag"
+FILE="$ROOT/.craft/decisions/2026-04-12-no-tag-flag.md"
+BEFORE=$(cat "$FILE")
+set +e
+ERR=$(bash "$TRANSITION" 2026-04-12-no-tag-flag retag 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "retag no --tag=: exits non-zero" || fail "retag no --tag=: exits non-zero" "non-zero" "$RC"
+echo "$ERR" | grep -qi "tag" && pass "retag no --tag=: error names the missing target" || fail "retag no --tag=: error names the missing target" "mentions tag" "$ERR"
+AFTER=$(cat "$FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "retag no --tag=: file byte-identical" || fail "retag no --tag=: file byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: retag with an empty --tag= exits non-zero and writes nothing --"
+fresh_root
+write_record "root" "empty-tag-flag" "2026-04-13" "Empty tag flag" "pending" "old-tag"
+FILE="$ROOT/.craft/decisions/2026-04-13-empty-tag-flag.md"
+BEFORE=$(cat "$FILE")
+set +e
+ERR=$(bash "$TRANSITION" 2026-04-13-empty-tag-flag retag --tag= 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "retag empty --tag=: exits non-zero" || fail "retag empty --tag=: exits non-zero" "non-zero" "$RC"
+AFTER=$(cat "$FILE")
+[ "$BEFORE" = "$AFTER" ] && pass "retag empty --tag=: file byte-identical" || fail "retag empty --tag=: file byte-identical" "unchanged" "changed"
+rm -rf "$ROOT"
+
+echo "-- Test: retag to a tag no record carries succeeds --"
+fresh_root
+write_record "root" "new-group" "2026-04-14" "New group" "pending" "old-tag"
+bash "$TRANSITION" 2026-04-14-new-group retag --tag=brand-new-tag >/dev/null
+FOUND=$(bash "$LIST" --tag=brand-new-tag --no-scan)
+echo "$FOUND" | grep -q "SLUG=2026-04-14-new-group" && pass "retag new tag: list finds the record under the new tag" || fail "retag new tag: list finds the record under the new tag" "SLUG=2026-04-14-new-group" "$FOUND"
+rm -rf "$ROOT"
+
+echo "-- Test: source-by-tag: every SLUG= from list --tag=<source> --no-scan, passed as one comma-separated list, moves off the source --"
+fresh_root
+write_record "root" "source-a" "2026-04-15" "Source a" "pending" "source-tag"
+write_record "approved" "source-b" "2026-04-15" "Source b" "accepted" "source-tag"
+write_record "root" "unrelated" "2026-04-15" "Unrelated" "pending" "other-tag"
+SLUGS=$(bash "$LIST" --tag=source-tag --no-scan | sed -n 's/^SLUG=//p' | paste -sd, -)
+bash "$TRANSITION" "$SLUGS" retag --tag=dest-tag >/dev/null
+AFTER=$(bash "$LIST" --tag=source-tag --no-scan)
+[ -z "$AFTER" ] && pass "source-by-tag: source tag now empty" || fail "source-by-tag: source tag now empty" "(empty)" "$AFTER"
+grep -q "^tags: \[dest-tag\]$" "$ROOT/.craft/decisions/2026-04-15-source-a.md" && pass "source-by-tag: first record moved to dest" || fail "source-by-tag: first record moved to dest" "tags: [dest-tag]" "$(grep '^tags:' "$ROOT/.craft/decisions/2026-04-15-source-a.md" || echo missing)"
+grep -q "^tags: \[dest-tag\]$" "$ROOT/.craft/decisions/approved/2026-04-15-source-b.md" && pass "source-by-tag: second record moved to dest" || fail "source-by-tag: second record moved to dest" "tags: [dest-tag]" "$(grep '^tags:' "$ROOT/.craft/decisions/approved/2026-04-15-source-b.md" || echo missing)"
+grep -q "^tags: \[other-tag\]$" "$ROOT/.craft/decisions/2026-04-15-unrelated.md" && pass "source-by-tag: unrelated record untouched" || fail "source-by-tag: unrelated record untouched" "tags: [other-tag]" "$(grep '^tags:' "$ROOT/.craft/decisions/2026-04-15-unrelated.md" || echo missing)"
+rm -rf "$ROOT"
+
+echo "-- Test: an unknown action still exits non-zero and its message names retag among the verbs --"
+fresh_root
+write_record "root" "unknown-action" "2026-04-16" "Unknown action" "pending" "old-tag"
+set +e
+ERR=$(bash "$TRANSITION" 2026-04-16-unknown-action bogus 2>&1 1>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "unknown action: exits non-zero" || fail "unknown action: exits non-zero" "non-zero" "$RC"
+echo "$ERR" | grep -q "retag" && pass "unknown action: message names retag" || fail "unknown action: message names retag" "mentions retag" "$ERR"
+rm -rf "$ROOT"
+
 # ── Chunk 4: the flip in complete-story.sh ──────────────────────────────
 
 # write_flip_story CSV_OR_EMPTY HAS_FIELD(0|1) [NAME]
