@@ -212,6 +212,7 @@ grep_pass_below_fence "the drawing rule says no right edge" "no right edge"
 grep_pass_below_fence "the drawing rule says no fixed width" "no fixed width"
 grep_pass_below_fence "the drawing rule says quote lines print exactly as the file holds them, never re-wrapped" "print exactly as the file holds them"
 grep_pass_below_fence "the drawing rule says no box-drawing character in any script's stdout" "No box-drawing character in any script's stdout"
+grep_pass_below_fence "the drawing rule carries the ruled 'Done records never get a row' (2026-09-03-craft-decisions-renders-the-shelf)" "Done records never get a row"
 
 echo "-- Test: AskUserQuestion is forbidden; answers are typed into the prompt --"
 AUQ_LINES="$(grep -h "AskUserQuestion" "$CMD" || true)"

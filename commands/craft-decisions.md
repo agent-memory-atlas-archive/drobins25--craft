@@ -119,7 +119,10 @@ rule below colours; `decisions-view.sh` itself emits no colour.
   nothing after it.
 - **Rows under a group:** four spaces after the rail, glyph, one space,
   date-stripped slug: `│    ○ slug`. The "+N more" row: six spaces after
-  the rail: `│      +7 more`.
+  the rail: `│      +7 more`. Done records never get a row - they are
+  counted in the strip and the total and draw no row of their own, so a
+  group's total is expected to exceed its row count and that difference is
+  never a defect to report.
 - **Body under a card section:** four spaces after the rail, text wrapped
   at about 70 columns (a preference, not an invariant - a long word or
   path may exceed it). Bullet continuation lines indent two more. Approval
