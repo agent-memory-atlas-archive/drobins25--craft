@@ -353,6 +353,19 @@ grep -q '/craft:decisions' "$REPO/DESIGN.md" && pass "/craft:decisions in DESIGN
 grep -q '/craft:decisions' "$REPO/README.md" && pass "/craft:decisions in README.md" || fail "/craft:decisions in README.md"
 grep -q '34 commands' "$REPO/DESIGN.md" && pass "DESIGN.md says 34 commands" || fail "DESIGN.md says 34 commands"
 
+echo "-- Test: the alignment check's agent prompt cites no decision record by slug --"
+# A slug names a record in THIS repo's store. A user's project has none, and the
+# same prompt tells the agent where records live and to report one it cannot find,
+# so a citation there can read as a rule with no authority behind it.
+ALIGNMENT_REF="$REPO/commands/references/alignment-check.md"
+ALIGNMENT_SLUGS="$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+' "$ALIGNMENT_REF" || true)"
+if [ -z "$ALIGNMENT_SLUGS" ]; then
+  pass "alignment-check.md names no decision record by slug"
+else
+  fail "alignment-check.md names no decision record by slug" "none" "$ALIGNMENT_SLUGS"
+fi
+grep -q "the older is cited as superseded" "$ALIGNMENT_REF" && pass "the superseding rule itself survives, stated on its own authority" || fail "the superseding rule itself survives, stated on its own authority" "present" "absent"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"
