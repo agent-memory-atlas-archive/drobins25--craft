@@ -41,6 +41,8 @@ digraph decisions {
     "Draw the decision card" [shape=box];
     "Draw the reopen card (diff against the file)" [shape=box];
     "Draw the retire card (claimed by / shipped by)" [shape=box];
+    "Draw the match drawer (decisions-view.sh match)" [shape=box];
+    "No match: answer in words" [shape=box];
     "User's move?" [shape=diamond];
     "Card came from the root and changed?" [shape=diamond];
     "Filed pending in the root" [shape=doublecircle];
@@ -58,6 +60,10 @@ digraph decisions {
     "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
     "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'retire ...'"];
     "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
+    "Selection in words -> list filters" -> "Draw the match drawer (decisions-view.sh match)" [label="several blocks matched"];
+    "Draw the match drawer (decisions-view.sh match)" -> "Selection in words -> list filters" [label="user names one: resolves as a single match"];
+    "Selection in words -> list filters" -> "No match: answer in words" [label="zero blocks matched"];
+    "No match: answer in words" -> "Draw the decision card" [label="offer a fresh card, new group"];
 
     "A ruling in conversation" -> "Draw the question card" [label="live fork"];
     "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
@@ -123,6 +129,12 @@ rule below colours; `decisions-view.sh` itself emits no colour.
   counted in the strip and the total and draw no row of their own, so a
   group's total is expected to exceed its row count and that difference is
   never a defect to report.
+- **Match drawer rows:** the header band reads `<N> MATCH "<words>"` - count,
+  then the words verbatim, the quoted segment dropped when no words were
+  given. The key band is the Shelf's own band plus `× archived`. Each record
+  line is a `HEAD=` line at two spaces after the rail, not a `ROW=` line:
+  glyph, two spaces, the title. There is no group divider, no strip and no
+  count - these are not group rows.
 - **Body under a card section:** four spaces after the rail, text wrapped
   at about 70 columns (a preference, not an invariant - a long word or
   path may exceed it). Bullet continuation lines indent two more. Approval
@@ -161,6 +173,23 @@ Bare invocation is one unfiltered `decisions-list.sh` call piped into
 Selection is conversational and maps to `decisions-list.sh`'s own filters -
 `--tag=` `--status=` `--slug=` `--room=` `--disposition=` - never subcommand
 syntax.
+
+A selection headed for a card resolves to exactly one record before anything
+draws: the desk reads the block count off the `decisions-list.sh` output it
+already holds and routes on that count before drawing anything. One block
+draws the card as today, unchanged. Several blocks draw
+`decisions-view.sh match --words="<the words searched>"` over that same list
+output, per the drawing rule above, and the desk asks; the answer names one
+of the drawer's rows, which maps back to the `SLUG=` of the block that row
+came from - the list output already in hand, never a fresh filter over the
+words. Zero blocks are never piped into `decisions-view.sh shelf` - that view
+is for a store with no records at all, not a selection that missed, so a
+zero-block result is answered in words instead, no frame drawn: the desk
+names the filter back, names the nearest group by spelling plus a count of
+the remaining groups (never a full dump of every group), and offers a fresh
+card tagged with it, announced as a NEW GROUP. This rule governs a selection
+headed for a card only; the archive below and a retag's own resolution are
+unaffected.
 
 The archive is reached only in words, printed under the Shelf: "what did we
 decline" maps to `decisions-list.sh --room=archive` piped into

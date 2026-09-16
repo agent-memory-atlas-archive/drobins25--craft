@@ -75,6 +75,8 @@ digraph decisions {
     "Draw the decision card" [shape=box];
     "Draw the reopen card (diff against the file)" [shape=box];
     "Draw the retire card (claimed by / shipped by)" [shape=box];
+    "Draw the match drawer (decisions-view.sh match)" [shape=box];
+    "No match: answer in words" [shape=box];
     "User'"'"'s move?" [shape=diamond];
     "Card came from the root and changed?" [shape=diamond];
     "Filed pending in the root" [shape=doublecircle];
@@ -92,6 +94,10 @@ digraph decisions {
     "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
     "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'"'"'retire ...'"'"'"];
     "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
+    "Selection in words -> list filters" -> "Draw the match drawer (decisions-view.sh match)" [label="several blocks matched"];
+    "Draw the match drawer (decisions-view.sh match)" -> "Selection in words -> list filters" [label="user names one: resolves as a single match"];
+    "Selection in words -> list filters" -> "No match: answer in words" [label="zero blocks matched"];
+    "No match: answer in words" -> "Draw the decision card" [label="offer a fresh card, new group"];
 
     "A ruling in conversation" -> "Draw the question card" [label="live fork"];
     "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
@@ -353,6 +359,26 @@ grep -q '/craft:decisions' "$REPO/DESIGN.md" && pass "/craft:decisions in DESIGN
 grep -q '/craft:decisions' "$REPO/README.md" && pass "/craft:decisions in README.md" || fail "/craft:decisions in README.md"
 grep -q '34 commands' "$REPO/DESIGN.md" && pass "DESIGN.md says 34 commands" || fail "DESIGN.md says 34 commands"
 
+echo "-- Test: a selection headed for a card resolves to exactly one record before anything draws --"
+grep_pass_below_fence "the desk routes on the block count before drawing anything" "routes on that count before drawing anything"
+grep_pass_below_fence "a zero-block filtered list is never piped into decisions-view.sh shelf" "never piped into .decisions-view\.sh shelf."
+grep_pass_below_fence "several matches route to decisions-view.sh match" "decisions-view\.sh match --words="
+grep_pass_below_fence "the drawer's answer maps back to the block's own SLUG=" "maps back to the .SLUG=. of the block that row came from"
+grep_pass_below_fence "the rule governs a selection headed for a card only" "selection headed for a card only"
+
+echo "-- Test: the no-match answer names the filter, the nearest group and a count of the rest, offers a fresh card, draws no frame --"
+grep_pass_below_fence "the no-match answer names the filter back" "names the filter back"
+grep_pass_below_fence "the no-match answer names the nearest group by spelling" "nearest group by spelling"
+grep_pass_below_fence "the no-match answer counts the remaining groups, never a full dump" "count of the remaining groups.*never a full dump|never a full dump.*count of the remaining groups"
+grep_pass_below_fence "the no-match answer offers a fresh card announced as a new group" "fresh card tagged with it, announced as a NEW GROUP"
+grep_pass_below_fence "the no-match answer draws no frame" "no frame.*drawn|answered in words, no frame"
+
+echo "-- Test: the drawing rule carries a match-drawer entry with the extended key band and the two-space record line --"
+grep_pass_below_fence "the drawing rule names the header band's count-and-words form" "MATCH .<words>."
+grep_pass_below_fence "the drawing rule extends the key band with the archived glyph" "× archived"
+grep_pass_below_fence "the drawing rule puts record lines at two spaces, HEAD= not ROW=" "HEAD=.*two spaces after the rail|two spaces after the rail.*not a .ROW=. line"
+grep_pass_below_fence "the drawing rule says the drawer has no group divider, strip or count" "no group divider, no strip and no count"
+
 echo "-- Test: the alignment check's agent prompt cites no decision record by slug --"
 # A slug names a record in THIS repo's store. A user's project has none, and the
 # same prompt tells the agent where records live and to report one it cannot find,
@@ -365,6 +391,14 @@ else
   fail "alignment-check.md names no decision record by slug" "none" "$ALIGNMENT_SLUGS"
 fi
 grep -q "the older is cited as superseded" "$ALIGNMENT_REF" && pass "the superseding rule itself survives, stated on its own authority" || fail "the superseding rule itself survives, stated on its own authority" "present" "absent"
+
+echo "-- Test: the command file names no decision record by slug --"
+CMD_SLUGS="$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+' "$CMD" || true)"
+if [ -z "$CMD_SLUGS" ]; then
+  pass "commands/craft-decisions.md names no decision record by slug"
+else
+  fail "commands/craft-decisions.md names no decision record by slug" "none" "$CMD_SLUGS"
+fi
 
 echo ""
 echo "-- Summary --"

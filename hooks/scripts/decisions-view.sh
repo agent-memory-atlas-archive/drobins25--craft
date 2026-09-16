@@ -29,6 +29,16 @@
 #     further ROW= lines indented to the same column, newest exit first,
 #     then CLOSE=.
 #
+#   decisions-view.sh match [--words=<searched words>]
+#     stdin: decisions-list.sh blocks for a selection that matched more
+#     than one record (any filters already applied by the caller). Emits
+#     BAND=<count> MATCH "<words>" (the quoted words segment dropped when
+#     --words= is absent or empty), the Shelf's key band extended with
+#     "× archived", a BLANK=, one HEAD= per block in stdin order - the
+#     glyph, two spaces, the block's TITLE= verbatim - a BLANK=, the
+#     closing HEAD=, then CLOSE=. This is the drawer that asks the user to
+#     name one record when their words resolved to several.
+#
 #   decisions-view.sh card --variant=<fresh|pending|reopen|retire>
 #       [--state=<question|decision>] [--proposed=<letter>] [--file=<path>]
 #       [--context= --options= --decision= --consequences= --title=]
@@ -67,9 +77,12 @@ import sys, os, re, textwrap, difflib
 ARGS = sys.argv[1:]
 SUBCOMMAND = ARGS[0] if ARGS else ''
 ONLY = ''
+WORDS = ''
 for a in ARGS[1:]:
     if a.startswith('--only='):
         ONLY = a[len('--only='):]
+    elif a.startswith('--words='):
+        WORDS = a[len('--words='):]
 
 
 def parse_card_args(args):
@@ -113,6 +126,11 @@ CARD_OPTS = parse_card_args(ARGS[1:]) if SUBCOMMAND == 'card' else None
 
 SHELF_TITLE = 'DECISION SHELF'
 KEY_BAND_TEXT = '? pending   ○ unclaimed   ● claimed   ✓ done'
+# The match drawer's own key band: the Shelf's band plus the one glyph a
+# Shelf row never carries, since the drawer is the only view that ever
+# shows an archived record alongside live ones.
+MATCH_KEY_BAND_TEXT = KEY_BAND_TEXT + '   × archived'
+ARCHIVE_GLYPH = '×'
 
 
 def read_piped_input():
@@ -306,6 +324,34 @@ def render_group_view(blocks):
     common = set.intersection(*tag_sets) if tag_sets else set()
     tag = sorted(common)[0] if common else order[0]
     return group_block_lines(tag, groups[tag])
+
+
+def match_glyph_for(block):
+    # Archived blocks draw the cross regardless of status or disposition -
+    # glyph_for() never sees ROOM=archive from any other view (the Shelf
+    # and the retag receipt both drop archive blocks before it runs), so
+    # the archive case is decided here rather than folded into it.
+    if block.get("ROOM") == "archive":
+        return ARCHIVE_GLYPH
+    return glyph_for(block)
+
+
+def render_match_view(blocks, words):
+    band = "{} MATCH".format(len(blocks))
+    if words:
+        band += ' "{}"'.format(words)
+    lines = [
+        kv("BAND", band),
+        kv("HEAD", MATCH_KEY_BAND_TEXT),
+        kv("BLANK"),
+    ]
+    for b in blocks:
+        glyph = match_glyph_for(b)
+        lines.append(kv("HEAD", glyph + "  " + b.get("TITLE", "")))
+    lines.append(kv("BLANK"))
+    lines.append(kv("HEAD", "Name one, or narrow it."))
+    lines.append(kv("CLOSE"))
+    return lines
 
 
 ATTRIBUTION_RE = re.compile(r"-\s*(?:[^,]+,\s*)?(\d{4}-\d{2}-\d{2}),\s*\S+")
@@ -983,6 +1029,10 @@ def main():
         data = read_piped_input()
         blocks = parse_blocks(data)
         lines = render_group_view(blocks)
+    elif SUBCOMMAND == "match":
+        data = read_piped_input()
+        blocks = parse_blocks(data)
+        lines = render_match_view(blocks, WORDS)
     elif SUBCOMMAND == "card":
         if CARD_OPTS['variant'] == 'reopen':
             lines = render_card_reopen_data(CARD_OPTS)

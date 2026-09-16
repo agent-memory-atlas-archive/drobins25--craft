@@ -418,6 +418,114 @@ ARCHIVE_BAD=$(bash "$LIST" --room=archive | bash "$VIEW" archive | no_box_chars)
 [ "$ARCHIVE_BAD" = "0" ] && pass "archive stdout holds no box-drawing character" || fail "archive stdout holds no box-drawing character" "0" "$ARCHIVE_BAD"
 rm -rf "$ROOT"
 
+echo "-- Test: decisions-view.sh match --"
+fresh_root
+write_record "root" "match-root-pending" "2026-01-01" "Root pending checkout item" "pending" "checkout"
+write_record "approved" "match-approved-open" "2026-01-02" "Approved open checkout item" "accepted" "checkout"
+write_record "approved" "match-approved-claimed" "2026-01-03" "Approved claimed checkout item" "accepted" "checkout"
+write_story "claims-match-approved-claimed" "planning" "2026-01-03-match-approved-claimed"
+write_record "approved" "match-approved-crafted" "2026-01-04" "Approved crafted checkout item" "accepted" "checkout" "crafted"
+write_archive_record "match-archive-one" "2026-01-05" "declined" "checkout" '> "No." - Darin, 2026-01-05, session'
+write_archive_record "match-archive-two" "2026-01-06" "retired" "checkout" '> "Retired." - Darin, 2026-01-06, session'
+
+MATCH_OUT=$(bash "$LIST" --tag=checkout | bash "$VIEW" match --words=checkout)
+
+echo "$MATCH_OUT" | grep -q '^BAND=6 MATCH "checkout"$' \
+  && pass "the match drawer's band names the count and the searched words" \
+  || fail "the match drawer's band names the count and the searched words" 'BAND=6 MATCH "checkout"' "$(echo "$MATCH_OUT" | grep '^BAND=')"
+
+NO_WORDS_OUT=$(bash "$LIST" --tag=checkout | bash "$VIEW" match)
+echo "$NO_WORDS_OUT" | grep -q '^BAND=6 MATCH$' \
+  && pass "the band drops the words segment when --words= is absent" \
+  || fail "the band drops the words segment when --words= is absent" 'BAND=6 MATCH' "$(echo "$NO_WORDS_OUT" | grep '^BAND=')"
+
+echo "$MATCH_OUT" | grep -qF 'HEAD=? pending   ○ unclaimed   ● claimed   ✓ done   × archived' \
+  && pass "the key band carries the Shelf's four glyphs plus the archived cross" \
+  || fail "the key band carries the Shelf's four glyphs plus the archived cross" 'HEAD=? pending   ○ unclaimed   ● claimed   ✓ done   × archived' "$(echo "$MATCH_OUT" | grep '^HEAD=' | head -1)"
+
+ARCHIVE_HEAD_COUNT=$(echo "$MATCH_OUT" | grep -c '^HEAD=×  ' || true)
+[ "$ARCHIVE_HEAD_COUNT" = "2" ] \
+  && pass "an archived record draws the cross" \
+  || fail "an archived record draws the cross" "2" "$ARCHIVE_HEAD_COUNT"
+
+echo "$MATCH_OUT" | grep -qF 'HEAD=?  Root pending checkout item' \
+  && echo "$MATCH_OUT" | grep -qF 'HEAD=✓  Approved crafted checkout item' \
+  && echo "$MATCH_OUT" | grep -qF 'HEAD=●  Approved claimed checkout item' \
+  && echo "$MATCH_OUT" | grep -qF 'HEAD=○  Approved open checkout item' \
+  && pass "every other record keeps its Shelf glyph" \
+  || fail "every other record keeps its Shelf glyph" "? / ✓ / ● / ○ prefixed HEAD lines" "$(echo "$MATCH_OUT" | grep '^HEAD=' | tail -6)"
+
+echo "$MATCH_OUT" | grep -q "Approved open checkout item" && ! echo "$MATCH_OUT" | grep -q "match-approved-open" \
+  && pass "record lines carry the title, not the slug" \
+  || fail "record lines carry the title, not the slug" "title present, slug absent" "$MATCH_OUT"
+
+DRAWN_MATCH=$(printf '%s\n' "$MATCH_OUT" | draw_rail)
+RECORD_LINES=$(printf '%s\n' "$DRAWN_MATCH" | grep -E '^│  [?○●✓×]  ' || true)
+[ "$(printf '%s\n' "$RECORD_LINES" | wc -l | tr -d ' ')" = "6" ] \
+  && pass "record lines are HEAD= lines, so the drawn glyph column sits at two spaces" \
+  || fail "record lines are HEAD= lines, so the drawn glyph column sits at two spaces" "6 lines at │  <glyph>  " "${RECORD_LINES:-<none>}"
+
+LAST_TWO_RECORD_LINES=$(printf '%s\n' "$MATCH_OUT" | grep '^HEAD=' | tail -3 | head -2)
+printf '%s\n' "$LAST_TWO_RECORD_LINES" | grep -q '^HEAD=×' \
+  && [ "$(printf '%s\n' "$LAST_TWO_RECORD_LINES" | grep -c '^HEAD=×')" = "2" ] \
+  && pass "archived records sort to the bottom, as the list's own room order gives them" \
+  || fail "archived records sort to the bottom, as the list's own room order gives them" "the two × lines are last" "$LAST_TWO_RECORD_LINES"
+
+echo "$MATCH_OUT" | grep -qF 'HEAD=Name one, or narrow it.' \
+  && [ "$(echo "$MATCH_OUT" | tail -1)" = "CLOSE=" ] \
+  && pass "the drawer closes with the ruled line" \
+  || fail "the drawer closes with the ruled line" "HEAD=Name one, or narrow it. then CLOSE=" "$(echo "$MATCH_OUT" | tail -2)"
+
+MATCH_EXHIBIT=$(cat <<'@@MATCH_EXHIBIT@@'
+┌─ 6 MATCH "checkout" ──────────────────────────────
+│  ? pending   ○ unclaimed   ● claimed   ✓ done   × archived
+│
+│  ?  Root pending checkout item
+│  ○  Approved open checkout item
+│  ●  Approved claimed checkout item
+│  ✓  Approved crafted checkout item
+│  ×  Title for match-archive-one
+│  ×  Title for match-archive-two
+│
+│  Name one, or narrow it.
+└───────────────────────────────────────────────────
+@@MATCH_EXHIBIT@@
+)
+[ "$(printf '%s' "$DRAWN_MATCH" | normalize_bands)" = "$(printf '%s' "$MATCH_EXHIBIT" | normalize_bands)" ] \
+  && pass "the drawer drawn through draw_rail reproduces the ruled shape" \
+  || fail "the drawer drawn through draw_rail reproduces the ruled shape" "$MATCH_EXHIBIT" "$DRAWN_MATCH"
+
+MATCH_BAD=$(echo "$MATCH_OUT" | no_box_chars)
+[ "$MATCH_BAD" = "0" ] && pass "match stdout holds no box-drawing character" || fail "match stdout holds no box-drawing character" "0" "$MATCH_BAD"
+
+rm -rf "$ROOT"
+
+echo "-- Test: a long title in the match drawer --"
+fresh_root
+LONG_TITLE=$(printf 'word %.0s' {1..25})
+LONG_TITLE="${LONG_TITLE% }"
+write_record "approved" "match-long-title" "2026-01-01" "$LONG_TITLE" "accepted" "checkout"
+LONG_OUT=$(bash "$LIST" --tag=checkout | bash "$VIEW" match --words=checkout)
+LONG_HEAD_LINE=$(echo "$LONG_OUT" | grep '^HEAD=○' || true)
+echo "$LONG_OUT" | grep -qF "HEAD=○  $LONG_TITLE" \
+  && pass "a long title prints on one line, unwrapped and uncut" \
+  || fail "a long title prints on one line, unwrapped and uncut" "HEAD=○  $LONG_TITLE" "${LONG_HEAD_LINE:-<none>}"
+echo "$LONG_OUT" | grep -q '…' \
+  && fail "no line in the drawer carries an ellipsis" "absent" "present" \
+  || pass "no line in the drawer carries an ellipsis"
+rm -rf "$ROOT"
+
+echo "-- Test: a single-block stdin still draws a one-row drawer --"
+fresh_root
+write_record "approved" "match-solo" "2026-01-01" "Solo checkout item" "accepted" "checkout"
+SOLO_OUT=$(bash "$LIST" --tag=checkout | bash "$VIEW" match --words=checkout)
+SOLO_HEAD_COUNT=$(echo "$SOLO_OUT" | grep -c '^HEAD=' || true)
+echo "$SOLO_OUT" | grep -q '^BAND=1 MATCH "checkout"$' \
+  && [ "$SOLO_HEAD_COUNT" = "3" ] \
+  && pass "a single-block stdin still draws a one-row drawer" \
+  || fail "a single-block stdin still draws a one-row drawer" 'BAND=1 and 3 HEAD lines' "$SOLO_OUT"
+rm -rf "$ROOT"
+
 echo "-- Test: groups arrive in the ruled sort order - pending first, then most unclaimed, then tag name --"
 fresh_root
 write_record "root" "the-notebook-holds-a-guides-index" "2026-01-01" "Pending guides idea" "pending" "guides"
@@ -1434,6 +1542,7 @@ SWEEP_BAD=0
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" | bash "$VIEW" shelf | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --tag=wright-journal | bash "$VIEW" group | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --room=archive | bash "$VIEW" archive | no_box_chars)))
+SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --tag=guides | bash "$VIEW" match --words=guides | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(printf '%s\n' "$SWEEP_DRY" | bash "$VIEW" card --variant=fresh | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$VIEW" card --variant=pending --file="$SWEEP_FILE" | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$VIEW" card --variant=retire --file="$SWEEP_FILE" --claimed-by="story-a:ready" | no_box_chars)))
@@ -1443,7 +1552,7 @@ rm -rf "$ROOT"
 fresh_root
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" | bash "$VIEW" shelf | no_box_chars)))
 rm -rf "$ROOT"
-[ "$SWEEP_BAD" -eq 0 ] && pass "no view or face - shelf, group, empty, archive, card fresh/pending/retire/reopen - emits a box-drawing character" \
+[ "$SWEEP_BAD" -eq 0 ] && pass "no view or face - shelf, group, match, empty, archive, card fresh/pending/retire/reopen - emits a box-drawing character" \
   || fail "no view or face emits a box-drawing character" "0" "$SWEEP_BAD"
 
 echo ""
