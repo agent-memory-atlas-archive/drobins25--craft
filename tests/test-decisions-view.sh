@@ -1555,6 +1555,62 @@ rm -rf "$ROOT"
 [ "$SWEEP_BAD" -eq 0 ] && pass "no view or face - shelf, group, match, empty, archive, card fresh/pending/retire/reopen - emits a box-drawing character" \
   || fail "no view or face emits a box-drawing character" "0" "$SWEEP_BAD"
 
+echo "-- Test: a pending card draws proposed sections passed as flags, and the file is untouched --"
+fresh_root
+mkdir -p "$ROOT/.craft/decisions"
+PREVIEW_FILE="$ROOT/.craft/decisions/2026-01-01-preview-law.md"
+cat > "$PREVIEW_FILE" <<'EOF'
+---
+type: decision
+status: pending
+created: 2026-01-01
+source: session
+tags: [guides]
+---
+# Preview law
+
+## Context
+The original context.
+
+## Options considered
+- Keep it as is.
+- Change it.
+
+## Decision
+Keep it as is.
+
+## Consequences
+Nothing changes.
+
+## Approval
+EOF
+BEFORE_SUM=$(shasum "$PREVIEW_FILE" | cut -d' ' -f1)
+PREVIEW_OUT=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --consequences="A returning user can turn it off from settings.")
+AFTER_SUM=$(shasum "$PREVIEW_FILE" | cut -d' ' -f1)
+printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=A returning user can turn it off from settings\.' \
+  && pass "a --consequences= flag on a pending card draws the proposed text" \
+  || fail "a --consequences= flag on a pending card draws the proposed text" "ROW=A returning user can turn it off from settings." "$PREVIEW_OUT"
+printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=Nothing changes\.' \
+  && fail "the file's own consequences line is replaced, not appended" "(absent)" "ROW=Nothing changes. present" \
+  || pass "the file's own consequences line is replaced, not appended"
+printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=The original context\.' \
+  && pass "sections not passed as flags still come from the file" \
+  || fail "sections not passed as flags still come from the file" "ROW=The original context." "$PREVIEW_OUT"
+[ "$BEFORE_SUM" = "$AFTER_SUM" ] \
+  && pass "a preview draw leaves the pending file byte-identical" \
+  || fail "a preview draw leaves the pending file byte-identical" "$BEFORE_SUM" "$AFTER_SUM"
+
+echo "-- Test: re-lettered --options= on a pending card draws the question state --"
+PREVIEW_Q=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --options="$(printf '(a) Keep it as is.\n(b) Change it.')")
+printf '%s\n' "$PREVIEW_Q" | grep -q '^DIV=YOUR OPTIONS' \
+  && pass "re-lettered proposed options draw the question state" \
+  || fail "re-lettered proposed options draw the question state" "DIV=YOUR OPTIONS" "$PREVIEW_Q"
+PREVIEW_D=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --options="$(printf -- '- Keep it as is.\n- Change it.')")
+printf '%s\n' "$PREVIEW_D" | grep -q '^DIV=OPTIONS CONSIDERED' \
+  && pass "dashed proposed options draw the decision state" \
+  || fail "dashed proposed options draw the decision state" "DIV=OPTIONS CONSIDERED" "$PREVIEW_D"
+rm -rf "$ROOT"
+
 echo ""
 echo "=== Summary: $PASS_COUNT/$TOTAL passed ==="
 [ "$FAIL_COUNT" -eq 0 ]

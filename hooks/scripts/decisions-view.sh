@@ -46,7 +46,10 @@
 #       [--shipped-by=<story>]
 #     `fresh` reads decisions-capture.sh --dry-run's stdout on stdin: line 1
 #     is SLUG=, the rest is the record body. `pending` and `retire` take
-#     --file=<path> (a FILE= path decisions-list.sh emits). `reopen` takes
+#     --file=<path> (a FILE= path decisions-list.sh emits). `pending` also
+#     accepts the section flags: each one given replaces that section of
+#     the file for this draw only, nothing written - the preview of a
+#     changed pending card. `reopen` takes
 #     --file= for the base plus the proposed sections as flags, and diffs
 #     them against the file. State on a fresh card defaults to decision; on
 #     a pending card it is read from the file's own Options section
@@ -976,6 +979,13 @@ def render_card_data(opts):
     elif variant == 'pending':
         text = read_file_required(opts['file'])
         parsed = parse_record_text(text)
+        # Proposed sections replace the file's for this draw only - the
+        # same override the reopen face applies, so words that change a
+        # pending card have a data draw without a write. Applied before
+        # state detection, so re-lettered options draw the question state.
+        for key in ('title', 'context', 'options', 'decision', 'consequences'):
+            if opts[key] is not None:
+                parsed[key] = opts[key]
         dated_slug = dated_slug_from_path(opts['file'])
         options, is_lettered = parse_options(parsed['options'])
         state = opts['state'] or ('question' if is_lettered else 'decision')
