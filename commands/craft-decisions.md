@@ -83,7 +83,7 @@ digraph decisions {
     "User's move?" -> "Draw the retire card (claimed by / shipped by)" [label="words say retire"];
     "User's move?" -> "Draw the retire card (claimed by / shipped by)" [label="words on a retire card: redraw (nothing to reshape)"];
     "User's move?" -> "Draw the reopen card (diff against the file)" [label="words on a retire card that change the text: draw the reopen card"];
-    "User's move?" -> "Retired to archive/" [label="a) on a retire card: transition deprecate --quote, then offer slug removal to planning/ready claimants"];
+    "User's move?" -> "Retired to archive/" [label="a) on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
     "Selection in words -> list filters" -> "Refused: crafted law is frozen" [label="'retire ...' on crafted law: no card, the ruled words"];
     "Refused: crafted law is frozen" -> "Draw the decision card" [label="offer a fresh card"];
 
@@ -230,7 +230,7 @@ closing line, per the `### The drawing rule` section above.
 - Before a reopen or a retire card, call `decisions-list.sh --slug=<slug>` with the story scan on and pass `--claimed-by=<story>:<status>` from each claiming story's own `status:` (or `--shipped-by=<story>` for crafted law); capture still writes first and prints `Claimed: <story>` lines, which this command relays after the write.
 - Crafted law refuses retire before any card is drawn, in these words or as close as the record allows: "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should stop doing this, that's a new decision, and I'm happy to draw it up. Want the card?" - accepting offers a fresh decision card, the same as a crafted reopen.
 - Crafted law refuses reopen at `a)`, after the diff has been drawn, in the same words with the diff carried forward, or as close as the record allows: "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should change, that's a new decision, and I'm happy to draw it up with these changes. Want the card?" - accepting offers a fresh decision card seeded from the reopen's own diff. The script's `Error: <slug> is crafted` line is never relayed as the answer.
-- After `a) retire` moves claimed law to the archive, any claiming story whose status is `planning` or `ready` gets an offer to remove the slug from its own `decisions:` list - an inline edit of that one frontmatter line, made by this command itself, scoped to the slug and touching nothing else. A claimant whose status is `active` is told to read it again against the new meaning, and keeps its slug.
+- After `a) retire` moves claimed law to the archive, any claiming story whose status is `planning` or `ready` has the slug removed from its own `decisions:` list by this command in the same turn - an inline edit of that one frontmatter line, scoped to the slug and touching nothing else - and the user is told which story was edited. Never an offer: an unanswered second step is a trap for a user who clears the session or starts the story next. A claimant whose status is `active` is told to read it again against the new meaning, and keeps its slug.
 - "Changed" on a parked card means the card as last drawn differs from the file it came from; `b) keep pending` on an unchanged parked card writes nothing and says so.
 
 ## Receipts

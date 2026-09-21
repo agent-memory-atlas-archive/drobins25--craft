@@ -117,7 +117,7 @@ digraph decisions {
     "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words say retire"];
     "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words on a retire card: redraw (nothing to reshape)"];
     "User'"'"'s move?" -> "Draw the reopen card (diff against the file)" [label="words on a retire card that change the text: draw the reopen card"];
-    "User'"'"'s move?" -> "Retired to archive/" [label="a) on a retire card: transition deprecate --quote, then offer slug removal to planning/ready claimants"];
+    "User'"'"'s move?" -> "Retired to archive/" [label="a) on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
     "Selection in words -> list filters" -> "Refused: crafted law is frozen" [label="'"'"'retire ...'"'"' on crafted law: no card, the ruled words"];
     "Refused: crafted law is frozen" -> "Draw the decision card" [label="offer a fresh card"];
 
@@ -294,13 +294,14 @@ else
   fail "digraph edge names fresh decline as capture then transition decline" 'label="fresh, decline: capture, transition decline --quote"' "not found"
 fi
 
-echo "-- Test: the retire path — scanned list, crafted refusal, claimed/shipped, deprecate, slug offer --"
+echo "-- Test: the retire path — scanned list, crafted refusal, claimed/shipped, deprecate, slug removal --"
 grep_pass_below_fence "retire calls decisions-list.sh --slug= with the story scan on, before the card" "decisions-list\.sh --slug=.*scan|scan.*decisions-list\.sh --slug="
 grep_pass_below_fence "crafted retire refuses with the ruled words and draws no card" "already built.*shipped it|That one's already built"
 grep_pass_below_fence "crafted retire offers a fresh decision card" "fresh decision card"
 grep_pass_below_fence "claimed by / shipped by follows disposition" "claimed by|shipped by"
 grep_pass_below_fence "retire on a) calls decisions-transition.sh deprecate" "decisions-transition\.sh.*deprecate|transition.*deprecate"
-grep_pass_below_fence "planning or ready claimants get a slug-removal offer" "planning.*ready|planning or ready"
+grep_pass_below_fence "planning or ready claimants have the slug removed in the same turn" "has the slug removed from its own"
+grep_pass_below_fence "the removal is reported, never offered" "Never an offer"
 grep_pass_below_fence "an active claimant is told to read it again and keeps its slug" "read it again"
 
 echo "-- Test: the reopen path — scanned list + claimed-by BEFORE the card, Claimed: relay after write --"
