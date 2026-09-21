@@ -249,6 +249,8 @@ grep_pass_below_fence "one ruling per card" "[Oo]ne ruling per card"
 grep_pass_below_fence "Context verified against disk at presentation" "[Cc]ontext.*verified against disk"
 grep_pass_below_fence "words redraw the whole card" "redraw the whole card|whole card"
 grep_pass_below_fence "reopen redraws the diff instead" "reopen.*redraw.*diff|redraw.*diff.*reopen"
+grep_pass_below_fence "a redraw on words is a script draw, never a retype" "script draw, never a retype"
+grep_pass_below_fence "a changed pending card redraws via the pending face with section flags" "variant=pending --file=<path>.*--consequences="
 
 echo "-- Test: the four card-caliber rules --"
 grep_pass_below_fence "card stands alone for a reader who was not in the room" "not in the room"
