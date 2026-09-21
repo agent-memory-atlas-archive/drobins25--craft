@@ -117,7 +117,7 @@ digraph decisions {
     "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words say retire"];
     "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words on a retire card: redraw (nothing to reshape)"];
     "User'"'"'s move?" -> "Draw the reopen card (diff against the file)" [label="words on a retire card that change the text: draw the reopen card"];
-    "User'"'"'s move?" -> "Retired to archive/" [label="a) on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
+    "User'"'"'s move?" -> "Retired to archive/" [label="a) or plain assent on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
     "Selection in words -> list filters" -> "Refused: crafted law is frozen" [label="'"'"'retire ...'"'"' on crafted law: no card, the ruled words"];
     "Refused: crafted law is frozen" -> "Draw the decision card" [label="offer a fresh card"];
 
@@ -233,6 +233,8 @@ grep_pass_below_fence "file says answers are typed into the prompt" "typed into 
 echo "-- Test: words that name exactly one move perform it; two or ambiguous redraws --"
 grep_pass_below_fence "one writing move performs it after any pick or reshape" "exactly one writing move.*perform|perform.*exactly one writing move|plainly names exactly one writing move"
 grep_pass_below_fence "two moves or an ambiguous one redraws and asks" "two.*moves.*redraw|redraw.*two.*moves|ambiguous.*redraw"
+grep_pass_below_fence "plain assent on a one-move card performs that move" "exactly one move, words that agree without naming it"
+grep_pass_below_fence "plain assent on a many-move card redraws" "more than one move, the same words name nothing and redraw"
 
 echo "-- Test: Consequences follow the chosen option, never named by letter once dashed --"
 grep_pass_below_fence "Consequences are the chosen option's" "Consequences.*chosen option|chosen option.*Consequences"
