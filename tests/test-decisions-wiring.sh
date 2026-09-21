@@ -324,6 +324,8 @@ grep_pass_below_fence "a parked fork returns question-first" "question state|dra
 
 echo "-- Test: a fresh card with a live fork is question-then-decision; no alternatives is decision only --"
 grep_pass_below_fence "live fork drawn first in the question state, redrawn decision after the letter" "question state.*decision state|live fork.*question"
+grep_pass_below_fence "a live fork is a sentence that leaves the choice open" "leaves the choice open"
+grep_pass_below_fence "a stated decision is a ruling whatever alternative it names, drawn in the decision state" "ruling whatever alternative it names"
 grep_pass_below_fence "no real alternatives drawn straight in the decision state" "no real alternative|straight.*decision state"
 grep_pass_below_fence "the question card's keep-pending letter is capture with no quote" "capture.*no quote|keep pending.*capture"
 
