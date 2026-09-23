@@ -1600,6 +1600,21 @@ printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=The original context\.' \
   && pass "a preview draw leaves the pending file byte-identical" \
   || fail "a preview draw leaves the pending file byte-identical" "$BEFORE_SUM" "$AFTER_SUM"
 
+echo "-- Test: a long title wraps at the card width, one HEAD= per piece, so the rail never breaks --"
+LONG_FILE="$ROOT/.craft/decisions/2026-01-01-long-title.md"
+sed 's/^# Preview law$/# A failed payment is retried automatically up to 3 times before giving up/' "$PREVIEW_FILE" > "$LONG_FILE"
+TITLE_HEADS=$(bash "$VIEW" card --variant=pending --file="$LONG_FILE" | awk '/^HEAD=/{n++; if(n>=2) print substr($0,6)} /^DIV=/{exit}')
+TITLE_COUNT=$(printf '%s\n' "$TITLE_HEADS" | grep -c .)
+[ "$TITLE_COUNT" = "2" ] && pass "a 71-character title emits two HEAD= lines" || fail "a 71-character title emits two HEAD= lines" "2" "$TITLE_COUNT: $TITLE_HEADS"
+LONGEST=$(printf '%s\n' "$TITLE_HEADS" | awk '{ if (length($0)>m) m=length($0) } END {print m+0}')
+[ "$LONGEST" -le 65 ] && pass "every title piece is at or under the 65-column card width" || fail "every title piece is at or under the 65-column card width" "<=65" "$LONGEST"
+printf '%s\n' "$TITLE_HEADS" | tr '\n' ' ' | grep -q 'before giving up' && pass "the title's words survive the wrap in order" || fail "the title's words survive the wrap in order" "before giving up" "$TITLE_HEADS"
+printf '%s\n' "$TITLE_HEADS" | grep -q -E '^(up|giving)$' && fail "no one-word orphan title line" "none" "$TITLE_HEADS" || pass "no one-word orphan title line"
+SHORT_COUNT=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" | awk '/^HEAD=/{n++} /^DIV=/{exit} END{print n}')
+[ "$SHORT_COUNT" = "2" ] && pass "a short title still emits exactly one HEAD= line after the slug" || fail "a short title still emits exactly one HEAD= line after the slug" "2 HEAD= lines before CONTEXT" "$SHORT_COUNT"
+RETIRE_HEADS=$(bash "$VIEW" card --variant=retire --file="$LONG_FILE" | awk '/^HEAD=/{n++} /^DIV=/{exit} END{print n}')
+[ "$RETIRE_HEADS" = "3" ] && pass "the retire face wraps the same title the same way" || fail "the retire face wraps the same title the same way" "3" "$RETIRE_HEADS"
+
 echo "-- Test: re-lettered --options= on a pending card draws the question state --"
 PREVIEW_Q=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --options="$(printf '(a) Keep it as is.\n(b) Change it.')")
 printf '%s\n' "$PREVIEW_Q" | grep -q '^DIV=YOUR OPTIONS' \

@@ -1011,9 +1011,14 @@ def render_card_data(opts):
         kv("BAND", card_band_text(parsed['status'], parsed['tags'], parsed['source'], opts['new_group'])),
         kv("HEAD", dated_slug),
         kv("BLANK"),
-        kv("HEAD", parsed['title']),
-        kv("BLANK"),
     ]
+    # The title wraps at the card width like every body row, one HEAD=
+    # per piece, so a long title never soft-wraps in the terminal and
+    # drops its rail (the reopen face already does this on its diff
+    # path). The dated slug above stays whole: capture caps it.
+    for piece in (textwrap.wrap(parsed['title'], width=CARD_DATA_WIDTH, break_on_hyphens=False) or ['']):
+        lines.append(kv("HEAD", piece))
+    lines.append(kv("BLANK"))
     lines.extend(body_lines)
 
     if opts['claimed_by']:
