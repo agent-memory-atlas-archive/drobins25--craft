@@ -257,6 +257,8 @@ grep_pass_below_fence "a changed pending card redraws via the pending face with 
 echo "-- Test: the four card-caliber rules --"
 grep_pass_below_fence "card stands alone for a reader who was not in the room" "not in the room"
 grep_pass_below_fence "Context states the situation as it stands on disk today" "as it stands on disk today"
+grep_pass_below_fence "Context never names a tag - group and count live on the band and the Shelf" "Context never names a tag"
+grep_pass_below_fence "a retag touches no prose" "retag touches no prose"
 grep_pass_below_fence "options are complete alternatives in plain words" "complete alternative in plain words"
 grep_pass_below_fence "consequences name each option by what it cost, not its label" "why not the other options"
 
