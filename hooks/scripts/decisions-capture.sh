@@ -293,12 +293,9 @@ if [ "$MODE" = "create" ]; then
 
   if [ -n "$DRY_RUN" ]; then
     echo "SLUG=${DATE}-${FINAL_SLUG}"
-    OUT_TARGET=/dev/stdout
-  else
-    OUT_TARGET="$TARGET_FILE"
   fi
 
-  {
+  render_record_body() {
     echo "---"
     echo "type: decision"
     echo "status: $STATUS"
@@ -324,7 +321,16 @@ if [ "$MODE" = "create" ]; then
     if [ -n "$QUOTE" ]; then
       echo "> \"$QUOTE\" - $DATE, $SOURCE"
     fi
-  } > "$OUT_TARGET"
+  }
+
+  # The eval sandbox refuses to open /dev/stdout by path (macOS Seatbelt),
+  # so the dry run prints the body directly instead of redirecting to it.
+  # The real write still redirects to its target file exactly as before.
+  if [ -n "$DRY_RUN" ]; then
+    render_record_body
+  else
+    render_record_body > "$TARGET_FILE"
+  fi
 
   if [ -z "$DRY_RUN" ]; then
     echo "$TARGET_FILE"

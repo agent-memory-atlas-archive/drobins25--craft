@@ -20,92 +20,283 @@ argument-hint: "[tag or topic] or empty for the Shelf"
 
 # Decisions
 
-The desk of decisions. Claude draws every frame from `decisions-view.sh`'s
-data, following the `### The drawing rule` section below - a left rail
-with horizontal rules, no right edge, no fixed width, quoted words
-verbatim. A decision is
+Claude draws every card and list frame from the graph's own draw calls,
+following `### The drawing rule` below - a left rail with horizontal rules,
+no right edge, no fixed width, quoted words verbatim. A decision is
 presented as a card: the exact record it would become. Nothing here writes
-a record file directly - every write is `decisions-capture.sh` or
-`decisions-transition.sh`.
+a record file directly - every write is a call this graph names.
 
 This shell owns only routing.
+
+## The rules that never bend
+
+```
+<HARD-GATE>
+NEVER use AskUserQuestion here - the answer is typed into the prompt.
+NEVER write a record file by hand - every write is a call on the graph.
+NEVER draw a card from memory - a redraw is a fresh script draw.
+NEVER let a box-drawing character into a script's stdout - the rail is drawn here.
+NEVER relay a script's error line as the answer.
+NEVER render anything below the Shelf unasked.
+NEVER select with subcommand syntax - selection is the list filters.
+NEVER draw a card, take a quote or write an approval line for a retag.
+</HARD-GATE>
+```
+
+## Words the graph uses
+
+Every word an arrow carries, and every word a diamond's name uses. One line
+each, no sentence longer than its rule.
+
+- **bare** - the command invoked with no words after it.
+- **words** - anything the user typed, on the invocation or on a card, that is not a letter.
+- **a record** - words that name or filter decision records.
+- **the archive** - words asking what was declined or retired.
+- **a retag** - words naming record(s) and a tag to move them to.
+- **declined / retired / both** - which room of the archive the words asked for; **both** is the same call twice, declined then retired.
+- **records** - the user named the records themselves.
+- **a group** - the user named a tag instead, and its records are looked up.
+- **a block** - one nine-key record block in the list output already in hand; the count is read off that output, never from a fresh filter.
+- **one / several / zero** - how many blocks the filter matched.
+- **a face** - which card the record calls for: pending, a reshape, or a retire.
+- **pending** - the record sits in the root, not yet ruled.
+- **law** - the record sits in approved/, already ruled.
+- **a reshape** - words that change the record's own text.
+- **a retire** - words asking to move law to the archive.
+- **lettered / dashed** - the record's own Options section: `(a)` `(b)` `(c)` lines with one `Proposed:` is lettered, `- ` lines or an empty section is dashed.
+- **a live fork** - a sentence that leaves the choice open.
+- **no fork** - a sentence that says what to do, whatever alternative it names.
+- **fresh** - the card was drawn from the conversation and is not yet a file.
+- **parked** - the card was drawn from a record in the root.
+- **as filed** - the parked card still reads as its file does.
+- **reshaped** - the parked card has been redrawn on the user's words and no longer matches its file.
+- **a move** - what the user did with the card on screen.
+- **a letter** - a typed `a`, `b` or `c`, always a move, never a reference to the record's own option text.
+- **a writing move** - words that plainly name approve, keep pending or decline; two named moves, or one named ambiguously, is **words**.
+- **approve / keep pending / decline** - which writing move was named.
+- **agreement** - words that agree without naming a move ("yes", "okay, do that", "go ahead"). On a card with exactly one move they are that move: **a letter** on the retire card, **a rewrite** on the reopen card, **keep pending** on a question card. On a card with more than one move they are **words**.
+- **a rewrite** - `a)` on a reopen card.
+- **words that change the text / words that change nothing** - on a retire card, whether the user's words alter the record's own text.
+- **crafted / not crafted** - the record's derived disposition: crafted means a story shipped it.
+- **the typed answer** - the user's literal words, a bare letter included, carried as the quote.
+
+Seven rows, keyed by card face. It is a definition of what each card's draw
+node means, so it sits here where it is read before the graph, never below
+where it would have to be looked up. The table decides no routing.
+
+| Card face | Flags on the draw node |
+|---|---|
+| fresh question card | `--variant=fresh --state=question --proposed=<letter>`, reading the dry run on stdin |
+| fresh decision card | `--variant=fresh --state=decision`, reading the dry run on stdin; `--new-group=<tag>` when the tag check came back empty |
+| parked question card | `--variant=pending --file=<path>` |
+| parked decision card, as filed | `--variant=pending --file=<path>` |
+| parked decision card, reshaped | `--variant=pending --file=<path>` plus one section flag per changed section (`--context=` `--options=` `--decision=` `--consequences=` `--title=`), which replaces that section for the draw only |
+| reopen card | `--variant=reopen --file=<path>` plus the proposed sections as flags, diffed against the file |
+| retire card | `--variant=retire --file=<path> --claimed-by=<story>:<status>` per claiming story, or `--shipped-by=<story>` for crafted law |
+
+## How to read the graph
+
+The six double circles at the bottom are the only writes; a path that does
+not reach one wrote nothing. A card state's own draw call hangs off it as a
+leaf with no arrow out - that call is how the state is drawn, not a step
+towards somewhere else, which is why arriving at a state a second time
+redraws it. Eight arrows leave a command node carrying a label: those are
+the calls two paths share, and the label repeats the answer that got you
+there so a walk never forks by accident. The one red octagon inside the
+graph is the rule that sits on a path; the rest are above, where nothing
+routes to them.
 
 ## Flow
 
 ```dot
 digraph decisions {
-    "Draw the Shelf (list | view shelf)" [shape=box];
-    "Selection in words -> list filters" [shape=box];
-    "Draw the archive under the Shelf" [shape=box];
-    "Draw the question card" [shape=box];
-    "Draw the decision card" [shape=box];
-    "Draw the reopen card (diff against the file)" [shape=box];
-    "Draw the retire card (claimed by / shipped by)" [shape=box];
-    "Draw the match drawer (decisions-view.sh match)" [shape=box];
-    "No match: answer in words" [shape=box];
-    "User's move?" [shape=diamond];
-    "Card came from the root and changed?" [shape=diamond];
+    "Command invoked" [shape=doublecircle];
+    "Ruling in conversation" [shape=doublecircle];
+
+    "Words with the invocation?" [shape=diamond];
+    "What do the words ask for?" [shape=diamond];
+    "Which archive words?" [shape=diamond];
+    "Named records or a group?" [shape=diamond];
+    "How many blocks matched?" [shape=diamond];
+    "Which face does the record call for?" [shape=diamond];
+    "Lettered or dashed options?" [shape=diamond];
+    "Live fork?" [shape=diamond];
+    "Move on the fresh question card?" [shape=diamond];
+    "Move on the fresh decision card?" [shape=diamond];
+    "Which move on a fresh card?" [shape=diamond];
+    "Move on the parked question card?" [shape=diamond];
+    "Move on the parked decision card as filed?" [shape=diamond];
+    "Which move on a parked card as filed?" [shape=diamond];
+    "Move on the parked decision card reshaped?" [shape=diamond];
+    "Which move on a reshaped parked card?" [shape=diamond];
+    "Move on the reopen card?" [shape=diamond];
+    "Move on the retire card?" [shape=diamond];
+    "Rewriting: crafted?" [shape=diamond];
+    "Retiring: crafted?" [shape=diamond];
+
+    "Shelf on screen" [shape=ellipse];
+    "Archive on screen under the Shelf" [shape=ellipse];
+    "Match drawer on screen" [shape=ellipse];
+    "Fresh question card on screen" [shape=ellipse];
+    "Fresh decision card on screen" [shape=ellipse];
+    "Parked question card on screen" [shape=ellipse];
+    "Parked decision card on screen, as filed" [shape=ellipse];
+    "Parked decision card on screen, reshaped" [shape=ellipse];
+    "Reopen card on screen" [shape=ellipse];
+    "Retire card on screen" [shape=ellipse];
+
+    "Map the named row back to its block SLUG=" [shape=box];
+    "Name the filter back, the nearest group by spelling, and a count of the rest" [shape=box];
+    "Announce NEW GROUP and offer a fresh card tagged with the filter" [shape=box];
+    "Take each SLUG= as the positional list" [shape=box];
+    "Re-author the options as dashes and the Decision as the pick" [shape=box];
+    "Write nothing and say so" [shape=box];
+    "Refuse in the ruled words and offer a fresh decision card" [shape=box];
+    "Remove the slug from each planning or ready claimant and say so" [shape=box];
+
+    "NEVER rewrite or retire crafted law" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
+
+    "decisions-list.sh | decisions-view.sh shelf" [shape=plaintext];
+    "decisions-list.sh --tag=<tag> --status=<status> --slug=<slug> --room=<room> --disposition=<disposition>" [shape=plaintext];
+    "decisions-list.sh --room=archive | decisions-view.sh archive --only=<the answer>" [shape=plaintext];
+    "decisions-view.sh match --words=<the words searched>" [shape=plaintext];
+    "decisions-list.sh --slug=<slug>" [shape=plaintext];
+    "decisions-list.sh --tag=<source> --no-scan" [shape=plaintext];
+    "decisions-list.sh --tag=<tag> --no-scan" [shape=plaintext];
+    "decisions-transition.sh <slug>[,<slug>...] retag --tag=<target>" [shape=plaintext];
+    "decisions-list.sh --tag=<target> | decisions-view.sh group" [shape=plaintext];
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --dry-run | decisions-view.sh card --variant=fresh" [shape=plaintext];
+    "decisions-view.sh card --variant=<face> --file=<path>" [shape=plaintext];
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" [shape=plaintext];
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --quote=<the typed answer>" [shape=plaintext];
+    "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences=" [shape=plaintext];
+    "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences= --quote=<the typed answer>" [shape=plaintext];
+    "decisions-transition.sh <slug> accept --quote=<the typed answer>" [shape=plaintext];
+    "decisions-transition.sh <slug> decline --quote=<the typed answer>" [shape=plaintext];
+    "decisions-transition.sh <slug> deprecate --quote=<the typed answer>" [shape=plaintext];
+
     "Filed pending in the root" [shape=doublecircle];
     "Filed as law in approved/" [shape=doublecircle];
     "Filed declined in archive/" [shape=doublecircle];
     "Rewritten in place" [shape=doublecircle];
     "Retagged in place" [shape=doublecircle];
     "Retired to archive/" [shape=doublecircle];
-    "Refused: crafted law is frozen" [shape=box];
 
-    "Draw the Shelf (list | view shelf)" -> "Selection in words -> list filters";
-    "Selection in words -> list filters" -> "Draw the archive under the Shelf" [label="'declined', 'retired'"];
-    "Selection in words -> list filters" -> "Draw the question card" [label="pending, lettered options"];
-    "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
-    "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
-    "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'retire ...'"];
-    "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
-    "Selection in words -> list filters" -> "Draw the match drawer (decisions-view.sh match)" [label="several blocks matched"];
-    "Draw the match drawer (decisions-view.sh match)" -> "Selection in words -> list filters" [label="user names one: resolves as a single match"];
-    "Selection in words -> list filters" -> "No match: answer in words" [label="zero blocks matched"];
-    "No match: answer in words" -> "Draw the decision card" [label="offer a fresh card, new group"];
+    "Command invoked" -> "Words with the invocation?";
+    "Words with the invocation?" -> "decisions-list.sh | decisions-view.sh shelf" [label="bare"];
+    "Words with the invocation?" -> "What do the words ask for?" [label="words"];
+    "decisions-list.sh | decisions-view.sh shelf" -> "Shelf on screen";
+    "Shelf on screen" -> "What do the words ask for?";
 
-    "A ruling in conversation" -> "Draw the question card" [label="live fork"];
-    "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
+    "What do the words ask for?" -> "Which archive words?" [label="the archive"];
+    "What do the words ask for?" -> "Named records or a group?" [label="a retag"];
+    "What do the words ask for?" -> "decisions-list.sh --tag=<tag> --status=<status> --slug=<slug> --room=<room> --disposition=<disposition>" [label="a record"];
 
-    "Draw the question card" -> "User's move?";
-    "Draw the decision card" -> "User's move?";
-    "Draw the reopen card (diff against the file)" -> "User's move?";
-    "Draw the retire card (claimed by / shipped by)" -> "User's move?";
+    "Which archive words?" -> "decisions-list.sh --room=archive | decisions-view.sh archive --only=<the answer>" [label="declined"];
+    "Which archive words?" -> "decisions-list.sh --room=archive | decisions-view.sh archive --only=<the answer>" [label="retired"];
+    "Which archive words?" -> "decisions-list.sh --room=archive | decisions-view.sh archive --only=<the answer>" [label="both"];
+    "decisions-list.sh --room=archive | decisions-view.sh archive --only=<the answer>" -> "Archive on screen under the Shelf";
 
-    "User's move?" -> "Draw the question card" [label="words on a question card: redraw"];
-    "User's move?" -> "Draw the decision card" [label="a letter picks an option: redraw as decision"];
-    "User's move?" -> "Draw the decision card" [label="words on a decision card: redraw"];
-    "User's move?" -> "Draw the reopen card (diff against the file)" [label="words on a reopen card: redraw the diff"];
-    "User's move?" -> "Card came from the root and changed?" [label="approve / keep pending / decline (letter or plain words)"];
-    "User's move?" -> "Rewritten in place" [label="a) on a reopen card: capture --reopen --quote"];
-    "User's move?" -> "Refused: crafted law is frozen" [label="a) on a reopen card, record is crafted"];
-    "User's move?" -> "Draw the retire card (claimed by / shipped by)" [label="words say retire"];
-    "User's move?" -> "Draw the retire card (claimed by / shipped by)" [label="words on a retire card: redraw (nothing to reshape)"];
-    "User's move?" -> "Draw the reopen card (diff against the file)" [label="words on a retire card that change the text: draw the reopen card"];
-    "User's move?" -> "Retired to archive/" [label="a) or plain assent on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
-    "Selection in words -> list filters" -> "Refused: crafted law is frozen" [label="'retire ...' on crafted law: no card, the ruled words"];
-    "Refused: crafted law is frozen" -> "Draw the decision card" [label="offer a fresh card"];
+    "Named records or a group?" -> "decisions-list.sh --tag=<tag> --no-scan" [label="records"];
+    "Named records or a group?" -> "decisions-list.sh --tag=<source> --no-scan" [label="a group"];
+    "decisions-list.sh --tag=<source> --no-scan" -> "Take each SLUG= as the positional list";
+    "Take each SLUG= as the positional list" -> "decisions-list.sh --tag=<tag> --no-scan";
+    "decisions-list.sh --tag=<tag> --no-scan" -> "decisions-transition.sh <slug>[,<slug>...] retag --tag=<target>" [label="a retag"];
+    "decisions-list.sh --tag=<tag> --no-scan" -> "Live fork?" [label="a card"];
+    "decisions-transition.sh <slug>[,<slug>...] retag --tag=<target>" -> "decisions-list.sh --tag=<target> | decisions-view.sh group";
+    "decisions-list.sh --tag=<target> | decisions-view.sh group" -> "Retagged in place";
 
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="fresh, approve: capture --quote"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="fresh, keep pending: capture"];
-    "Card came from the root and changed?" -> "Filed declined in archive/" [label="fresh, decline: capture, transition decline --quote"];
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="parked, changed, approve: capture --reopen (root), transition accept --quote"];
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="parked, unchanged, approve: transition accept --quote"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="parked, changed, keep pending: capture --reopen (root)"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="parked, unchanged, keep pending: nothing, say so"];
-    "Card came from the root and changed?" -> "Filed declined in archive/" [label="parked, decline: transition decline --quote"];
+    "decisions-list.sh --tag=<tag> --status=<status> --slug=<slug> --room=<room> --disposition=<disposition>" -> "How many blocks matched?";
+    "How many blocks matched?" -> "Which face does the record call for?" [label="one"];
+    "How many blocks matched?" -> "decisions-view.sh match --words=<the words searched>" [label="several"];
+    "How many blocks matched?" -> "Name the filter back, the nearest group by spelling, and a count of the rest" [label="zero"];
+    "decisions-view.sh match --words=<the words searched>" -> "Match drawer on screen";
+    "Match drawer on screen" -> "Map the named row back to its block SLUG=";
+    "Map the named row back to its block SLUG=" -> "Which face does the record call for?";
+    "Name the filter back, the nearest group by spelling, and a count of the rest" -> "Announce NEW GROUP and offer a fresh card tagged with the filter";
+    "Announce NEW GROUP and offer a fresh card tagged with the filter" -> "decisions-list.sh --tag=<tag> --no-scan";
+
+    "Which face does the record call for?" -> "Lettered or dashed options?" [label="pending"];
+    "Which face does the record call for?" -> "decisions-list.sh --slug=<slug>" [label="a reshape"];
+    "Which face does the record call for?" -> "Retiring: crafted?" [label="a retire"];
+    "Lettered or dashed options?" -> "Parked question card on screen" [label="lettered"];
+    "Lettered or dashed options?" -> "Parked decision card on screen, as filed" [label="dashed"];
+    "decisions-list.sh --slug=<slug>" -> "Reopen card on screen" [label="a reshape"];
+    "decisions-list.sh --slug=<slug>" -> "Retire card on screen" [label="a retire"];
+
+    "Ruling in conversation" -> "decisions-list.sh --tag=<tag> --no-scan";
+    "Live fork?" -> "Fresh question card on screen" [label="a live fork"];
+    "Live fork?" -> "Fresh decision card on screen" [label="no fork"];
+
+    "Fresh question card on screen" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --dry-run | decisions-view.sh card --variant=fresh";
+    "Fresh decision card on screen" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --dry-run | decisions-view.sh card --variant=fresh";
+    "Parked question card on screen" -> "decisions-view.sh card --variant=<face> --file=<path>";
+    "Parked decision card on screen, as filed" -> "decisions-view.sh card --variant=<face> --file=<path>";
+    "Parked decision card on screen, reshaped" -> "decisions-view.sh card --variant=<face> --file=<path>";
+    "Reopen card on screen" -> "decisions-view.sh card --variant=<face> --file=<path>";
+    "Retire card on screen" -> "decisions-view.sh card --variant=<face> --file=<path>";
+
+    "Fresh question card on screen" -> "Move on the fresh question card?";
+    "Fresh decision card on screen" -> "Move on the fresh decision card?";
+    "Parked question card on screen" -> "Move on the parked question card?";
+    "Parked decision card on screen, as filed" -> "Move on the parked decision card as filed?";
+    "Parked decision card on screen, reshaped" -> "Move on the parked decision card reshaped?";
+    "Reopen card on screen" -> "Move on the reopen card?";
+    "Retire card on screen" -> "Move on the retire card?";
+
+    "Move on the fresh question card?" -> "Fresh decision card on screen" [label="a letter"];
+    "Move on the fresh question card?" -> "Fresh question card on screen" [label="words"];
+    "Move on the fresh question card?" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" [label="keep pending"];
+
+    "Move on the fresh decision card?" -> "Fresh decision card on screen" [label="words"];
+    "Move on the fresh decision card?" -> "Which move on a fresh card?" [label="a writing move"];
+    "Which move on a fresh card?" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --quote=<the typed answer>" [label="approve"];
+    "Which move on a fresh card?" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" [label="keep pending"];
+    "Which move on a fresh card?" -> "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" [label="decline"];
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences= --quote=<the typed answer>" -> "Filed as law in approved/";
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" -> "Filed pending in the root" [label="keep pending"];
+    "decisions-capture.sh <title> --tag=<tag> --context= --options= --decision= --consequences=" -> "decisions-transition.sh <slug> decline --quote=<the typed answer>" [label="decline"];
+    "decisions-transition.sh <slug> decline --quote=<the typed answer>" -> "Filed declined in archive/";
+
+    "Move on the parked question card?" -> "Re-author the options as dashes and the Decision as the pick" [label="a letter"];
+    "Move on the parked question card?" -> "Parked question card on screen" [label="words"];
+    "Move on the parked question card?" -> "Write nothing and say so" [label="keep pending"];
+    "Re-author the options as dashes and the Decision as the pick" -> "Parked decision card on screen, reshaped";
+    "Write nothing and say so" -> "Filed pending in the root";
+
+    "Move on the parked decision card as filed?" -> "Parked decision card on screen, reshaped" [label="words"];
+    "Move on the parked decision card as filed?" -> "Which move on a parked card as filed?" [label="a writing move"];
+    "Which move on a parked card as filed?" -> "decisions-transition.sh <slug> accept --quote=<the typed answer>" [label="approve"];
+    "Which move on a parked card as filed?" -> "Write nothing and say so" [label="keep pending"];
+    "Which move on a parked card as filed?" -> "decisions-transition.sh <slug> decline --quote=<the typed answer>" [label="decline"];
+    "decisions-transition.sh <slug> accept --quote=<the typed answer>" -> "Filed as law in approved/";
+
+    "Move on the parked decision card reshaped?" -> "Parked decision card on screen, reshaped" [label="words"];
+    "Move on the parked decision card reshaped?" -> "Which move on a reshaped parked card?" [label="a writing move"];
+    "Which move on a reshaped parked card?" -> "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences=" [label="approve"];
+    "Which move on a reshaped parked card?" -> "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences=" [label="keep pending"];
+    "Which move on a reshaped parked card?" -> "decisions-transition.sh <slug> decline --quote=<the typed answer>" [label="decline"];
+    "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences=" -> "decisions-transition.sh <slug> accept --quote=<the typed answer>" [label="approve"];
+    "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences=" -> "Filed pending in the root" [label="keep pending"];
+
+    "Move on the reopen card?" -> "Reopen card on screen" [label="words"];
+    "Move on the reopen card?" -> "Rewriting: crafted?" [label="a rewrite"];
+    "Move on the reopen card?" -> "Retiring: crafted?" [label="a retire"];
+    "Rewriting: crafted?" -> "NEVER rewrite or retire crafted law" [label="crafted"];
+    "Rewriting: crafted?" -> "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences= --quote=<the typed answer>" [label="not crafted"];
+    "decisions-capture.sh --reopen=<slug> --context= --options= --decision= --consequences= --quote=<the typed answer>" -> "Rewritten in place";
+    "Retiring: crafted?" -> "NEVER rewrite or retire crafted law" [label="crafted"];
+    "Retiring: crafted?" -> "decisions-list.sh --slug=<slug>" [label="not crafted"];
+    "NEVER rewrite or retire crafted law" -> "Refuse in the ruled words and offer a fresh decision card";
+    "Refuse in the ruled words and offer a fresh decision card" -> "decisions-list.sh --tag=<tag> --no-scan";
+
+    "Move on the retire card?" -> "Retire card on screen" [label="words that change nothing"];
+    "Move on the retire card?" -> "Reopen card on screen" [label="words that change the text"];
+    "Move on the retire card?" -> "decisions-transition.sh <slug> deprecate --quote=<the typed answer>" [label="a letter"];
+    "decisions-transition.sh <slug> deprecate --quote=<the typed answer>" -> "Remove the slug from each planning or ready claimant and say so";
+    "Remove the slug from each planning or ready claimant and say so" -> "Retired to archive/";
 }
 ```
-
-Boxes are things this shell draws, diamonds are the two questions it ever
-asks itself, double circles are the writes. The Shelf, archive and
-retag-receipt boxes are drawn by Claude from `decisions-view.sh`'s data,
-following the `### The drawing rule` section below. The question, decision,
-reopen and retire card boxes all draw the same way, from `decisions-view.sh
-card`'s data. The reopen card's diff rows carry a `MARK=` key the drawing
-rule below colours; `decisions-view.sh` itself emits no colour.
-"Changed" means the card as last drawn differs from the file it came from.
 
 ### The drawing rule
 
@@ -142,8 +333,8 @@ rule below colours; `decisions-view.sh` itself emits no colour.
   never re-wrapped.
 - **Reopen diff:** each diff row carries a `MARK=` key alongside its
   `ROW=`/`HEAD=` value - a removed row draws red, an added row draws
-  green, an unmarked row draws plain. `decisions-view.sh` emits the marker
-  only; colour is drawn here, never by the script.
+  green, an unmarked row draws plain. The marker is emitted by the call
+  that draws the card; colour is drawn here, never by that call.
 - **Blank rail lines:** `│` alone (no trailing spaces) between groups,
   between card sections, after the header band's content, and before the
   closing line of YOUR MOVE.
@@ -165,51 +356,6 @@ rule below colours; `decisions-view.sh` itself emits no colour.
   box-drawing character in any script's stdout.** This file, by contrast,
   MUST show the rail characters - it is where Claude reads the shape from.
 
-## Selection
-
-Bare invocation is one unfiltered `decisions-list.sh` call piped into
-`decisions-view.sh shelf`. Nothing renders below the Shelf unless asked.
-
-Selection is conversational and maps to `decisions-list.sh`'s own filters -
-`--tag=` `--status=` `--slug=` `--room=` `--disposition=` - never subcommand
-syntax.
-
-A selection headed for a card resolves to exactly one record before anything
-draws: the desk reads the block count off the `decisions-list.sh` output it
-already holds and routes on that count before drawing anything. One block
-draws the card as today, unchanged. Several blocks draw
-`decisions-view.sh match --words="<the words searched>"` over that same list
-output, per the drawing rule above, and the desk asks; the answer names one
-of the drawer's rows, which maps back to the `SLUG=` of the block that row
-came from - the list output already in hand, never a fresh filter over the
-words. Zero blocks are never piped into `decisions-view.sh shelf` - that view
-is for a store with no records at all, not a selection that missed, so a
-zero-block result is answered in words instead, no frame drawn: the desk
-names the filter back, names the nearest group by spelling plus a count of
-the remaining groups (never a full dump of every group), and offers a fresh
-card tagged with it, announced as a NEW GROUP. This rule governs a selection
-headed for a card only; the archive below and a retag's own resolution are
-unaffected.
-
-The archive is reached only in words, printed under the Shelf: "what did we
-decline" maps to `decisions-list.sh --room=archive` piped into
-`decisions-view.sh archive --only=declined`; "what did we retire" to
-`--only=retired`; "show the archive" or "what's in the archive" prints both.
-
-Words naming one or more records and a tag - "move decision-1 to
-wright-journal", "put these two in wright-journal" - call
-`decisions-transition.sh <slug>[,<slug>...] retag --tag=<target>`: no card is
-drawn, no quote is taken, and no approval line is written. Naming a source
-group instead of specific records resolves through
-`decisions-list.sh --tag=<source> --no-scan`, whose `SLUG=` lines become the
-comma-separated positional list; the script itself takes no separate flag
-for the source. The NEW GROUP check (`decisions-list.sh --tag=<target>
---no-scan`, empty before the write) runs before the move, exactly as it does
-on a card. After the write, the receipt line is followed by the target
-group's rows, drawn from `decisions-list.sh --tag=<target> |
-decisions-view.sh group` - one Shelf drawer with no header band and no
-closing line, per the `### The drawing rule` section above.
-
 ## The card
 
 - One ruling per card - a card carrying several decisions is split into two cards; Context is verified against disk at presentation time.
@@ -217,21 +363,18 @@ closing line, per the `### The drawing rule` section above.
 - Context states the situation the decision answers, as it stands on disk today. The pending-format record's "why this is in front of you" is read as the state of the files right now, not the history of the conversation that arrived here - never "we discussed", never a session narrative, never a reference to what was on screen a moment ago. Context never names a tag: it does not say which group this record is in or how many records that group holds - the header band and the Shelf carry both, read live - and a retag touches no prose. A sibling ruling is cited by what it rules. An older record that does state its group is read as dated, not as a broken premise, and is not flagged.
 - Every option is a complete alternative in plain words - a reader chooses between them without opening anything else. An option that only reads as a modification of the one above it is not an alternative; either write it out whole or fold it in.
 - Consequences say what follows from the ruling, including why not the other options - each named by what it would have cost, not by its label. Concrete implementation specifics that surface while writing them do not belong here: they go in the Decision's `Ideas to consider, not ruled:` block, which is the outlet for exactly that material.
-- The answer is typed into the prompt - AskUserQuestion is never used anywhere in this flow. A typed letter is always a move, never a reference to `(a)`/`(b)`/`(c)` text sitting inside a record's own Options section.
-- Any other words are the user's words: they redraw the whole card and file nothing - except on a reopen card, where they redraw the diff instead. The redraw is a script draw, never a retype of the last card: a fresh card reruns `decisions-capture.sh --dry-run` with the changed sections piped into `decisions-view.sh card --variant=fresh`; a pending card calls `decisions-view.sh card --variant=pending --file=<path>` with each changed section passed as its flag (`--context=`, `--options=`, `--decision=`, `--consequences=`, `--title=`), which replaces that section for the draw only.
-- A sentence that plainly names exactly one writing move (approve, keep pending, decline, retire) performs it, after any pick or reshape it carries; a sentence naming two writing moves, or naming one ambiguously, redraws the card and asks - it does not guess. On a card with exactly one move, words that agree without naming it ("okay, do that", "yes", "go ahead") perform that move - the card was the confirmation, and yes can only mean the one thing on it. On a card with more than one move, the same words name nothing and redraw the card.
-- A fresh card with a live fork draws first in the question state and redraws in the decision state once a letter lands; a card with no real alternatives draws straight in the decision state. A live fork is a sentence that leaves the choice open. A sentence that says what to do is a ruling whatever alternative it names ("retry up to 3 times, versus failing immediately" is a ruling for retrying): the named alternative goes to Consequences as the path not chosen, and the card draws in the decision state. The question card's own keep-pending letter is `decisions-capture.sh` with no quote - the same call the decision card's b) makes.
-- A pending record picked from the Shelf draws `--variant=pending`; options lettered `(a)`, `(b)`, `(c)` with one `Proposed:` draws the question state, `- ` dashes draws the decision state - the file's own shape tells the two apart, and picking a letter re-authors the Options as dashes and the Decision as the pick.
-- Sections handed to `decisions-capture.sh` are prose, one paragraph per idea, written the way every other craft markdown file is written - no hand wrapping, the card reflows on draw. A card with one option or none has no fork and is authored dashed from the start.
+- Consequences carries the named alternative as the path not chosen, when a ruling states one it rejected.
+- The sections a card is built from are prose, one paragraph per idea, written the way every other craft markdown file is written - no hand wrapping, the card reflows on draw. A card with one option or none has no fork and is authored dashed from the start.
 - Consequences are always the chosen option's; once the options are dashes, they name the other options by what they are, never by letter.
 - The Decision section opens with the ruling in the human's terms and nothing they did not agree to, optionally followed, inside the same section, by the fixed label `Ideas to consider, not ruled:` with two to four lines of the writer's own specifics, taken from the first draft and never invented for the block - that block is not law.
-- Every decision carries exactly one tag; a second tag is offered only when an existing record can be named as the reason. A tag no record carries is announced NEW GROUP - checked with `decisions-list.sh --tag=<tag> --no-scan` and passed as `--new-group=` to the card when the answer is empty - and the user can rename it in words like anything else on the card.
-- The Context carries an exhibit only when one actually makes sense; an exhibit is never invented to fill the section. `--quote=` carries the user's literal typed answer, a bare letter included.
-- Before a reopen or a retire card, call `decisions-list.sh --slug=<slug>` with the story scan on and pass `--claimed-by=<story>:<status>` from each claiming story's own `status:` (or `--shipped-by=<story>` for crafted law); capture still writes first and prints `Claimed: <story>` lines, which this command relays after the write.
-- Crafted law refuses retire before any card is drawn, in these words or as close as the record allows: "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should stop doing this, that's a new decision, and I'm happy to draw it up. Want the card?" - accepting offers a fresh decision card, the same as a crafted reopen.
-- Crafted law refuses reopen at `a)`, after the diff has been drawn, in the same words with the diff carried forward, or as close as the record allows: "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should change, that's a new decision, and I'm happy to draw it up with these changes. Want the card?" - accepting offers a fresh decision card seeded from the reopen's own diff. The script's `Error: <slug> is crafted` line is never relayed as the answer.
-- After `a) retire` moves claimed law to the archive, any claiming story whose status is `planning` or `ready` has the slug removed from its own `decisions:` list by this command in the same turn - an inline edit of that one frontmatter line, scoped to the slug and touching nothing else - and the user is told which story was edited. Never an offer: an unanswered second step is a trap for a user who clears the session or starts the story next. A claimant whose status is `active` is told to read it again against the new meaning, and keeps its slug.
-- "Changed" on a parked card means the card as last drawn differs from the file it came from; `b) keep pending` on an unchanged parked card writes nothing and says so.
+- Every decision carries exactly one tag; a second tag is offered only when an existing record can be named as the reason. A tag no record carries is announced as a NEW GROUP. Once a tag is on the card, the user can rename it in words like anything else on the card.
+- The Context carries an exhibit only when one actually makes sense; an exhibit is never invented to fill the section.
+- A claiming story whose status is `planning` or `ready` has the slug removed from its own `decisions:` list by this command in the same turn - an inline edit of that one frontmatter line, scoped to the slug and touching nothing else - and the user is told which story was edited. Never an offer: an unanswered second step is a trap for a user who clears the session or starts the story next. A claimant whose status is `active` is told to read it again against the new meaning, and keeps its slug.
+
+### Refusal wording
+
+- **Retire, crafted:** "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should stop doing this, that's a new decision, and I'm happy to draw it up. Want the card?" - or as close as the record allows.
+- **Reopen, crafted:** "That one's already built. <story> shipped it, so the record is the history of why the code looks the way it does, and history stays. If the product should change, that's a new decision, and I'm happy to draw it up with these changes. Want the card?" - or as close as the record allows, with the diff carried forward.
 
 ## Receipts
 
@@ -248,6 +391,9 @@ line come the target group's rows - the tag, then each record's glyph and
 slug as the Shelf would show them - so the moved record is seen where it
 landed. When every named record was already on the target, it prints
 `Okay - nothing to move, M already there` instead, and no rows follow.
+
+A write on a claimed record prints `Claimed: <story>` lines, one per
+claiming story, relayed after the write exactly as printed.
 
 ## Not this file's job
 

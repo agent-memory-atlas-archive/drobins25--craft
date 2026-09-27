@@ -1,11 +1,18 @@
 #!/bin/bash
-# test-decisions-wiring.sh — Doc-grep coverage for /craft:decisions wiring
+# test-decisions-wiring.sh - Structural coverage for /craft:decisions wiring
 #
-# Mirrors tests/test-dial-wiring.sh's shape: the command file is a doc, not
-# code, so its load-bearing rules are frozen by grepping for the literal
-# sentences the story's Contracts require, plus a byte-for-byte diff of the
-# routing digraph against a copy embedded here (never read from the story
-# file at test time, since story files move when a cycle completes).
+# The command file's routing rule now lives ONLY in its dot graph: a
+# question is a diamond, an answer is a one-word arrow label, a
+# destination is a node. This test never holds a byte-pinned copy of that
+# graph - it parses it and asserts structure (labels defined, fan-out
+# bounded, every node reachable, no script call hiding in prose) the same
+# way evals/check-edges.sh does, and reuses that script's own edge and
+# node grammar deliberately, so the two parsers never drift apart by
+# reading the fence two different ways.
+#
+# The prose below the graph is technique only (the drawing rule,
+# card-authoring rules, receipts) - what survives it is a capped, named
+# list of literal phrases, not a growing pile of ad hoc greps.
 
 set -euo pipefail
 
@@ -64,123 +71,367 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# The digraph, embedded here rather than read from the story file
+# The routing graph, parsed structurally (never held as a literal copy)
 # ---------------------------------------------------------------------
-EXPECTED_DIGRAPH='```dot
-digraph decisions {
-    "Draw the Shelf (list | view shelf)" [shape=box];
-    "Selection in words -> list filters" [shape=box];
-    "Draw the archive under the Shelf" [shape=box];
-    "Draw the question card" [shape=box];
-    "Draw the decision card" [shape=box];
-    "Draw the reopen card (diff against the file)" [shape=box];
-    "Draw the retire card (claimed by / shipped by)" [shape=box];
-    "Draw the match drawer (decisions-view.sh match)" [shape=box];
-    "No match: answer in words" [shape=box];
-    "User'"'"'s move?" [shape=diamond];
-    "Card came from the root and changed?" [shape=diamond];
-    "Filed pending in the root" [shape=doublecircle];
-    "Filed as law in approved/" [shape=doublecircle];
-    "Filed declined in archive/" [shape=doublecircle];
-    "Rewritten in place" [shape=doublecircle];
-    "Retagged in place" [shape=doublecircle];
-    "Retired to archive/" [shape=doublecircle];
-    "Refused: crafted law is frozen" [shape=box];
+echo "-- Test: the routing graph's structure (labels, definitions, fan-out, reachability, no hidden routing) --"
+# The parser is written to a scratch file first, rather than piped in via a
+# heredoc directly inside a $(...) substitution - bash 3.2 (macOS's system
+# bash) mishandles an apostrophe in a quoted heredoc's body when that
+# heredoc sits inside a command substitution, and several sentences below
+# have one.
+GRAPH_SCRIPT="$(mktemp)"
+trap 'rm -f "$GRAPH_SCRIPT"' EXIT
+cat > "$GRAPH_SCRIPT" <<'PYEOF'
+import re
+import sys
 
-    "Draw the Shelf (list | view shelf)" -> "Selection in words -> list filters";
-    "Selection in words -> list filters" -> "Draw the archive under the Shelf" [label="'"'"'declined'"'"', '"'"'retired'"'"'"];
-    "Selection in words -> list filters" -> "Draw the question card" [label="pending, lettered options"];
-    "Selection in words -> list filters" -> "Draw the decision card" [label="pending, dashed options"];
-    "Selection in words -> list filters" -> "Draw the reopen card (diff against the file)" [label="law + words that change its text"];
-    "Selection in words -> list filters" -> "Draw the retire card (claimed by / shipped by)" [label="'"'"'retire ...'"'"'"];
-    "Selection in words -> list filters" -> "Retagged in place" [label="words naming record(s) and a tag: transition retag --tag="];
-    "Selection in words -> list filters" -> "Draw the match drawer (decisions-view.sh match)" [label="several blocks matched"];
-    "Draw the match drawer (decisions-view.sh match)" -> "Selection in words -> list filters" [label="user names one: resolves as a single match"];
-    "Selection in words -> list filters" -> "No match: answer in words" [label="zero blocks matched"];
-    "No match: answer in words" -> "Draw the decision card" [label="offer a fresh card, new group"];
+command_file = sys.argv[1]
+text = open(command_file).read()
 
-    "A ruling in conversation" -> "Draw the question card" [label="live fork"];
-    "A ruling in conversation" -> "Draw the decision card" [label="no fork"];
+SCRIPTS = ["decisions-list.sh", "decisions-view.sh", "decisions-capture.sh", "decisions-transition.sh"]
 
-    "Draw the question card" -> "User'"'"'s move?";
-    "Draw the decision card" -> "User'"'"'s move?";
-    "Draw the reopen card (diff against the file)" -> "User'"'"'s move?";
-    "Draw the retire card (claimed by / shipped by)" -> "User'"'"'s move?";
 
-    "User'"'"'s move?" -> "Draw the question card" [label="words on a question card: redraw"];
-    "User'"'"'s move?" -> "Draw the decision card" [label="a letter picks an option: redraw as decision"];
-    "User'"'"'s move?" -> "Draw the decision card" [label="words on a decision card: redraw"];
-    "User'"'"'s move?" -> "Draw the reopen card (diff against the file)" [label="words on a reopen card: redraw the diff"];
-    "User'"'"'s move?" -> "Card came from the root and changed?" [label="approve / keep pending / decline (letter or plain words)"];
-    "User'"'"'s move?" -> "Rewritten in place" [label="a) on a reopen card: capture --reopen --quote"];
-    "User'"'"'s move?" -> "Refused: crafted law is frozen" [label="a) on a reopen card, record is crafted"];
-    "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words say retire"];
-    "User'"'"'s move?" -> "Draw the retire card (claimed by / shipped by)" [label="words on a retire card: redraw (nothing to reshape)"];
-    "User'"'"'s move?" -> "Draw the reopen card (diff against the file)" [label="words on a retire card that change the text: draw the reopen card"];
-    "User'"'"'s move?" -> "Retired to archive/" [label="a) or plain assent on a retire card: transition deprecate --quote, then remove the slug from planning/ready claimants and say so"];
-    "Selection in words -> list filters" -> "Refused: crafted law is frozen" [label="'"'"'retire ...'"'"' on crafted law: no card, the ruled words"];
-    "Refused: crafted law is frozen" -> "Draw the decision card" [label="offer a fresh card"];
+def out(status, desc, expected="", got=""):
+    line = f"{status}: {desc}"
+    if expected:
+        line += f"\n    Expected: {expected}"
+    if got:
+        line += f"\n    Got:      {got}"
+    print(line)
 
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="fresh, approve: capture --quote"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="fresh, keep pending: capture"];
-    "Card came from the root and changed?" -> "Filed declined in archive/" [label="fresh, decline: capture, transition decline --quote"];
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="parked, changed, approve: capture --reopen (root), transition accept --quote"];
-    "Card came from the root and changed?" -> "Filed as law in approved/" [label="parked, unchanged, approve: transition accept --quote"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="parked, changed, keep pending: capture --reopen (root)"];
-    "Card came from the root and changed?" -> "Filed pending in the root" [label="parked, unchanged, keep pending: nothing, say so"];
-    "Card came from the root and changed?" -> "Filed declined in archive/" [label="parked, decline: transition decline --quote"];
+
+# --- locate the routing fence (same selection rule as evals/check-edges.sh:
+# the fence whose own first line is "digraph decisions {", not the first
+# fence in the file - the hard-gate block above it is a plain, non-dot
+# fence, so this only matters if that ever changes) -----------------------
+BACKTICKS = chr(96) * 3
+fence_match = None
+for m in re.finditer(BACKTICKS + r"dot\n(.*?)\n" + BACKTICKS, text, re.DOTALL):
+    if m.group(1).lstrip().startswith("digraph decisions {"):
+        fence_match = m
+        break
+if fence_match is None:
+    out("FAIL", "a fenced dot block starting with 'digraph decisions {' exists")
+    sys.exit(0)
+fence_body = fence_match.group(1)
+above_fence = text[: fence_match.start()]
+below_fence = text[fence_match.end():]
+
+# --- parse edges and nodes (same grammar as evals/check-edges.sh) --------
+def parse_edges(body):
+    edges = []
+    for raw in body.splitlines():
+        line = raw.strip()
+        if '" -> "' not in line:
+            continue
+        left, _, right = line.partition('" -> "')
+        if not left.startswith('"'):
+            continue
+        src = left[1:]
+        m = re.match(r'^(?P<dst>.*?)"\s*(\[label="(?P<label>.*)"\])?;\s*$', right)
+        if not m:
+            continue
+        edges.append((src, m.group("dst"), m.group("label") or ""))
+    return edges
+
+
+def parse_nodes(body):
+    nodes = {}
+    for raw in body.splitlines():
+        line = raw.strip()
+        if '" -> "' in line:
+            continue
+        m = re.match(r'^"(?P<name>(?:[^"\\]|\\.)*)"\s*\[(?P<attrs>[^\]]*)\]\s*;\s*$', line)
+        if not m:
+            continue
+        nodes[m.group("name")] = m.group("attrs")
+    return nodes
+
+
+edges = parse_edges(fence_body)
+node_attrs = parse_nodes(fence_body)
+
+
+def shape_of(attrs):
+    m = re.search(r"shape\s*=\s*(\w+)", attrs or "")
+    return m.group(1) if m else None
+
+
+shapes = {name: shape_of(attrs) for name, attrs in node_attrs.items()}
+diamonds = [n for n, s in shapes.items() if s == "diamond"]
+doublecircles = [n for n, s in shapes.items() if s == "doublecircle"]
+
+# --- definitions section: "## Words the graph uses" up to the next "## " -
+def_section_match = re.search(
+    r"## Words the graph uses\n(.*?)\n## ", text, re.DOTALL
+)
+def_section = def_section_match.group(1) if def_section_match else ""
+
+TERM_RE = re.compile(r"^- \*\*(.+?)\*\* - ", re.MULTILINE)
+defined_terms = set()
+for term_group in TERM_RE.findall(def_section):
+    for term in term_group.split("/"):
+        defined_terms.add(term.strip().lower())
+
+def_text_lower = def_section.lower()
+
+# --- 1: every arrow leaving a diamond is labelled and its label defined -
+undefined_labels = []
+unlabelled_diamond_exits = []
+fanout_violations = []
+for d in diamonds:
+    exits = [e for e in edges if e[0] == d]
+    if len(exits) > 3:
+        fanout_violations.append((d, len(exits)))
+    for src, dst, label in exits:
+        if not label:
+            unlabelled_diamond_exits.append((src, dst))
+        elif label.lower() not in defined_terms:
+            undefined_labels.append((src, label))
+
+if unlabelled_diamond_exits:
+    out("FAIL", "every arrow leaving a diamond carries a label", "labelled", str(unlabelled_diamond_exits))
+else:
+    out("PASS", "every arrow leaving a diamond carries a label")
+
+if undefined_labels:
+    out("FAIL", "every label leaving a diamond has a definitions bullet", "defined", str(undefined_labels))
+else:
+    out("PASS", "every label leaving a diamond has a definitions bullet")
+
+if fanout_violations:
+    out("FAIL", "no diamond asks more than three ways", "<= 3 exits", str(fanout_violations))
+else:
+    out("PASS", "no diamond asks more than three ways")
+
+# --- 2: every word of every diamond's own name has a definitions bullet -
+# Fuzzy on purpose: a diamond name uses ordinary English around its
+# technical words ("Which face does the record call for?"), and a
+# definition is written in its own sentence, not as a repeated token - so
+# a word is "covered" when a same-rooted word (its first 4 letters, or the
+# whole word if shorter) appears anywhere in the definitions section
+# (heading terms or body prose alike). This still catches the conductor's
+# original catch (a word like "changed" with no definition anywhere would
+# not match any 4-letter root in the section) without demanding the exact
+# grammatical form of every connector.
+STOPWORDS = {
+    "the", "a", "an", "with", "on", "or", "for", "is", "are", "do", "does",
+    "how", "many", "which", "named", "ask", "call", "as", "at", "of", "to",
+    "in", "card", "cards", "decision", "question", "reopen",
 }
-```'
 
-echo "-- Test: the digraph is embedded verbatim as a fenced dot block --"
-# Extraction: the first ```dot ... ``` block in the file.
-ACTUAL_DIGRAPH="$(awk '
-  /^```dot$/ { inblock=1; print; next }
-  inblock && /^```$/ { print; exit }
-  inblock { print }
-' "$CMD")"
-if [ "$ACTUAL_DIGRAPH" = "$EXPECTED_DIGRAPH" ]; then
-  pass "digraph block is byte-identical to the story's Flow section"
+diamond_word_gaps = []
+for d in diamonds:
+    words = re.findall(r"[a-zA-Z']+", d.lower())
+    for w in words:
+        if len(w) <= 2 or w in STOPWORDS:
+            continue
+        root = w[:4] if len(w) >= 4 else w
+        if root not in def_text_lower:
+            diamond_word_gaps.append((d, w))
+
+if diamond_word_gaps:
+    out("FAIL", "every word of every diamond's own name has a definitions bullet", "covered", str(diamond_word_gaps))
+else:
+    out("PASS", "every word of every diamond's own name has a definitions bullet")
+
+# --- 3: reachability from the entry double circles -----------------------
+adjacency = {}
+for src, dst, _ in edges:
+    adjacency.setdefault(src, []).append(dst)
+
+reachable = set()
+frontier = list(doublecircles[:2]) if len(doublecircles) >= 2 else list(doublecircles)
+# Entry points are "Command invoked" and "Ruling in conversation" by name,
+# not merely "the first two doublecircles" - falls back to all doublecircles
+# only if those two aren't present, so a reordering of the node block never
+# silently changes which nodes count as entries.
+entries = [n for n in ("Command invoked", "Ruling in conversation") if n in shapes]
+frontier = entries if entries else frontier
+seen = set(frontier)
+queue = list(frontier)
+while queue:
+    node = queue.pop()
+    reachable.add(node)
+    for nxt in adjacency.get(node, []):
+        if nxt not in seen:
+            seen.add(nxt)
+            queue.append(nxt)
+
+declared = set(shapes.keys())
+unreachable = sorted(declared - reachable)
+if unreachable:
+    out("FAIL", "every declared node is reachable from an entry double circle", "none", str(unreachable))
+else:
+    out("PASS", "every declared node is reachable from an entry double circle")
+
+# --- 4: no routing hides in an arrow label --------------------------------
+bad_labels = [
+    (s, d, l) for s, d, l in edges
+    if l and (".sh" in l or re.search(r"(^|\s)-{1,2}[A-Za-z]", l))
+]
+if bad_labels:
+    out("FAIL", "no arrow label contains a .sh name or a - flag", "none", str(bad_labels))
+else:
+    out("PASS", "no arrow label contains a .sh name or a - flag")
+
+# --- 5: script calls are plaintext nodes, and only script calls are ------
+mismatched_shape = [
+    n for n in shapes
+    if any(s in n for s in SCRIPTS) and shapes[n] != "plaintext"
+]
+mismatched_prefix = [
+    n for n, s in shapes.items()
+    if s == "plaintext" and not any(n.startswith(s2) for s2 in SCRIPTS)
+]
+if mismatched_shape or mismatched_prefix:
+    out(
+        "FAIL",
+        "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one",
+        "consistent",
+        str(mismatched_shape + mismatched_prefix),
+    )
+else:
+    out("PASS", "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one")
+
+# --- 6: the never-bend rules are a hard gate, and the one octagon is red -
+hard_gate_blocks = re.findall(r"<HARD-GATE>\n(.*?)\n</HARD-GATE>", text, re.DOTALL)
+if len(hard_gate_blocks) != 1:
+    out("FAIL", "exactly one <HARD-GATE> block", "1", str(len(hard_gate_blocks)))
+else:
+    lines = [l for l in hard_gate_blocks[0].splitlines() if l.strip()]
+    non_never = [l for l in lines if not l.strip().startswith("NEVER")]
+    if len(lines) != 8:
+        out("FAIL", "the hard gate holds exactly eight rules", "8", str(len(lines)))
+    elif non_never:
+        out("FAIL", "every hard gate rule begins with NEVER", "all begin NEVER", str(non_never))
+    else:
+        out("PASS", "the hard gate holds exactly eight rules, each beginning NEVER")
+
+octagons = [n for n, s in shapes.items() if s == "octagon"]
+if len(octagons) != 1:
+    out("FAIL", "exactly one octagon sits inside the routing graph", "1", str(len(octagons)))
+else:
+    attrs = node_attrs[octagons[0]]
+    if "style=filled" in attrs.replace(" ", "") and "fillcolor=red" in attrs.replace(" ", ""):
+        out("PASS", "the one octagon carries style=filled and fillcolor=red")
+    else:
+        out("FAIL", "the one octagon carries style=filled and fillcolor=red", "style=filled, fillcolor=red", attrs)
+
+# --- 7: one draw node serves all five file-backed card faces -------------
+face_nodes = [n for n in shapes if "--variant=<face>" in n]
+if len(face_nodes) != 1:
+    out("FAIL", "exactly one plaintext node carries --variant=<face>", "1", str(len(face_nodes)))
+else:
+    face_node = face_nodes[0]
+    incoming_ellipses = [
+        s for s, d, _ in edges
+        if d == face_node and shapes.get(s) == "ellipse"
+    ]
+    if len(incoming_ellipses) == 5:
+        out("PASS", "one shared draw node serves all five file-backed card faces")
+    else:
+        out("FAIL", "one shared draw node serves all five file-backed card faces", "5 ellipse states", str(incoming_ellipses))
+
+# --- 8: no decisions script name outside the fence and the flag table ----
+def strip_table_rows(s):
+    return "\n".join(l for l in s.splitlines() if not l.strip().startswith("|"))
+
+below_hits = [name for name in SCRIPTS if name in below_fence]
+above_hits = [name for name in SCRIPTS if name in strip_table_rows(above_fence)]
+if below_hits:
+    out("FAIL", "no decisions script name appears below the routing fence", "none", str(below_hits))
+else:
+    out("PASS", "no decisions script name appears below the routing fence")
+if above_hits:
+    out("FAIL", "above the fence, a decisions script name appears only in the flag table", "none outside the flag table", str(above_hits))
+else:
+    out("PASS", "above the fence, a decisions script name appears only in the flag table")
+
+# --- 9: a write arrow's label never doubles as a pre-card word ------------
+# Pre-card = a node reachable from an entry before any card is on screen and
+# NOT reachable from any card. A card is an ellipse that feeds a
+# "decisions-view.sh card" draw node; the Shelf and the match drawer are
+# ellipses too but draw no card, so they are walked through. A gate a card's
+# path can also reach (the crafted? diamonds) is not a pre-card node - its
+# answers come from data, not from what the user typed at the Shelf. The
+# retag write is exempt: the hard gate rules that a retag draws no card.
+cards = {n for n, s in shapes.items() if s == "ellipse"
+         and any("decisions-view.sh card" in nxt for nxt in adjacency.get(n, []))}
+def reach(starts, stop_at=frozenset()):
+    seen = set(starts); q = list(starts)
+    while q:
+        node = q.pop()
+        if node in stop_at and node not in starts: continue
+        for nxt in adjacency.get(node, []):
+            if nxt not in seen: seen.add(nxt); q.append(nxt)
+    return seen
+postcard = reach(cards)
+precard = {n for n in reach(entries, stop_at=cards) if n not in postcard and n not in cards}
+precard_labels = {l for s_, d_, l in edges if l and s_ in precard}
+write_nodes = {n for n, s in shapes.items() if s == "plaintext" and ("decisions-transition.sh" in n or ("decisions-capture.sh" in n and "--dry-run" not in n))}
+collisions = sorted({(l, d_) for s_, d_, l in edges if d_ in write_nodes and l and l in precard_labels and " retag " not in d_})
+if collisions: out("FAIL", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)", "none", str(collisions))
+else: out("PASS", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)")
+
+PYEOF
+GRAPH_REPORT="$(python3 "$GRAPH_SCRIPT" "$CMD")"
+rm -f "$GRAPH_SCRIPT"
+trap - EXIT
+echo "$GRAPH_REPORT" | sed 's/^/  /'
+GRAPH_PASS="$(printf '%s\n' "$GRAPH_REPORT" | grep -c '^PASS:' || true)"
+GRAPH_FAIL="$(printf '%s\n' "$GRAPH_REPORT" | grep -c '^FAIL:' || true)"
+PASS_COUNT=$((PASS_COUNT + GRAPH_PASS)); FAIL_COUNT=$((FAIL_COUNT + GRAPH_FAIL)); TOTAL=$((TOTAL + GRAPH_PASS + GRAPH_FAIL))
+
+# ---------------------------------------------------------------------
+# The capped list of prose that survives below the graph
+# ---------------------------------------------------------------------
+echo "-- Test: the capped prose-grep list --"
+# Every phrase here is a sentence the Sentence Inventory marks "kept" (or
+# the drawing rule content it says is carried over unchanged); nothing
+# else below the graph is grepped by this test. This IS the cap the
+# story's Acceptance points at - a new routing rule has nowhere to land
+# here, because this list is prose survivors, never rules.
+PROSE_SURVIVORS=(
+  "Done records never get a row"
+  "No right edge"
+  "fixed width"
+  "print exactly as the file holds them"
+  'MATCH "<words>"'
+  "removed row draws red"
+  "added row draws green"
+  "colour is drawn here"
+  "One ruling per card"
+  "not in the room"
+  "complete alternative in plain words"
+  "why not the other options"
+  "path not chosen"
+  "no hand wrapping"
+  "Ideas to consider, not ruled:"
+  "rename it in words like anything else on the card"
+  "an exhibit is never invented"
+  "an unanswered second step is a trap"
+  "read it again against the new meaning"
+  "already built"
+)
+if [ "${#PROSE_SURVIVORS[@]}" -le 20 ]; then
+  pass "the prose-grep array holds at most 20 entries (${#PROSE_SURVIVORS[@]})"
 else
-  fail "digraph block is byte-identical to the story's Flow section" "(embedded copy)" "(diff — see below)"
-  diff <(printf '%s\n' "$EXPECTED_DIGRAPH") <(printf '%s\n' "$ACTUAL_DIGRAPH") | head -20
+  fail "the prose-grep array holds at most 20 entries" "<= 20" "${#PROSE_SURVIVORS[@]}"
 fi
 
-echo "-- Test: every doublecircle's incoming edges name capture or transition --"
-DOUBLECIRCLES=(
-  "Filed pending in the root"
-  "Filed as law in approved/"
-  "Filed declined in archive/"
-  "Rewritten in place"
-  "Retagged in place"
-  "Retired to archive/"
-)
-for node in "${DOUBLECIRCLES[@]}"; do
-  EDGES="$(printf '%s\n' "$ACTUAL_DIGRAPH" | grep -F -- "-> \"$node\"" || true)"
-  if [ -z "$EDGES" ]; then
-    fail "doublecircle '$node' has incoming edges naming a script" "at least one edge" "none found"
-  elif printf '%s\n' "$EDGES" | grep -qiE 'capture|transition'; then
-    pass "doublecircle '$node' incoming edges name a script"
+BODY_JOINED="$(awk '/^---$/{n++; next} n>=2{print}' "$CMD" | tr '\n' ' ' | tr -s ' ')"
+for phrase in "${PROSE_SURVIVORS[@]}"; do
+  if printf '%s' "$BODY_JOINED" | grep -qiE -- "$phrase"; then
+    pass "prose survives: $phrase"
   else
-    fail "doublecircle '$node' incoming edges name a script" "capture or transition mentioned" "$EDGES"
+    fail "prose survives: $phrase" "found below the frontmatter fence" "not found"
   fi
 done
 
 # ---------------------------------------------------------------------
-# Straightforward doc-grep contracts
+# Structural bans (not "prose that stays" - things that must NOT appear)
 # ---------------------------------------------------------------------
-grep_pass() { # $1=description $2=pattern (extended regex, -i off by default)
-  if grep -qE -- "$2" "$CMD"; then pass "$1"; else fail "$1" "$2" "not found"; fi
-}
-grep_pass_below_fence() { # asserts pattern appears in the body below the closing frontmatter fence
-  # The body is joined onto one line first, since prose in the command file
-  # hand-wraps at arbitrary widths and a phrase can legitimately straddle
-  # two source lines.
-  local desc="$1" pattern="$2"
-  local body
-  body="$(awk '/^---$/{n++; next} n>=2{print}' "$CMD" | tr '\n' ' ' | tr -s ' ')"
-  if printf '%s' "$body" | grep -qE -- "$pattern"; then pass "$desc"; else fail "$desc" "$pattern" "not found below fence"; fi
-}
 grep_fail_below_fence() { # asserts pattern does NOT appear below the closing frontmatter fence
   local desc="$1" pattern="$2"
   local body
@@ -192,33 +443,12 @@ grep_fail_below_fence() { # asserts pattern does NOT appear below the closing fr
   fi
 }
 
-echo "-- Test: the card's own relay phrases are gone, and the rail characters are present --"
-grep_fail_below_fence "file no longer instructs a verbatim relay of the card's stdout" "relay its stdout untouched"
-grep_fail_below_fence "file no longer says relays its stdout untouched" "relays its stdout untouched"
-grep_fail_below_fence "file no longer says relayed exactly as printed" "relayed exactly as printed"
-grep_fail_below_fence "file no longer says never re-typed of the card" "never re-typed"
-grep_fail_below_fence "file no longer says re-flowed" "re-flowed"
-grep_fail_below_fence "file no longer says hand-padded" "hand-padded"
-grep_pass_below_fence "the question, decision, reopen and retire card boxes draw from the view's data" "decision, reopen and retire card boxes all draw the same way"
-grep_fail_below_fence "the reopen card box is no longer named as a still-framed holdout" "reopen card box still draws its own framed diff"
+echo "-- Test: no graduation flow below the frontmatter fence --"
+grep_fail_below_fence "no 'graduate' verb below the frontmatter fence" '[Gg]raduate'
 
-echo "-- Test: the reopen diff's MARK= key colours red for removed, green for added --"
-grep_pass_below_fence "removed rows draw red" "removed row draws red"
-grep_pass_below_fence "added rows draw green" "added row draws green"
-grep_pass_below_fence "decisions-view.sh emits the marker only, colour is drawn by the command file" "emits the marker only.*colour is drawn here|MARK=.*colour"
-
-echo "-- Test: the command file carries the rail characters in its drawing rule, and requires them absent from script stdout (inverted: the old test forbade them here) --"
-grep_pass_below_fence "### The drawing rule section is present" "### The drawing rule"
-if grep -qP '[\x{250C}\x{2502}\x{2514}\x{251C}]' "$CMD" 2>/dev/null || grep -q '[┌│└├]' "$CMD"; then
-  pass "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from"
-else
-  fail "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from" "present" "absent"
-fi
-grep_pass_below_fence "the drawing rule says no right edge" "no right edge"
-grep_pass_below_fence "the drawing rule says no fixed width" "no fixed width"
-grep_pass_below_fence "the drawing rule says quote lines print exactly as the file holds them, never re-wrapped" "print exactly as the file holds them"
-grep_pass_below_fence "the drawing rule says no box-drawing character in any script's stdout" "No box-drawing character in any script's stdout"
-grep_pass_below_fence "the drawing rule carries the ruled 'Done records never get a row' (2026-09-03-craft-decisions-renders-the-shelf)" "Done records never get a row"
+echo "-- Test: no direct record-writing instruction (a ## Context/## Decision heredoc or a .craft/decisions/ write path) --"
+grep_fail_below_fence "no direct record-writing instruction" '^## (Context|Decision|Consequences|Approval)$'
+grep_fail_below_fence "no direct .craft/decisions/ write path" '> *"?\.craft/decisions/'
 
 echo "-- Test: AskUserQuestion is forbidden; answers are typed into the prompt --"
 AUQ_LINES="$(grep -h "AskUserQuestion" "$CMD" || true)"
@@ -226,61 +456,20 @@ if [ -z "$AUQ_LINES" ]; then
   fail "AskUserQuestion mentioned only under a prohibition" "at least one prohibition line" "zero mentions"
 else
   BAD="$(printf '%s\n' "$AUQ_LINES" | grep -iv "never" || true)"
-  if [ -z "$BAD" ]; then pass "every AskUserQuestion mention sits on a 'never' line"; else fail "every AskUserQuestion mention sits on a 'never' line" "all lines contain never" "$BAD"; fi
+  if [ -z "$BAD" ]; then pass "every AskUserQuestion mention sits on a NEVER line"; else fail "every AskUserQuestion mention sits on a NEVER line" "all lines contain NEVER" "$BAD"; fi
 fi
-grep_pass_below_fence "file says answers are typed into the prompt" "typed into the prompt"
 
-echo "-- Test: words that name exactly one move perform it; two or ambiguous redraws --"
-grep_pass_below_fence "one writing move performs it after any pick or reshape" "exactly one writing move.*perform|perform.*exactly one writing move|plainly names exactly one writing move"
-grep_pass_below_fence "two moves or an ambiguous one redraws and asks" "two.*moves.*redraw|redraw.*two.*moves|ambiguous.*redraw"
-grep_pass_below_fence "plain assent on a one-move card performs that move" "exactly one move, words that agree without naming it"
-grep_pass_below_fence "plain assent on a many-move card redraws" "more than one move, the same words name nothing and redraw"
-
-echo "-- Test: Consequences follow the chosen option, never named by letter once dashed --"
-grep_pass_below_fence "Consequences are the chosen option's" "Consequences.*chosen option|chosen option.*Consequences"
-grep_pass_below_fence "once options are dashes, other options named by what they are, never by letter" "never.*by letter|by letter.*never"
-
-echo "-- Test: Decision authored as the ruling, then the fixed Ideas label, non-binding --"
-grep_pass_below_fence "Decision authored as the ruling in the human's terms" "ruling in the (human|user)'s terms|the terms the human agreed to"
-grep_pass_below_fence "fixed label 'Ideas to consider, not ruled:' present" "Ideas to consider, not ruled:"
-grep_pass_below_fence "two to four lines taken from the first draft, never invented" "two to four lines"
-grep_pass_below_fence "the ideas block is non-binding" "not (law|ruled|binding)"
-
-echo "-- Test: one ruling per card, Context verified against disk, whole-card reshape with reopen exception --"
-grep_pass_below_fence "one ruling per card" "[Oo]ne ruling per card"
-grep_pass_below_fence "Context verified against disk at presentation" "[Cc]ontext.*verified against disk"
-grep_pass_below_fence "words redraw the whole card" "redraw the whole card|whole card"
-grep_pass_below_fence "reopen redraws the diff instead" "reopen.*redraw.*diff|redraw.*diff.*reopen"
-grep_pass_below_fence "a redraw on words is a script draw, never a retype" "script draw, never a retype"
-grep_pass_below_fence "a changed pending card redraws via the pending face with section flags" "variant=pending --file=<path>.*--consequences="
-
-echo "-- Test: the four card-caliber rules --"
-grep_pass_below_fence "card stands alone for a reader who was not in the room" "not in the room"
-grep_pass_below_fence "Context states the situation as it stands on disk today" "as it stands on disk today"
-grep_pass_below_fence "Context never names a tag - group and count live on the band and the Shelf" "Context never names a tag"
-grep_pass_below_fence "a retag touches no prose" "retag touches no prose"
-grep_pass_below_fence "options are complete alternatives in plain words" "complete alternative in plain words"
-grep_pass_below_fence "consequences name each option by what it cost, not its label" "why not the other options"
-
-echo "-- Test: both write scripts named, no direct record-writing instruction --"
-grep_pass_below_fence "decisions-capture.sh named" "decisions-capture\.sh"
-grep_pass_below_fence "decisions-transition.sh named" "decisions-transition\.sh"
-grep_fail_below_fence "no direct record-writing instruction (a ## Context/## Decision heredoc)" '^## (Context|Decision|Consequences|Approval)$'
-grep_fail_below_fence "no direct .craft/decisions/ write path" '> *"?\.craft/decisions/'
-
-echo "-- Test: no graduation flow below the frontmatter fence --"
-grep_fail_below_fence "no 'graduate' verb below the frontmatter fence" '[Gg]raduate'
-
-echo "-- Test: the move's routing, source-by-tag, and receipt wording --"
-grep_pass_below_fence "the move's routing line names decisions-transition.sh retag --tag=" "decisions-transition\.sh.*retag|retag --tag="
-grep_pass_below_fence "source-by-tag is resolved through decisions-list.sh --tag=<source> --no-scan, not a script flag" "decisions-list\.sh --tag=<source>"
-grep_pass_below_fence "the receipt names what moved and where: 'Okay - moved <slug> to <tag>'" "Okay - moved <slug> to <tag>"
-grep_pass_below_fence "a multi-record receipt reads 'Okay - moved N to <tag>'" "Okay - moved N to <tag>"
-grep_pass_below_fence "the target group's rows follow the receipt, typed from decisions-list.sh --tag= output" "group's rows.*decisions-list\.sh --tag=<target>"
-grep_pass_below_fence "the retag receipt is drawn as one Shelf drawer via decisions-view.sh group" "decisions-view\.sh group"
-grep_pass_below_fence "', new group' is earned by the check run before the write" "before the (move|write)"
-grep_pass_below_fence "an all-already-there move prints its own no-op line" "nothing to move"
-grep_fail_below_fence "no --from-tag= flag is named anywhere in the file" "--from-tag"
+echo "-- Test: the drawing rule survives, heading and rail characters --"
+if grep -qE '^### The drawing rule$' "$CMD"; then
+  pass "### The drawing rule heading is present, exact"
+else
+  fail "### The drawing rule heading is present, exact" "### The drawing rule" "not found"
+fi
+if grep -q '[┌│└├]' "$CMD"; then
+  pass "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from"
+else
+  fail "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from" "present" "absent"
+fi
 
 echo "-- Test: no story template is touched by this story --"
 for f in commands/craft-story-new.md commands/references/cycle-design/default-mode.md commands/references/cycle-design/roadmap-mode.md; do
@@ -290,68 +479,6 @@ for f in commands/craft-story-new.md commands/references/cycle-design/default-mo
     fail "$f unchanged vs HEAD" "no diff" "diff present"
   fi
 done
-
-echo "-- Test: the fresh-decline path is documented as two script calls, per the digraph's own edge label --"
-if printf '%s\n' "$ACTUAL_DIGRAPH" | grep -qF 'label="fresh, decline: capture, transition decline --quote"'; then
-  pass "digraph edge names fresh decline as capture then transition decline"
-else
-  fail "digraph edge names fresh decline as capture then transition decline" 'label="fresh, decline: capture, transition decline --quote"' "not found"
-fi
-
-echo "-- Test: the retire path — scanned list, crafted refusal, claimed/shipped, deprecate, slug removal --"
-grep_pass_below_fence "retire calls decisions-list.sh --slug= with the story scan on, before the card" "decisions-list\.sh --slug=.*scan|scan.*decisions-list\.sh --slug="
-grep_pass_below_fence "crafted retire refuses with the ruled words and draws no card" "already built.*shipped it|That one's already built"
-grep_pass_below_fence "crafted retire offers a fresh decision card" "fresh decision card"
-grep_pass_below_fence "claimed by / shipped by follows disposition" "claimed by|shipped by"
-grep_pass_below_fence "retire on a) calls decisions-transition.sh deprecate" "decisions-transition\.sh.*deprecate|transition.*deprecate"
-grep_pass_below_fence "planning or ready claimants have the slug removed in the same turn" "has the slug removed from its own"
-grep_pass_below_fence "the removal is reported, never offered" "Never an offer"
-grep_pass_below_fence "an active claimant is told to read it again and keeps its slug" "read it again"
-
-echo "-- Test: the reopen path — scanned list + claimed-by BEFORE the card, Claimed: relay after write --"
-grep_pass_below_fence "reopen or retire card calls decisions-list.sh --slug= with the scan on before drawing the card" "[Bb]efore a reopen or a retire card.*decisions-list\.sh --slug=|decisions-list\.sh --slug=.*[Bb]efore a reopen"
-grep_pass_below_fence "capture's Claimed: lines are relayed after the write" "Claimed:.*relay.*after the write|Claimed:.*this command relays after the write"
-
-echo "-- Test: every write path ends in a receipt line; no-op keep-pending says so --"
-grep_pass_below_fence "receipt verbs Approved/Kept pending/Declined/Retired" "Approved:.*Kept pending:.*Declined:.*Retired:|Kept pending:"
-grep_pass_below_fence "a no-op keep-pending prints its own line" "Nothing to save - still on the Shelf\."
-
-echo "-- Test: a parked card is documented with three letters and the reshape-then-accept path, per the digraph --"
-grep_pass_below_fence "parked card offers a) approve, b) keep pending, c) decline" "keep pending"
-if printf '%s\n' "$ACTUAL_DIGRAPH" | grep -qF 'label="parked, changed, approve: capture --reopen (root), transition accept --quote"'; then
-  pass "digraph edge names a changed a) as reshape (capture --reopen) then transition accept"
-else
-  fail "digraph edge names a changed a) as reshape (capture --reopen) then transition accept" 'label="parked, changed, approve: capture --reopen (root), transition accept --quote"' "not found"
-fi
-grep_pass_below_fence "an unchanged b) writes nothing and says so" "[Nn]othing.*[Uu]nchanged|unchanged.*nothing"
-grep_pass_below_fence "a parked fork returns question-first" "question state|draws.*question"
-
-echo "-- Test: a fresh card with a live fork is question-then-decision; no alternatives is decision only --"
-grep_pass_below_fence "live fork drawn first in the question state, redrawn decision after the letter" "question state.*decision state|live fork.*question"
-grep_pass_below_fence "a live fork is a sentence that leaves the choice open" "leaves the choice open"
-grep_pass_below_fence "a stated decision is a ruling whatever alternative it names, drawn in the decision state" "ruling whatever alternative it names"
-grep_pass_below_fence "no real alternatives drawn straight in the decision state" "no real alternative|straight.*decision state"
-grep_pass_below_fence "the question card's keep-pending letter is capture with no quote" "capture.*no quote|keep pending.*capture"
-
-echo "-- Test: lettered options only while a fork is live, dashed once chosen --"
-grep_pass_below_fence "options lettered (a)(b)(c) with one Proposed: while a fork is live" '\(a\), \(b\), \(c\)|lettered.*Proposed'
-grep_pass_below_fence "options re-authored as dashes once a letter is picked" 'dashe[sd]'
-
-echo "-- Test: a crafted reopen and a crafted retire are both refused and routed to a fresh decision card --"
-if printf '%s\n' "$ACTUAL_DIGRAPH" | grep -qF 'label="a) on a reopen card, record is crafted"' \
-  && printf '%s\n' "$ACTUAL_DIGRAPH" | grep -qF 'label="offer a fresh card"'; then
-  pass "digraph routes a crafted reopen to Refused: crafted law is frozen, then offers a fresh card"
-else
-  fail "digraph routes a crafted reopen to Refused: crafted law is frozen, then offers a fresh card" "both edge labels present" "missing"
-fi
-grep_pass_below_fence "crafted retire offers a fresh decision card too, the same offer" "fresh decision card, the same as a crafted reopen"
-grep_pass_below_fence "crafted reopen refuses at a) with the ruled words, the diff carried forward" "happy to draw it up with these changes"
-grep_pass_below_fence "crafted reopen seeds the fresh card from its own diff and never relays the script's error line" "seeded from the reopen's own diff.*never relayed as the answer"
-
-echo "-- Test: the archive is reached in words and printed under the Shelf, never unasked --"
-grep_pass_below_fence "archive reached in words (e.g. 'what did we decline')" "what did we decline|what did we retire"
-grep_pass_below_fence "archive prints under the Shelf" "under the Shelf"
-grep_pass_below_fence "nothing prints below the Shelf unless asked" "unless.*asked|nothing.*unasked|never.*unasked"
 
 echo "-- Test: craft-notebook.md's when_to_use ends with the ruled Not-for line --"
 NOTEBOOK="$REPO/commands/craft-notebook.md"
@@ -367,26 +494,6 @@ grep -q '/craft:decisions' "$REPO/docs/decision-tree.md" && pass "/craft:decisio
 grep -q '/craft:decisions' "$REPO/DESIGN.md" && pass "/craft:decisions in DESIGN.md" || fail "/craft:decisions in DESIGN.md"
 grep -q '/craft:decisions' "$REPO/README.md" && pass "/craft:decisions in README.md" || fail "/craft:decisions in README.md"
 grep -q '34 commands' "$REPO/DESIGN.md" && pass "DESIGN.md says 34 commands" || fail "DESIGN.md says 34 commands"
-
-echo "-- Test: a selection headed for a card resolves to exactly one record before anything draws --"
-grep_pass_below_fence "the desk routes on the block count before drawing anything" "routes on that count before drawing anything"
-grep_pass_below_fence "a zero-block filtered list is never piped into decisions-view.sh shelf" "never piped into .decisions-view\.sh shelf."
-grep_pass_below_fence "several matches route to decisions-view.sh match" "decisions-view\.sh match --words="
-grep_pass_below_fence "the drawer's answer maps back to the block's own SLUG=" "maps back to the .SLUG=. of the block that row came from"
-grep_pass_below_fence "the rule governs a selection headed for a card only" "selection headed for a card only"
-
-echo "-- Test: the no-match answer names the filter, the nearest group and a count of the rest, offers a fresh card, draws no frame --"
-grep_pass_below_fence "the no-match answer names the filter back" "names the filter back"
-grep_pass_below_fence "the no-match answer names the nearest group by spelling" "nearest group by spelling"
-grep_pass_below_fence "the no-match answer counts the remaining groups, never a full dump" "count of the remaining groups.*never a full dump|never a full dump.*count of the remaining groups"
-grep_pass_below_fence "the no-match answer offers a fresh card announced as a new group" "fresh card tagged with it, announced as a NEW GROUP"
-grep_pass_below_fence "the no-match answer draws no frame" "no frame.*drawn|answered in words, no frame"
-
-echo "-- Test: the drawing rule carries a match-drawer entry with the extended key band and the two-space record line --"
-grep_pass_below_fence "the drawing rule names the header band's count-and-words form" "MATCH .<words>."
-grep_pass_below_fence "the drawing rule extends the key band with the archived glyph" "× archived"
-grep_pass_below_fence "the drawing rule puts record lines at two spaces, HEAD= not ROW=" "HEAD=.*two spaces after the rail|two spaces after the rail.*not a .ROW=. line"
-grep_pass_below_fence "the drawing rule says the drawer has no group divider, strip or count" "no group divider, no strip and no count"
 
 echo "-- Test: the alignment check's agent prompt cites no decision record by slug --"
 # A slug names a record in THIS repo's store. A user's project has none, and the
