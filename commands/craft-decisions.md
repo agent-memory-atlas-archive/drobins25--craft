@@ -94,6 +94,10 @@ where it would have to be looked up. The table decides no routing.
 | reopen card | `--variant=reopen --file=<path>` plus the proposed sections as flags, diffed against the file |
 | retire card | `--variant=retire --file=<path> --claimed-by=<story>:<status>` per claiming story, or `--shipped-by=<story>` for crafted law |
 
+The four scripts the graph's command nodes name live at
+`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`. A node's text is the command; it is
+run with `bash` from that directory, never searched for.
+
 ## How to read the graph
 
 The six double circles at the bottom are the only writes; a path that does

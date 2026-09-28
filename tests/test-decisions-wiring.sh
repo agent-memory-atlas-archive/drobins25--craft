@@ -374,6 +374,21 @@ collisions = sorted({(l, d_) for s_, d_, l in edges if d_ in write_nodes and l a
 if collisions: out("FAIL", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)", "none", str(collisions))
 else: out("PASS", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)")
 
+# --- 10: the file says where the scripts live, once, above the fence -------
+# Every other command that runs a script writes its plugin path; the desk
+# named its scripts bare and a fresh session opened with `find` for them
+# (bug 2026-09-27). One sentence in the flag-table section carries the
+# directory, with the variable Claude Code substitutes at load, never a
+# resolved path. Command nodes stay bare: a plaintext node is the literal
+# command, so no plaintext node may carry a path of its own.
+LOC = "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/"
+loc_total = text.count(LOC); loc_above = above_fence.count(LOC)
+pathed_nodes = sorted(n for n, s in shapes.items() if s == "plaintext" and "/" in n)
+if loc_total == 1 and loc_above == 1 and not pathed_nodes:
+    out("PASS", "the scripts' location is stated exactly once, above the fence, and no command node carries a path")
+else:
+    out("FAIL", "the scripts' location is stated exactly once, above the fence, and no command node carries a path", "1 above, 0 below, no pathed plaintext nodes", f"total={loc_total} above={loc_above} pathed_nodes={pathed_nodes}")
+
 PYEOF
 GRAPH_REPORT="$(python3 "$GRAPH_SCRIPT" "$CMD")"
 rm -f "$GRAPH_SCRIPT"
