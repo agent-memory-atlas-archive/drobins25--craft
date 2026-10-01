@@ -522,6 +522,9 @@ else
   fail "alignment-check.md names no decision record by slug" "none" "$ALIGNMENT_SLUGS"
 fi
 grep -q "the older is cited as superseded" "$ALIGNMENT_REF" && pass "the superseding rule itself survives, stated on its own authority" || fail "the superseding rule itself survives, stated on its own authority" "present" "absent"
+grep -q "holds the story's own records and no others" "$ALIGNMENT_REF" && pass "the investigator gets the story's own records and no others" || fail "the investigator gets the story's own records and no others" "present" "absent"
+NOT_LAW_COUNT="$(grep -c "is NOT LAW for this story" "$ALIGNMENT_REF" || true)"
+if [ "$NOT_LAW_COUNT" -eq 2 ]; then pass "the NOT LAW sentence is in the rule and in the prompt template"; else fail "the NOT LAW sentence is in the rule and in the prompt template" "2" "$NOT_LAW_COUNT"; fi
 
 echo "-- Test: the command file names no decision record by slug --"
 CMD_SLUGS="$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+' "$CMD" || true)"
