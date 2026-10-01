@@ -145,7 +145,8 @@ find .craft/decisions -name '*-<slug>.md'
 ```
 takes:  shelf | group | archive [--only=declined|retired]
         | match [--words=<the words searched>] - each reads list blocks
-        on stdin
+        on stdin; match draws every block it is given, so feed it only
+        the matched ones, one --slug= list per match
         card --variant=... - reads a dry run on stdin or a --file=; its
         flags are the table above
 prints: BAND= HEAD= BLANK= GROUP= STRIP= TOTAL= COUNT_Q= COUNT_O=
@@ -155,6 +156,10 @@ prints: BAND= HEAD= BLANK= GROUP= STRIP= TOTAL= COUNT_Q= COUNT_O=
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" | bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-view.sh" shelf
+```
+
+```
+{ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" --slug=2026-03-14-search-ranks-titles-first; bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" --slug=2026-03-14-search-shows-the-matched-words; } | bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-view.sh" match --words="search"
 ```
 
 **decisions-capture.sh** - writes a new record or reopens one.

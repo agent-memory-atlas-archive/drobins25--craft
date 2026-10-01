@@ -441,6 +441,18 @@ if text.count(exhibit_text) == 1 and scripts_section.count(exhibit_text) == 1 an
 else:
     out("FAIL", "the nine-key exhibit appears exactly once, keys in order, inside the section", "1", f"total={text.count(exhibit_text)} in_section={scripts_section.count(exhibit_text)}")
 
+sec_flat_pre = " ".join(scripts_section.split())
+# --- 13b: the match example feeds only the matched blocks -----------------
+# Bug 2026-09-30-match-drawer-drawn-from-the-whole-store: the view block
+# must say match draws every block it is given, and show two --slug= lists
+# piped into it, so a reader never pipes the whole store in.
+match_lines = [l for l in scripts_section.split("\n")
+               if 'decisions-view.sh" match' in l and l.count("--slug=") >= 2]
+if "match draws every block it is given" in sec_flat_pre and len(match_lines) == 1:
+    out("PASS", "the view block says match draws only what it is given and shows a two-slug match example")
+else:
+    out("FAIL", "the view block says match draws only what it is given and shows a two-slug match example", "fact + 1 example line with two --slug=", f"fact={'match draws every block it is given' in sec_flat_pre} examples={len(match_lines)}")
+
 # --- 14: the find line and the glyph-to-folder line -----------------------
 if "find .craft/decisions -name '*-<slug>.md'" in scripts_section:
     out("PASS", "the find-by-name line is present verbatim")
