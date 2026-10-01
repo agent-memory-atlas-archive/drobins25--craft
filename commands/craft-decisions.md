@@ -89,7 +89,7 @@ where it would have to be looked up. The table decides no routing.
 
 | Card face | Flags on the draw node |
 |---|---|
-| fresh question card | `--variant=fresh --state=question --proposed=<letter>`, reading the dry run on stdin |
+| fresh question card | `--variant=fresh --state=question --proposed=<letter>`, reading the dry run on stdin; `--new-group=<tag>` when the tag check came back empty |
 | fresh decision card | `--variant=fresh --state=decision`, reading the dry run on stdin; `--new-group=<tag>` when the tag check came back empty |
 | parked question card | `--variant=pending --file=<path>` |
 | parked decision card, as filed | `--variant=pending --file=<path>` |
@@ -169,6 +169,10 @@ takes:  "<title>" --tag= --context= --options= --decision= --consequences=
         [--quote=] [--dry-run]; or --reopen=<slug> with the same sections
         no --quote= files it pending in the root; --quote= files it
         approved; --dry-run writes nothing
+        --options= for a live fork is the lettered lines, "(a) Proposed: ..."
+        then "(b) ..."; a settled ruling is "- " lines
+        --reopen= re-sends all four sections, changed or not; on law it
+        requires --quote=, in the root it refuses one
 prints: "Claimed: <story>" lines, then the record's path last; a dry run
         prints SLUG= then the record body
 ```

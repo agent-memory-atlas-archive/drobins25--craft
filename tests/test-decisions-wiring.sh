@@ -453,6 +453,21 @@ if "match draws every block it is given" in sec_flat_pre and len(match_lines) ==
 else:
     out("FAIL", "the view block says match draws only what it is given and shows a two-slug match example", "fact + 1 example line with two --slug=", f"fact={'match draws every block it is given' in sec_flat_pre} examples={len(match_lines)}")
 
+# --- 13c: the capture contract states the fork options and the reopen rule -
+# Bug 2026-09-30-fresh-question-card-still-reads-script-source: the three
+# facts the desk opened the scripts to find.
+fork_ok = '"(a) Proposed: ..."' in sec_flat_pre and 'a settled ruling is "- " lines' in sec_flat_pre
+reopen_ok = "re-sends all four sections" in sec_flat_pre and "requires --quote=, in the root it refuses one" in sec_flat_pre
+if fork_ok and reopen_ok:
+    out("PASS", "the capture block states the lettered fork options and the reopen rule")
+else:
+    out("FAIL", "the capture block states the lettered fork options and the reopen rule", "both facts", f"fork={fork_ok} reopen={reopen_ok}")
+q_rows = [l for l in text.split("\n") if l.startswith("| fresh question card |")]
+if len(q_rows) == 1 and "--new-group=<tag>" in q_rows[0] and "--state=question" in q_rows[0]:
+    out("PASS", "the fresh question card row carries --new-group=<tag>")
+else:
+    out("FAIL", "the fresh question card row carries --new-group=<tag>", "one row with the flag", str(q_rows))
+
 # --- 14: the find line and the glyph-to-folder line -----------------------
 if "find .craft/decisions -name '*-<slug>.md'" in scripts_section:
     out("PASS", "the find-by-name line is present verbatim")
