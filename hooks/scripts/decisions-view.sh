@@ -25,7 +25,7 @@
 #   decisions-view.sh archive [--only=declined|retired]
 #     stdin: decisions-list.sh --room=archive blocks. Emits BAND=, then per
 #     record a ROW= carrying the exit label (padded to 9 columns, dropped
-#     under --only=) and the date-stripped slug, then its exit words as
+#     under --only=) and the record's title, then its exit words as
 #     further ROW= lines indented to the same column, newest exit first,
 #     then CLOSE=.
 #
@@ -165,6 +165,17 @@ def strip_date(slug):
     return re.sub(r'^\d{4}-\d{2}-\d{2}-', '', slug)
 
 
+def display_title(block):
+    # The name a row gives a record: its title, never cut. decisions-list.sh
+    # fills TITLE with the full dated slug when a record has no H1, and a
+    # date on a Shelf row reads as noise, so that case draws the slug alone.
+    slug = block.get("SLUG", "")
+    title = block.get("TITLE", "")
+    if title and title != slug:
+        return title
+    return strip_date(slug)
+
+
 GLYPH_ORDER = ["?", "○", "●", "✓"]
 
 # Every card face - fresh, pending, reopen and retire - wraps body text
@@ -218,11 +229,11 @@ def group_block_lines(tag, recs):
     lines.append(kv("MORE", more_n))
 
     for r in pending_recs:
-        lines.append(kv("ROW", "? " + strip_date(r.get("SLUG", ""))))
+        lines.append(kv("ROW", "? " + display_title(r)))
     for r in open_recs:
-        lines.append(kv("ROW", "○ " + strip_date(r.get("SLUG", ""))))
+        lines.append(kv("ROW", "○ " + display_title(r)))
     if claimed_recs:
-        lines.append(kv("ROW", "● " + strip_date(claimed_recs[0].get("SLUG", ""))))
+        lines.append(kv("ROW", "● " + display_title(claimed_recs[0])))
         if more_n > 0:
             # The drawing rule's "+N more" row gets six spaces after the
             # rail (four from ROW=, two more baked into the value here),
@@ -249,8 +260,8 @@ def empty_view_lines():
         kv("BLANK"),
     ]
     lines.extend(group_block_lines("gameroom (example)", [
-        {"_glyph": "○", "SLUG": "the-gameroom-has-a-slot-machine"},
-        {"_glyph": "○", "SLUG": "the-slot-machine-has-a-bonus-round"},
+        {"_glyph": "○", "SLUG": "the-gameroom-has-a-slot-machine", "TITLE": "The gameroom has a slot machine"},
+        {"_glyph": "○", "SLUG": "the-slot-machine-has-a-bonus-round", "TITLE": "The slot machine has a bonus round"},
     ]))
     lines.append(kv("BLANK"))
     lines.append(kv("HEAD", "The tag is the feature you haven't planned yet. When a story or a cycle picks the gameroom decisions up, it is born already knowing both. Nothing gets re-decided."))
@@ -421,6 +432,7 @@ def render_archive_view(blocks, only_filter):
         words, exit_date = last_quote_block(read_file(path))
         records.append({
             "slug": strip_date(b.get("SLUG", "")),
+            "name": display_title(b),
             "label": label,
             "exit_date": exit_date,
             "words": words,
@@ -444,9 +456,9 @@ def render_archive_view(blocks, only_filter):
 
     for r in records:
         if only_filter:
-            first_line_text = r["slug"]
+            first_line_text = r["name"]
         else:
-            first_line_text = r["label"].ljust(9) + r["slug"]
+            first_line_text = r["label"].ljust(9) + r["name"]
         lines.append(kv("ROW", first_line_text))
         wrapped_words = textwrap.wrap(r["words"], width=wrap_width) if r["words"] else []
         for w in wrapped_words:

@@ -34,7 +34,7 @@ This shell owns only routing.
 <HARD-GATE>
 NEVER use AskUserQuestion here - the answer is typed into the prompt.
 NEVER write a record file by hand - every write is a call on the graph.
-NEVER draw a card from memory - a redraw is a fresh script draw.
+NEVER draw a card from memory - draw it from the record text in the conversation, and after any write read the file again before drawing it.
 NEVER let a box-drawing character into a script's stdout - the rail is drawn here.
 NEVER relay a script's error line as the answer.
 NEVER render anything below the Shelf unasked.
@@ -42,6 +42,9 @@ NEVER select with subcommand syntax - selection is the list filters.
 NEVER draw a card, take a quote or write an approval line for a retag.
 </HARD-GATE>
 ```
+
+The Shelf rule above bars a second view nobody asked for, not words: one
+sentence of Claude's own under a drawer or the Shelf is fine.
 
 ## Words the graph uses
 
@@ -94,9 +97,94 @@ where it would have to be looked up. The table decides no routing.
 | reopen card | `--variant=reopen --file=<path>` plus the proposed sections as flags, diffed against the file |
 | retire card | `--variant=retire --file=<path> --claimed-by=<story>:<status>` per claiming story, or `--shipped-by=<story>` for crafted law |
 
-The four scripts the graph's command nodes name live at
-`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`. A node's text is the command; it is
-run with `bash` from that directory, never searched for.
+## The four scripts
+
+A node's text names a script; every call is written
+`bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<name>.sh"` and runs from wherever
+the session is - never from a changed directory, never searched for. Each
+block below is what a node points at: what the script takes, one example
+that runs as written, and what it prints.
+
+**decisions-list.sh** - lists records.
+
+```
+takes:  --tag= --status= --slug= --room= --disposition= --no-scan
+        filters AND together; --slug= is the full dated slug; --no-scan
+        skips the story scan, so DISPOSITION= and STORIES= print empty
+prints: one nine-key block per record, a blank line between blocks;
+        TITLE= is the full slug when a record has no H1
+```
+
+```
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" --tag=search --status=accepted
+```
+
+```
+FILE=/home/you/app/.craft/decisions/approved/2026-03-14-search-ranks-titles-first.md
+ROOM=approved
+SLUG=2026-03-14-search-ranks-titles-first
+DATE=2026-03-14
+TITLE=Search ranks titles first
+STATUS=accepted
+TAGS=search
+DISPOSITION=claimed
+STORIES=search-results-page
+```
+
+A record's file is found by its Shelf glyph: `?` in `.craft/decisions/`; `○`
+`●` `✓` in `.craft/decisions/approved/`; the archive, `.craft/decisions/archive/`,
+is never on the Shelf. One line finds a record from anywhere by its
+date-stripped name:
+
+```
+find .craft/decisions -name '*-<slug>.md'
+```
+
+**decisions-view.sh** - turns list blocks into view data.
+
+```
+takes:  shelf | group | archive [--only=declined|retired]
+        | match [--words=<the words searched>] - each reads list blocks
+        on stdin
+        card --variant=... - reads a dry run on stdin or a --file=; its
+        flags are the table above
+prints: BAND= HEAD= BLANK= GROUP= STRIP= TOTAL= COUNT_Q= COUNT_O=
+        COUNT_C= COUNT_D= MORE= ROW= DIV= MARK= CLOSE= - plain data,
+        drawn into the rail here
+```
+
+```
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" | bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-view.sh" shelf
+```
+
+**decisions-capture.sh** - writes a new record or reopens one.
+
+```
+takes:  "<title>" --tag= --context= --options= --decision= --consequences=
+        [--quote=] [--dry-run]; or --reopen=<slug> with the same sections
+        no --quote= files it pending in the root; --quote= files it
+        approved; --dry-run writes nothing
+prints: "Claimed: <story>" lines, then the record's path last; a dry run
+        prints SLUG= then the record body
+```
+
+```
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-capture.sh" "Search ranks titles first" --tag=search --context="Search lists records by date." --options="- Rank titles first." --decision="Titles rank first." --consequences="A title match leads the list." --dry-run
+```
+
+**decisions-transition.sh** - the only way a record changes state.
+
+```
+takes:  <dated slug or FILE= path>[,<more>] then accept | decline |
+        deprecate | retag; --quote= on the first three, --tag=<target>
+        on retag
+prints: TITLE=, CHANGED=, then the path last; a retag prints MOVED=,
+        ALREADY=, then one path per moved record
+```
+
+```
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-transition.sh" 2026-03-14-search-ranks-titles-first accept --quote="approve"
+```
 
 ## How to read the graph
 
@@ -104,7 +192,10 @@ The six double circles at the bottom are the only writes; a path that does
 not reach one wrote nothing. A card state's own draw call hangs off it as a
 leaf with no arrow out - that call is how the state is drawn, not a step
 towards somewhere else, which is why arriving at a state a second time
-redraws it. Eight arrows leave a command node carrying a label: those are
+redraws it. On a card, words come back to the same card as a redraw only
+when they changed what the card shows, or ask to see it again; a question
+or a remark gets an answer in words, and the card stays on screen as it is.
+Eight arrows leave a command node carrying a label: those are
 the calls two paths share, and the label repeats the answer that got you
 there so a walk never forks by accident. The one red octagon inside the
 graph is the rule that sits on a path; the rest are above, where nothing
@@ -319,8 +410,8 @@ digraph decisions {
   truncated. For a card section: `├─ CONTEXT` etc., the label in caps,
   nothing after it.
 - **Rows under a group:** four spaces after the rail, glyph, one space,
-  date-stripped slug: `│    ○ slug`. The "+N more" row: six spaces after
-  the rail: `│      +7 more`. Done records never get a row - they are
+  the record's title at its full length: `│    ○ title`. The "+N more"
+  row: six spaces after the rail: `│      +7 more`. Done records never get a row - they are
   counted in the strip and the total and draw no row of their own, so a
   group's total is expected to exceed its row count and that difference is
   never a defect to report.
@@ -387,12 +478,12 @@ or `Retired:` followed by the path the script printed as its last stdout
 line. A no-op keep-pending prints `Nothing to save - still on the Shelf.`
 instead.
 
-A retag ends with `Okay - moved <slug> to <tag>` for one record (the slug
-date-stripped, as on the Shelf) or `Okay - moved N to <tag>` for several,
+A retag ends with `Okay - moved <title> to <tag>` for one record (its title,
+as the Shelf shows it) or `Okay - moved N to <tag>` for several,
 appending `, new group` when the NEW GROUP check was empty before the
 write, and `, M already there` when M is greater than zero. Under that
 line come the target group's rows - the tag, then each record's glyph and
-slug as the Shelf would show them - so the moved record is seen where it
+title as the Shelf would show them - so the moved record is seen where it
 landed. When every named record was already on the target, it prints
 `Okay - nothing to move, M already there` instead, and no rows follow.
 

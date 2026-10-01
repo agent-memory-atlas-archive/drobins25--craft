@@ -208,6 +208,14 @@ write_options_record() {
   } > "$dir/$date-$slug.md"
 }
 
+# title_of SLUG - a title that reads like a real one: hyphens to spaces,
+# initial capital. Fixture titles are derived so a Shelf row is visibly
+# the title and not the slug.
+title_of() {
+  local t="${1//-/ }"
+  printf '%s%s' "$(printf '%s' "${t:0:1}" | tr '[:lower:]' '[:upper:]')" "${t:1}"
+}
+
 # build_reference_fixture - 4 tags / 37 non-archive records, reproducing
 # the approved 34-line Shelf. Dates are chosen so decisions-list.sh's own
 # date-then-filename emission order equals the frame's drawn row order
@@ -228,7 +236,7 @@ build_reference_fixture() {
   local i d
   for i in "${!OPEN_RTC[@]}"; do
     d=$(printf "2026-01-%02d" $((i + 1)))
-    write_record "approved" "${OPEN_RTC[$i]}" "$d" "RTC open $i" "accepted" "requirement-to-cycle"
+    write_record "approved" "${OPEN_RTC[$i]}" "$d" "$(title_of "${OPEN_RTC[$i]}")" "accepted" "requirement-to-cycle"
   done
 
   local CLAIMED_RTC=(
@@ -239,7 +247,7 @@ build_reference_fixture() {
   local rtc_slugs=""
   for i in "${!CLAIMED_RTC[@]}"; do
     d=$(printf "2026-02-%02d" $((i + 1)))
-    write_record "approved" "${CLAIMED_RTC[$i]}" "$d" "RTC claimed $i" "accepted" "requirement-to-cycle"
+    write_record "approved" "${CLAIMED_RTC[$i]}" "$d" "$(title_of "${CLAIMED_RTC[$i]}")" "accepted" "requirement-to-cycle"
     rtc_slugs="${rtc_slugs}${d}-${CLAIMED_RTC[$i]}, "
   done
   write_story "claims-rtc" "planning" "$rtc_slugs"
@@ -251,10 +259,10 @@ build_reference_fixture() {
   )
   for i in "${!OPEN_GUIDES[@]}"; do
     d=$(printf "2026-01-%02d" $((i + 1)))
-    write_record "approved" "${OPEN_GUIDES[$i]}" "$d" "Guides open $i" "accepted" "guides"
+    write_record "approved" "${OPEN_GUIDES[$i]}" "$d" "$(title_of "${OPEN_GUIDES[$i]}")" "accepted" "guides"
   done
 
-  write_record "approved" "the-feature-folder-model-retires-sealed" "2026-01-01" "Wright open" "accepted" "wright"
+  write_record "approved" "the-feature-folder-model-retires-sealed" "2026-01-01" "$(title_of "the-feature-folder-model-retires-sealed")" "accepted" "wright"
 
   local CLAIMED_DEC=(
     "craft-decisions-renders-the-shelf"
@@ -263,7 +271,7 @@ build_reference_fixture() {
   local dec_slugs=""
   for i in "${!CLAIMED_DEC[@]}"; do
     d=$(printf "2026-03-%02d" $((i + 1)))
-    write_record "approved" "${CLAIMED_DEC[$i]}" "$d" "Decisions claimed $i" "accepted" "decisions"
+    write_record "approved" "${CLAIMED_DEC[$i]}" "$d" "$(title_of "${CLAIMED_DEC[$i]}")" "accepted" "decisions"
     dec_slugs="${dec_slugs}${d}-${CLAIMED_DEC[$i]}, "
   done
   write_story "claims-dec" "planning" "$dec_slugs"
@@ -296,7 +304,7 @@ build_shape_fixture() {
   local i d
   for i in "${!OPEN_RTC[@]}"; do
     d=$(printf "2026-01-%02d" $((i + 1)))
-    write_record "approved" "${OPEN_RTC[$i]}" "$d" "RTC open $i" "accepted" "requirement-to-cycle"
+    write_record "approved" "${OPEN_RTC[$i]}" "$d" "$(title_of "${OPEN_RTC[$i]}")" "accepted" "requirement-to-cycle"
   done
 
   local CLAIMED_RTC=(
@@ -307,7 +315,7 @@ build_shape_fixture() {
   local rtc_slugs=""
   for i in "${!CLAIMED_RTC[@]}"; do
     d=$(printf "2026-02-%02d" $((i + 1)))
-    write_record "approved" "${CLAIMED_RTC[$i]}" "$d" "RTC claimed $i" "accepted" "requirement-to-cycle"
+    write_record "approved" "${CLAIMED_RTC[$i]}" "$d" "$(title_of "${CLAIMED_RTC[$i]}")" "accepted" "requirement-to-cycle"
     rtc_slugs="${rtc_slugs}${d}-${CLAIMED_RTC[$i]}, "
   done
   write_story "claims-rtc-shape" "planning" "$rtc_slugs"
@@ -319,7 +327,7 @@ build_shape_fixture() {
   )
   for i in "${!OPEN_GUIDES[@]}"; do
     d=$(printf "2026-01-%02d" $((i + 1)))
-    write_record "approved" "${OPEN_GUIDES[$i]}" "$d" "Guides open $i" "accepted" "guides"
+    write_record "approved" "${OPEN_GUIDES[$i]}" "$d" "$(title_of "${OPEN_GUIDES[$i]}")" "accepted" "guides"
   done
 
   local OPEN_WJ=(
@@ -328,16 +336,16 @@ build_shape_fixture() {
   )
   for i in "${!OPEN_WJ[@]}"; do
     d=$(printf "2026-01-%02d" $((i + 1)))
-    write_record "approved" "${OPEN_WJ[$i]}" "$d" "WJ open $i" "accepted" "wright-journal"
+    write_record "approved" "${OPEN_WJ[$i]}" "$d" "$(title_of "${OPEN_WJ[$i]}")" "accepted" "wright-journal"
   done
 
-  write_record "approved" "decisions-assets-holds-whatever-a-record-points-at" "2026-01-01" "Decisions open" "accepted" "decisions"
+  write_record "approved" "decisions-assets-holds-whatever-a-record-points-at" "2026-01-01" "$(title_of "decisions-assets-holds-whatever-a-record-points-at")" "accepted" "decisions"
 
   for i in $(seq -w 1 23); do
     write_record "approved" "decisions-crafted-$i" "2026-04-$i" "Decisions crafted $i" "accepted" "decisions" "crafted" "ship-story-shape"
   done
 
-  write_record "approved" "the-feature-folder-model-retires-sealed" "2026-01-01" "Wright open" "accepted" "wright"
+  write_record "approved" "the-feature-folder-model-retires-sealed" "2026-01-01" "$(title_of "the-feature-folder-model-retires-sealed")" "accepted" "wright"
 }
 
 echo "=== test-decisions-view.sh ==="
@@ -354,33 +362,33 @@ SHELF_EXHIBIT=$(cat <<'@@SHELF_EXHIBIT@@'
 │  ? pending   ○ unclaimed   ● claimed   ✓ done
 │
 ├─ requirement-to-cycle ── ○○○○○○○○○○●●●●●●●● 18
-│    ○ before-you-leave-receipt-instrument
-│    ○ design-conversation-behavior
-│    ○ no-default-hard-stop
-│    ○ production-boundary-records-versus-artifacts
-│    ○ q5-and-q3-are-derived-not-open
-│    ○ worker-brief-instrument
-│    ○ wright-authors-its-own-run-debrief
-│    ○ public-authoring-convention-derived
-│    ○ room-transitions-are-invisible
-│    ○ the-journal-holds-a-run-s-best-and-worst-moments
-│    ● attention-quiet-while-healthy
+│    ○ Before you leave receipt instrument
+│    ○ Design conversation behavior
+│    ○ No default hard stop
+│    ○ Production boundary records versus artifacts
+│    ○ Q5 and q3 are derived not open
+│    ○ Worker brief instrument
+│    ○ Wright authors its own run debrief
+│    ○ Public authoring convention derived
+│    ○ Room transitions are invisible
+│    ○ The journal holds a run s best and worst moments
+│    ● Attention quiet while healthy
 │      +7 more
 │
 ├─ guides ── ○○○ 3
-│    ○ guides-have-an-index-and-a-lifespan
-│    ○ stories-carry-a-guides-section
-│    ○ the-notebook-holds-guides
+│    ○ Guides have an index and a lifespan
+│    ○ Stories carry a guides section
+│    ○ The notebook holds guides
 │
 ├─ wright-journal ── ○○ 2
-│    ○ the-journal-is-personal-and-lives-with-the-user
-│    ○ the-ledger-holds-only-what-cannot-be-derived
+│    ○ The journal is personal and lives with the user
+│    ○ The ledger holds only what cannot be derived
 │
 ├─ decisions ── ○✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓ 24
-│    ○ decisions-assets-holds-whatever-a-record-points-at
+│    ○ Decisions assets holds whatever a record points at
 │
 ├─ wright ── ○ 1
-│    ○ the-feature-folder-model-retires-sealed
+│    ○ The feature folder model retires sealed
 │
 └───────────────────────────────────────────────────
 @@SHELF_EXHIBIT@@
@@ -575,7 +583,7 @@ fresh_root
 write_record "root" "pending-claimed" "2026-01-01" "Pending claimed" "pending" "pending-tag"
 write_story "claims-it" "planning" "2026-01-01-pending-claimed"
 OUT=$(bash "$LIST" | bash "$VIEW" shelf)
-echo "$OUT" | grep -q '^ROW=? pending-claimed$' && pass "root+pending renders the ? glyph even when DISPOSITION derives claimed" || fail "root+pending renders the ? glyph even when DISPOSITION derives claimed" "ROW=? pending-claimed" "$OUT"
+echo "$OUT" | grep -q '^ROW=? Pending claimed$' && pass "root+pending renders the ? glyph even when DISPOSITION derives claimed" || fail "root+pending renders the ? glyph even when DISPOSITION derives claimed" "ROW=? Pending claimed" "$OUT"
 rm -rf "$ROOT"
 
 echo "-- Test: rows are grouped by glyph class, not raw emission order - a claimed record dated earlier than the open ones still prints after them --"
@@ -585,9 +593,9 @@ write_story "claims-order-check" "planning" "2026-01-01-order-check-claimed"
 write_record "approved" "order-check-open-a" "2026-01-02" "Order check open a" "accepted" "order-check-tag"
 write_record "approved" "order-check-open-b" "2026-01-03" "Order check open b" "accepted" "order-check-tag"
 OUT=$(bash "$LIST" | bash "$VIEW" shelf)
-CLAIMED_ROW_LINE=$(echo "$OUT" | grep -n '^ROW=● order-check-claimed$' | cut -d: -f1)
-OPEN_A_LINE=$(echo "$OUT" | grep -n '^ROW=○ order-check-open-a$' | cut -d: -f1)
-OPEN_B_LINE=$(echo "$OUT" | grep -n '^ROW=○ order-check-open-b$' | cut -d: -f1)
+CLAIMED_ROW_LINE=$(echo "$OUT" | grep -n '^ROW=● Order check claimed$' | cut -d: -f1)
+OPEN_A_LINE=$(echo "$OUT" | grep -n '^ROW=○ Order check open a$' | cut -d: -f1)
+OPEN_B_LINE=$(echo "$OUT" | grep -n '^ROW=○ Order check open b$' | cut -d: -f1)
 [ -n "$OPEN_A_LINE" ] && [ -n "$OPEN_B_LINE" ] && [ -n "$CLAIMED_ROW_LINE" ] && [ "$OPEN_A_LINE" -lt "$CLAIMED_ROW_LINE" ] && [ "$OPEN_B_LINE" -lt "$CLAIMED_ROW_LINE" ] && pass "both ○ rows print before the ● row even though the claimed record is earliest in emission order" || fail "both ○ rows print before the ● row even though the claimed record is earliest in emission order" "○ rows, then ● row" "$OUT"
 rm -rf "$ROOT"
 
@@ -604,7 +612,7 @@ write_record "approved" "other-d" "2026-01-04" "Other D" "accepted" "other"
 write_record "approved" "other-e" "2026-01-05" "Other E" "accepted" "other"
 OUT=$(bash "$LIST" | bash "$VIEW" shelf)
 GUIDES_ROWS=$(printf '%s\n' "$OUT" | awk '/^GROUP=guides$/{f=1} f{print} f && /^ROW=/ && ++n==4{exit}')
-echo "$GUIDES_ROWS" | grep -q '^ROW=? the-notebook-holds-a-guides-index$' && pass "the pending row leads the guides group" || fail "the pending row leads the guides group" "ROW=? the-notebook-holds-a-guides-index" "$GUIDES_ROWS"
+echo "$GUIDES_ROWS" | grep -q '^ROW=? Pending guides idea$' && pass "the pending row leads the guides group" || fail "the pending row leads the guides group" "ROW=? Pending guides idea" "$GUIDES_ROWS"
 GUIDES_LINE=$(echo "$OUT" | grep -n '^GROUP=guides$' | cut -d: -f1)
 OTHER_LINE=$(echo "$OUT" | grep -n '^GROUP=other$' | cut -d: -f1)
 [ "$GUIDES_LINE" -lt "$OTHER_LINE" ] && pass "the pending tag sorts to the top" || fail "the pending tag sorts to the top" "guides before other" "guides=$GUIDES_LINE other=$OTHER_LINE"
@@ -653,8 +661,8 @@ write_record "approved" "the-journal-is-personal-and-lives-with-the-user" "2026-
 write_record "approved" "the-ledger-holds-only-what-cannot-be-derived" "2026-01-02" "WJ B" "accepted" "wright-journal"
 OUT=$(bash "$LIST" --tag=wright-journal | bash "$VIEW" group)
 echo "$OUT" | grep -q '^GROUP=wright-journal$' && pass "the group view emits one GROUP= block" || fail "the group view emits one GROUP= block" "GROUP=wright-journal" "$OUT"
-echo "$OUT" | grep -q '^ROW=○ the-journal-is-personal-and-lives-with-the-user$' && pass "the group view emits the group's rows" || fail "the group view emits the group's rows" "ROW=○ the-journal-is-personal-and-lives-with-the-user" "$OUT"
-echo "$OUT" | grep -q '^ROW=○ the-ledger-holds-only-what-cannot-be-derived$' && pass "the group view emits every row in the group" || fail "the group view emits every row in the group" "ROW=○ the-ledger-holds-only-what-cannot-be-derived" "$OUT"
+echo "$OUT" | grep -q '^ROW=○ WJ A$' && pass "the group view emits the group's rows" || fail "the group view emits the group's rows" "ROW=○ WJ A" "$OUT"
+echo "$OUT" | grep -q '^ROW=○ WJ B$' && pass "the group view emits every row in the group" || fail "the group view emits every row in the group" "ROW=○ WJ B" "$OUT"
 echo "$OUT" | grep -q '^BAND=' && fail "the group view emits no BAND=" "absent" "present" || pass "the group view emits no BAND="
 echo "$OUT" | grep -q '^HEAD=' && fail "the group view emits no HEAD=" "absent" "present" || pass "the group view emits no HEAD="
 echo "$OUT" | grep -q '^CLOSE=' && fail "the group view emits no CLOSE=" "absent" "present" || pass "the group view emits no CLOSE="
@@ -669,7 +677,7 @@ echo "$OUT" | grep -qF 'The gameroom has a slot machine' && pass "the today exam
 echo "$OUT" | grep -qF 'The slot machine has a bonus round' && pass "the tomorrow example line prints" || fail "the tomorrow example line prints" "" "$OUT"
 echo "$OUT" | grep -qF "The tag is the feature you haven't planned yet" && pass "the closing paragraph prints verbatim" || fail "the closing paragraph prints verbatim" "" "$OUT"
 echo "$OUT" | grep -qF 'GROUP=gameroom (example)' && pass "the gameroom example group prints" || fail "the gameroom example group prints" "GROUP=gameroom (example)" "$OUT"
-echo "$OUT" | grep -q '^ROW=○ the-gameroom-has-a-slot-machine$' && pass "the gameroom example rows print" || fail "the gameroom example rows print" "" "$OUT"
+echo "$OUT" | grep -q '^ROW=○ The gameroom has a slot machine$' && pass "the gameroom example rows print" || fail "the gameroom example rows print" "" "$OUT"
 rm -rf "$ROOT"
 
 fresh_root
@@ -686,6 +694,25 @@ echo "$OUT" | grep -q "BAND=DECISION SHELF  ·  empty" && fail "the empty view d
 echo "$OUT" | grep -qi "gameroom" && fail "gameroom appears nowhere once a real record exists" "absent" "present" || pass "gameroom appears nowhere once a real record exists"
 rm -rf "$ROOT"
 
+echo "-- Test: a long title on the Shelf runs its full length on one row --"
+fresh_root
+SHELF_LONG_TITLE="A decision title that runs on and on well past the length a slug is ever capped at, with no cuts"
+[ "${#SHELF_LONG_TITLE}" -eq 96 ] || fail "the long-title fixture is 96 characters" "96" "${#SHELF_LONG_TITLE}"
+write_record "approved" "a-slug-much-shorter-than-its-title" "2026-01-01" "$SHELF_LONG_TITLE" "accepted" "long-tag"
+OUT=$(bash "$LIST" | bash "$VIEW" shelf)
+LONG_ROWS=$(echo "$OUT" | grep -c '^ROW=')
+[ "$LONG_ROWS" = "1" ] && echo "$OUT" | grep -qxF "ROW=○ $SHELF_LONG_TITLE" && pass "a 96-character title prints as exactly one ROW= line, nothing cut" || fail "a 96-character title prints as exactly one ROW= line, nothing cut" "one ROW=○ $SHELF_LONG_TITLE" "$OUT"
+echo "$OUT" | grep -q '…' && fail "no ellipsis ever stands in for a cut title" "absent" "present" || pass "no ellipsis ever stands in for a cut title"
+rm -rf "$ROOT"
+
+echo "-- Test: a record with no H1 falls back to its date-stripped slug --"
+fresh_root
+write_record "approved" "untitled-record" "2026-01-01" "Gone soon" "accepted" "bare-tag"
+sed -i.bak '/^# Gone soon$/d' "$ROOT/.craft/decisions/approved/2026-01-01-untitled-record.md" && rm -f "$ROOT/.craft/decisions/approved/2026-01-01-untitled-record.md.bak"
+OUT=$(bash "$LIST" | bash "$VIEW" shelf)
+echo "$OUT" | grep -qxF 'ROW=○ untitled-record' && pass "a record without an H1 draws its slug without the date" || fail "a record without an H1 draws its slug without the date" "ROW=○ untitled-record" "$OUT"
+rm -rf "$ROOT"
+
 echo "-- Test: the archive emits one ROW per record, labelled, newest exit first --"
 fresh_root
 write_archive_record "declined-idea" "2026-01-01" "declined" "alpha" '> "No." - Darin, 2026-05-01, session'
@@ -694,7 +721,7 @@ write_archive_record "retired-idea" "2026-01-02" "deprecated" "alpha" '> "This w
 > - Darin, 2026-05-15, session'
 write_archive_record "retired-idea-two" "2026-01-03" "deprecated" "alpha" '> "Superseded." - Darin, 2026-05-10, session'
 OUT=$(bash "$LIST" --room=archive | bash "$VIEW" archive)
-RETIRED_LINE=$(echo "$OUT" | grep -n '^ROW=retired  retired-idea$' | cut -d: -f1)
+RETIRED_LINE=$(echo "$OUT" | grep -n '^ROW=retired  Title for retired-idea$' | cut -d: -f1)
 RETIRED_TWO_LINE=$(echo "$OUT" | grep -n 'retired-idea-two' | cut -d: -f1)
 DECLINED_LINE=$(echo "$OUT" | grep -n 'declined-idea' | cut -d: -f1)
 [ -n "$RETIRED_LINE" ] && [ -n "$RETIRED_TWO_LINE" ] && [ -n "$DECLINED_LINE" ] && [ "$RETIRED_LINE" -lt "$RETIRED_TWO_LINE" ] && [ "$RETIRED_TWO_LINE" -lt "$DECLINED_LINE" ] && pass "records order newest exit first" || fail "records order newest exit first" "retired-idea, retired-idea-two, declined-idea" "$OUT"
@@ -725,7 +752,7 @@ echo "$OUT_D" | grep -qF 'BAND=ARCHIVE · declined' && pass "--only=declined tit
 echo "$OUT_D" | grep -q "declined-idea" && pass "--only=declined includes the declined record" || fail "--only=declined includes the declined record" "declined-idea" "$OUT_D"
 echo "$OUT_D" | grep -q "retired-idea" && fail "--only=declined excludes retired records" "absent" "present" || pass "--only=declined excludes retired records"
 echo "$OUT_D" | grep -q '^ROW=declined ' && fail "--only=declined drops the label column" "no label column" "label column present" || pass "--only=declined drops the label column"
-echo "$OUT_D" | grep -q '^ROW=declined-idea$' && pass "--only=declined's ROW is the bare slug" || fail "--only=declined's ROW is the bare slug" "ROW=declined-idea" "$OUT_D"
+echo "$OUT_D" | grep -q '^ROW=Title for declined-idea$' && pass "--only=declined's ROW is the bare title" || fail "--only=declined's ROW is the bare title" "ROW=Title for declined-idea" "$OUT_D"
 
 OUT_R=$(bash "$LIST" --room=archive | bash "$VIEW" archive --only=retired)
 echo "$OUT_R" | grep -qF 'BAND=ARCHIVE · retired' && pass "--only=retired titles the band" || fail "--only=retired titles the band" "BAND=ARCHIVE · retired" "$OUT_R"
@@ -776,7 +803,7 @@ STORIES=
 SHELF_RESULT=$(cat "$UNSET_TEST_DIR/shelf-out.txt")
 echo "$SHELF_RESULT" | grep -qF "BAND=DECISION SHELF  ·  empty" && pass "shelf renders the empty view with CRAFT_PROJECT_ROOT unset" || fail "shelf renders the empty view with CRAFT_PROJECT_ROOT unset" "BAND=DECISION SHELF  ·  empty" "$SHELF_RESULT"
 ARCHIVE_RESULT=$(cat "$UNSET_TEST_DIR/archive-out.txt")
-echo "$ARCHIVE_RESULT" | grep -q "far-record" && pass "archive renders with CRAFT_PROJECT_ROOT unset, reading only the FILE= path handed to it" || fail "archive renders with CRAFT_PROJECT_ROOT unset" "far-record" "$ARCHIVE_RESULT"
+echo "$ARCHIVE_RESULT" | grep -q "Far record" && pass "archive renders with CRAFT_PROJECT_ROOT unset, reading only the FILE= path handed to it" || fail "archive renders with CRAFT_PROJECT_ROOT unset" "Far record" "$ARCHIVE_RESULT"
 rm -rf "$UNSET_TEST_DIR" "$FAR_RECORD_DIR"
 echo ""
 echo "=== The card: one shape, five faces ==="

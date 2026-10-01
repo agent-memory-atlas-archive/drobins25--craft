@@ -333,20 +333,35 @@ else:
     else:
         out("FAIL", "one shared draw node serves all five file-backed card faces", "5 ellipse states", str(incoming_ellipses))
 
-# --- 8: no decisions script name outside the fence and the flag table ----
+# --- section bounds: "## The four scripts" up to "## How to read the graph" -
+# The contracts live in their own section, the one place a script name or
+# the plugin-root path may appear outside the flag table and the graph.
+SCRIPTS_HEADING = "## The four scripts\n"
+sec_start = text.find(SCRIPTS_HEADING)
+sec_end = text.find("\n## How to read the graph", sec_start + 1) if sec_start >= 0 else -1
+if sec_start < 0 or sec_end < 0:
+    out("FAIL", "the file has '## The four scripts' before '## How to read the graph'", "both headings, in that order", f"start={sec_start} end={sec_end}")
+    scripts_section = ""
+    above_outside_section = above_fence
+else:
+    out("PASS", "the file has '## The four scripts' before '## How to read the graph'")
+    scripts_section = text[sec_start:sec_end]
+    above_outside_section = text[:sec_start] + text[sec_end:fence_match.start()]
+
+# --- 8: no decisions script name outside the fence, the flag table and the scripts section
 def strip_table_rows(s):
     return "\n".join(l for l in s.splitlines() if not l.strip().startswith("|"))
 
 below_hits = [name for name in SCRIPTS if name in below_fence]
-above_hits = [name for name in SCRIPTS if name in strip_table_rows(above_fence)]
+above_hits = [name for name in SCRIPTS if name in strip_table_rows(above_outside_section)]
 if below_hits:
     out("FAIL", "no decisions script name appears below the routing fence", "none", str(below_hits))
 else:
     out("PASS", "no decisions script name appears below the routing fence")
 if above_hits:
-    out("FAIL", "above the fence, a decisions script name appears only in the flag table", "none outside the flag table", str(above_hits))
+    out("FAIL", "above the fence, a decisions script name appears only in the flag table or ## The four scripts", "none outside them", str(above_hits))
 else:
-    out("PASS", "above the fence, a decisions script name appears only in the flag table")
+    out("PASS", "above the fence, a decisions script name appears only in the flag table or ## The four scripts")
 
 # --- 9: a write arrow's label never doubles as a pre-card word ------------
 # Pre-card = a node reachable from an entry before any card is on screen and
@@ -374,20 +389,101 @@ collisions = sorted({(l, d_) for s_, d_, l in edges if d_ in write_nodes and l a
 if collisions: out("FAIL", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)", "none", str(collisions))
 else: out("PASS", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)")
 
-# --- 10: the file says where the scripts live, once, above the fence -------
+# --- 10: the scripts' location sits only inside ## The four scripts ------
 # Every other command that runs a script writes its plugin path; the desk
-# named its scripts bare and a fresh session opened with `find` for them
-# (bug 2026-09-27). One sentence in the flag-table section carries the
-# directory, with the variable Claude Code substitutes at load, never a
-# resolved path. Command nodes stay bare: a plaintext node is the literal
-# command, so no plaintext node may carry a path of its own.
+# named its scripts bare and a fresh session opened with `find` for them.
+# The section carries the path with the variable Claude Code substitutes at
+# load, never a resolved path. Command nodes stay bare: a plaintext node is
+# the literal command, so no plaintext node may carry a path of its own, and
+# no line may start a call with a bare script name (it would run from
+# wherever the model last cd'd to).
 LOC = "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/"
-loc_total = text.count(LOC); loc_above = above_fence.count(LOC)
+loc_total = text.count(LOC)
+loc_in_section = scripts_section.count(LOC)
 pathed_nodes = sorted(n for n, s in shapes.items() if s == "plaintext" and "/" in n)
-if loc_total == 1 and loc_above == 1 and not pathed_nodes:
-    out("PASS", "the scripts' location is stated exactly once, above the fence, and no command node carries a path")
+bare_calls = [l for l in text.splitlines() if re.match(r"\s*bash\s+decisions-", l)]
+if loc_total == loc_in_section and loc_in_section >= 5 and not pathed_nodes and not bare_calls:
+    out("PASS", "the scripts' location sits only inside ## The four scripts, and no command node carries a path")
 else:
-    out("FAIL", "the scripts' location is stated exactly once, above the fence, and no command node carries a path", "1 above, 0 below, no pathed plaintext nodes", f"total={loc_total} above={loc_above} pathed_nodes={pathed_nodes}")
+    out("FAIL", "the scripts' location sits only inside ## The four scripts, and no command node carries a path", "all inside the section, at least 5, no pathed nodes, no bare calls", f"total={loc_total} in_section={loc_in_section} pathed_nodes={pathed_nodes} bare_calls={bare_calls}")
+
+# --- 11: each script has an example in the absolute form ------------------
+for name in SCRIPTS:
+    call = 'bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/' + name + '"'
+    if any(call in l for l in scripts_section.splitlines()):
+        out("PASS", f"the section has an absolute-form example line for {name}")
+    else:
+        out("FAIL", f"the section has an absolute-form example line for {name}", call, "absent")
+
+# --- 12: the opener states the form and where it runs from ----------------
+opener = " ".join(scripts_section.split("\n", 2)[-1].split()) if scripts_section else ""
+first_para = opener.split(" ```")[0]
+if 'bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<name>.sh"' in first_para and "from wherever the session is" in first_para:
+    out("PASS", "the section opens with the absolute-form sentence, run from wherever the session is")
+else:
+    out("FAIL", "the section opens with the absolute-form sentence, run from wherever the session is", "literal form plus 'from wherever the session is'", first_para[:200])
+
+# --- 13: the nine-key exhibit appears once, keys in order -----------------
+EXHIBIT = [
+    "FILE=/home/you/app/.craft/decisions/approved/2026-03-14-search-ranks-titles-first.md",
+    "ROOM=approved",
+    "SLUG=2026-03-14-search-ranks-titles-first",
+    "DATE=2026-03-14",
+    "TITLE=Search ranks titles first",
+    "STATUS=accepted",
+    "TAGS=search",
+    "DISPOSITION=claimed",
+    "STORIES=search-results-page",
+]
+exhibit_text = "\n".join(EXHIBIT)
+if text.count(exhibit_text) == 1 and scripts_section.count(exhibit_text) == 1 and text.count("FILE=/home/you/app/") == 1:
+    out("PASS", "the nine-key exhibit appears exactly once, keys in order, inside the section")
+else:
+    out("FAIL", "the nine-key exhibit appears exactly once, keys in order, inside the section", "1", f"total={text.count(exhibit_text)} in_section={scripts_section.count(exhibit_text)}")
+
+# --- 14: the find line and the glyph-to-folder line -----------------------
+if "find .craft/decisions -name '*-<slug>.md'" in scripts_section:
+    out("PASS", "the find-by-name line is present verbatim")
+else:
+    out("FAIL", "the find-by-name line is present verbatim", "find .craft/decisions -name '*-<slug>.md'", "absent")
+sec_flat = " ".join(scripts_section.split())
+if "archive/" in sec_flat and "approved/" in sec_flat and "never on the Shelf" in sec_flat:
+    out("PASS", "the section maps each glyph to its folder and keeps the archive off the Shelf")
+else:
+    out("FAIL", "the section maps each glyph to its folder and keeps the archive off the Shelf", "approved/, archive/, never on the Shelf", "absent")
+
+# --- 15: the hard gate is the pinned eight lines --------------------------
+GATE = [
+    "NEVER use AskUserQuestion here - the answer is typed into the prompt.",
+    "NEVER write a record file by hand - every write is a call on the graph.",
+    "NEVER draw a card from memory - draw it from the record text in the conversation, and after any write read the file again before drawing it.",
+    "NEVER let a box-drawing character into a script's stdout - the rail is drawn here.",
+    "NEVER relay a script's error line as the answer.",
+    "NEVER render anything below the Shelf unasked.",
+    "NEVER select with subcommand syntax - selection is the list filters.",
+    "NEVER draw a card, take a quote or write an approval line for a retag.",
+]
+gate_m = re.search(r"<HARD-GATE>\n(.*?)\n</HARD-GATE>", text, re.DOTALL)
+gate_lines = [l for l in gate_m.group(1).splitlines() if l.strip()] if gate_m else []
+if gate_lines == GATE:
+    out("PASS", "the hard gate is the pinned eight NEVER lines")
+else:
+    out("FAIL", "the hard gate is the pinned eight NEVER lines", str(GATE), str(gate_lines))
+
+# --- 16: the two reading sentences ----------------------------------------
+flat = " ".join(text.split())
+UNASKED = "The Shelf rule above bars a second view nobody asked for, not words: one sentence of Claude's own under a drawer or the Shelf is fine."
+REDRAW = "On a card, words come back to the same card as a redraw only when they changed what the card shows, or ask to see it again; a question or a remark gets an answer in words, and the card stays on screen as it is."
+gate_end = text.find("</HARD-GATE>")
+after_gate = " ".join(text[gate_end:gate_end + 600].split())
+if UNASKED in after_gate and after_gate.index(UNASKED) < 80:
+    out("PASS", "one sentence directly under the gate fence reads the Shelf rule as no second view, not silence")
+else:
+    out("FAIL", "one sentence directly under the gate fence reads the Shelf rule as no second view, not silence", UNASKED, after_gate[:200])
+if "arriving at a state a second time redraws it. " + REDRAW in flat:
+    out("PASS", "the redraw sentence in How to read the graph carries the words-that-change-nothing reading")
+else:
+    out("FAIL", "the redraw sentence in How to read the graph carries the words-that-change-nothing reading", REDRAW, "absent")
 
 PYEOF
 GRAPH_REPORT="$(python3 "$GRAPH_SCRIPT" "$CMD")"
@@ -526,13 +622,43 @@ grep -q "holds the story's own records and no others" "$ALIGNMENT_REF" && pass "
 NOT_LAW_COUNT="$(grep -c "is NOT LAW for this story" "$ALIGNMENT_REF" || true)"
 if [ "$NOT_LAW_COUNT" -eq 2 ]; then pass "the NOT LAW sentence is in the rule and in the prompt template"; else fail "the NOT LAW sentence is in the rule and in the prompt template" "2" "$NOT_LAW_COUNT"; fi
 
-echo "-- Test: the command file names no decision record by slug --"
-CMD_SLUGS="$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+' "$CMD" || true)"
-if [ -z "$CMD_SLUGS" ]; then
-  pass "commands/craft-decisions.md names no decision record by slug"
+echo "-- Test: the command names no real decision record by slug; fictional ones sit only in ## The four scripts --"
+# A slug in shipped text can name a record only this repo has. The exhibit's
+# fictional slug is the one allowed form: inside the scripts section, and
+# matching no file in this store.
+CMD_SECTION="$(awk '/^## The four scripts$/{p=1; next} /^## /{p=0} p{print}' "$CMD")"
+CMD_OUTSIDE="$(awk '/^## The four scripts$/{p=1; next} /^## /{p=0} !p{print}' "$CMD")"
+SLUG_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+'
+OUTSIDE_SLUGS="$(printf '%s\n' "$CMD_OUTSIDE" | grep -oE "$SLUG_RE" || true)"
+if [ -z "$OUTSIDE_SLUGS" ]; then
+  pass "no dated slug appears outside ## The four scripts"
 else
-  fail "commands/craft-decisions.md names no decision record by slug" "none" "$CMD_SLUGS"
+  fail "no dated slug appears outside ## The four scripts" "none" "$OUTSIDE_SLUGS"
 fi
+REAL_HITS=""
+while IFS= read -r slug; do
+  [ -z "$slug" ] && continue
+  if [ -n "$(find "$REPO/.craft/decisions" -name "${slug}.md" 2>/dev/null)" ]; then REAL_HITS="$REAL_HITS $slug"; fi
+done < <(printf '%s\n' "$CMD_SECTION" | grep -oE "$SLUG_RE" | sort -u)
+if [ -z "$REAL_HITS" ]; then
+  pass "no slug in ## The four scripts matches a record in this store"
+else
+  fail "no slug in ## The four scripts matches a record in this store" "none" "$REAL_HITS"
+fi
+
+echo "-- Test: scripts run through the absolute path, never a changed directory --"
+grep_fail_below_fence "no 'cd ' command below the frontmatter fence" '(^|[^A-Za-z])cd '
+grep_fail_below_fence "no 'from that directory' below the frontmatter fence" 'from that directory'
+
+echo "-- Test: the command's drawing rule and receipts name records by title, not slug --"
+if grep -qE 'date-stripped, as on the Shelf|glyph and slug' "$CMD"; then
+  fail "no slug-as-on-the-Shelf wording remains in the command" "absent" "$(grep -nE 'date-stripped, as on the Shelf|glyph and slug' "$CMD")"
+else
+  pass "no slug-as-on-the-Shelf wording remains in the command"
+fi
+grep -qF 'the record'"'"'s title at its full length' "$CMD" && pass "the drawing rule's rows bullet names the title at its full length" || fail "the drawing rule's rows bullet names the title at its full length" "present" "absent"
+grep -qF 'Okay - moved <title> to <tag>' "$CMD" && pass "the retag receipt line names the title" || fail "the retag receipt line names the title" "present" "absent"
+tr '\n' ' ' < "$CMD" | tr -s ' ' | grep -qF "glyph and title as the Shelf would show them" && pass "the receipt rows read as glyph and title" || fail "the receipt rows read as glyph and title" "present" "absent"
 
 echo ""
 echo "-- Summary --"
