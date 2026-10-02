@@ -510,6 +510,8 @@ A fresh card's only call is the tag check: no Shelf, no list and no file read co
 
 Words that reshape a parked card and name a writing move in the same message draw the reshaped card first; the move's one write follows the card, never precedes it.
 
+Approve is the exception: named in the same message as the words that open, select or reshape a card, it draws the card and waits for the answer at that card - law is filed only from a card the human has already seen.
+
 - **Band:** `<STATUS> · tags: <tag> · source: <source>` - the status in caps,
   a single space around each `·`. A fresh card reads
   `PENDING · tags: <tag> · source: session`; a tag no record carries (the tag

@@ -697,6 +697,7 @@ HOLDS = [
     ("## The four scripts", "\n## How to read the graph", "a reopen body may open with a \"# <title>\" line, which retitles the record (its filename keeps the slug); a reshape whose ruling no longer fits the title sends one"),
     ("### The faces Claude draws", "\n### The retire line", "A fresh card's only call is the tag check: no Shelf, no list and no file read come before it."),
     ("### The faces Claude draws", "\n### The retire line", "Words that reshape a parked card and name a writing move in the same message draw the reshaped card first; the move's one write follows the card, never precedes it."),
+    ("### The faces Claude draws", "\n### The retire line", "Approve is the exception: named in the same message as the words that open, select or reshape a card, it draws the card and waits for the answer at that card - law is filed only from a card the human has already seen."),
     ("### The retire line", "\n## The card", "That draw is one `cat <FILE>`: the claimants lines are already in the conversation and are never listed again."),
     ("## The card", "\n### Refusal wording", "- A ruling whose subject is a literal - a character, an emoji, a colour, a line of copy - carries that literal verbatim in the Decision, never a description of it."),
 ]
