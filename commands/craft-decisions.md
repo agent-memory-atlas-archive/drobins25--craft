@@ -182,6 +182,9 @@ takes:  --tag=<tag> --stdin - a new record, its body on stdin in a quoted
         --reopen=<slug> --stdin - a reopen sends only the sections that
         changed, each under its own heading; on law it requires an ## Approval
         section, in the root it refuses one
+        a reopen body may open with a "# <title>" line, which retitles the
+        record (its filename keeps the slug); a reshape whose ruling no
+        longer fits the title sends one
 prints: "Claimed: <story>" lines, then "Sections written: <names>" for a
         reopen, then the record's path last
 ```

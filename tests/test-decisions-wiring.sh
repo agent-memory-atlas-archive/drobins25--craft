@@ -694,6 +694,7 @@ else:
 HOLDS = [
     ("## The four scripts", "\n## How to read the graph", "These blocks are the whole contract: what a script takes and what it prints are written here, and a script's source is never opened to learn more."),
     ("## The four scripts", "\n## How to read the graph", "A block already carries its record's `FILE=`: the next call on a record the list just printed is `cat <FILE>`, never the list again with `--slug=`."),
+    ("## The four scripts", "\n## How to read the graph", "a reopen body may open with a \"# <title>\" line, which retitles the record (its filename keeps the slug); a reshape whose ruling no longer fits the title sends one"),
     ("### The faces Claude draws", "\n### The retire line", "A fresh card's only call is the tag check: no Shelf, no list and no file read come before it."),
     ("### The faces Claude draws", "\n### The retire line", "Words that reshape a parked card and name a writing move in the same message draw the reshaped card first; the move's one write follows the card, never precedes it."),
     ("### The retire line", "\n## The card", "That draw is one `cat <FILE>`: the claimants lines are already in the conversation and are never listed again."),
