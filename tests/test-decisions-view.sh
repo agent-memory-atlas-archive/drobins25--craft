@@ -809,214 +809,11 @@ echo ""
 echo "=== The card: one shape, five faces ==="
 echo ""
 
-echo "-- Test: the approved card exhibit is reproduced from the view's data by the drawing rule (FIRST test) --"
-CARD_EXHIBIT_FILE=$(mktemp)
-cat > "$CARD_EXHIBIT_FILE" <<'@@CARD_EXHIBIT@@'
-┌─ ACCEPTED · tags: decisions · source: session ──────────
-│  2026-09-03-every-decision-carries-tags
-│
-│  Every decision carries tags
-│
-├─ CONTEXT
-│    Reopen 2026-09-05: the store held 96 distinct tags across 36
-│    records, 67 on one record only, chosen freehand per card. Only
-│    the first tag is read by anything. Decisions need to be findable
-│    - by tag, by text search, by date, by asking - and two competing
-│    label systems (tags AND a feature: field) made every one of those
-│    harder.
-│
-├─ OPTIONS CONSIDERED
-│    - Keep both tags and the feature: field (two taxonomies to
-│      maintain). Tags as the only sanctioned search method
-│      (over-prescriptive). Tags on every record as one way to find
-│      them, field retired.
-│
-├─ DECISION
-│    Every decision carries exactly one tag: its group. It is shown on
-│    the card, approved with it, and is the Shelf's header. A second
-│    tag is added only when the filer can name the existing record it
-│    would join. A new group starts with one record, and its tag is
-│    the group's name from that moment. Finding records any other way
-│    - grep, a script, a question - stays open and is not ruled here.
-│    The feature: field is retired; its value is the tag: the 19
-│    Wright records get requirement-to-cycle, the 4 TBD records get
-│    guides.
-│
-├─ CONSEQUENCES
-│    Reopen 2026-09-05: the 36 records on disk are trimmed to their
-│    first tag by hand, since capture is not built. Capture, when
-│    built, takes one tag and refuses a second unless it exists on
-│    another record. The Shelf row loses its tag column; the Shelf
-│    record's "date, slug, tags" row is read as "date, slug". One
-│    label system, governed by the user's approvals, usable by any
-│    search method now or later. The field-to-tag conversion runs with
-│    the restructure.
-│
-├─ APPROVAL
-│    > "approve. I do like having tags as being the motif for searching
-│    > though. I wouldn't push back on that, I just didn't want it stated
-│    > like it was the only way." - Darin, 2026-09-03, session (card 3 of
-│    > 3, terminal ceremony)
-│    > Reopen: "a" - Darin, 2026-09-05, session
-│    > Reopen: "I'm okay with that, but if we're starting a new group, claude
-│    > should propose a new tag so the user is aware of what's being
-│    > created." - 2026-09-07, session
-│
-├─ YOUR MOVE
-│    a) approve         moves to approved/ as shown
-│    b) keep pending    saves your changes, stays on the Shelf
-│    c) decline         moves to the archive with your words
-│
-│  a, b, c, or just tell me what to change.
-└──────────────────────────────────────────────────────────
-@@CARD_EXHIBIT@@
-CARD_EXHIBIT=$(cat "$CARD_EXHIBIT_FILE")
-rm -f "$CARD_EXHIBIT_FILE"
-CARD_DRAWN=$(bash "$VIEW" card --variant=pending --file="$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md" | draw_rail)
-[ "$(printf '%s' "$CARD_DRAWN" | normalize_bands)" = "$(printf '%s' "$CARD_EXHIBIT" | normalize_bands)" ] \
-  && pass "the approved card exhibit is reproduced from the view's data by the drawing rule" \
-  || fail "the approved card exhibit is reproduced from the view's data by the drawing rule" "$CARD_EXHIBIT" "$CARD_DRAWN"
-
-echo "-- Test: every APPROVAL line is byte-identical to the file's '> ' lines --"
-APPROVAL_DIFF=$(diff <(grep '^> ' "$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md") \
-  <(bash "$VIEW" card --variant=pending --file="$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md" | sed -n 's/^ROW=//p' | grep '^> '))
-[ -z "$APPROVAL_DIFF" ] && pass "every APPROVAL line is byte-identical to the file's '> ' lines" || fail "every APPROVAL line is byte-identical to the file's '> ' lines" "(no diff)" "$APPROVAL_DIFF"
-
-echo "-- Test: a fresh card's text equals capture's file once the data transform is undone --"
+echo "-- Test: view card refuses every variant but reopen --"
 fresh_root
-DRY_OUT=$(bash "$CAPTURE" "The notebook holds a guides index" --tag=guides \
-  --context="Wright offers proposals. This one needs a home." \
-  --options="- Keep the index in the README.
-- Give guides their own index file." \
-  --decision="Guides get their own index file." \
-  --consequences="One more file, easier to scan." \
-  --dry-run)
-REAL_PATH=$(bash "$CAPTURE" "The notebook holds a guides index" --tag=guides \
-  --context="Wright offers proposals. This one needs a home." \
-  --options="- Keep the index in the README.
-- Give guides their own index file." \
-  --decision="Guides get their own index file." \
-  --consequences="One more file, easier to scan.")
-CARD_OUT=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-DIFF=$(python3 -c "
-import re, sys
-
-with open('$REAL_PATH') as f:
-    content = f.read()
-m = re.match(r'^---\n.*?\n---\n?(.*)\$', content, re.DOTALL)
-expected_text = m.group(1)
-
-# The card's own data is BAND=/HEAD=/DIV=/ROW=/BLANK=/CLOSE= lines, not
-# a frame - this undoes THAT transform (labels back to '## ', title
-# back to '# ') and collapses whitespace runs to single spaces on BOTH
-# sides before comparing, since line breaks may legitimately differ
-# now that the card wraps at 65 instead of the file's own 55.
-LABELS = {
-    'CONTEXT': 'Context',
-    'OPTIONS CONSIDERED': 'Options considered',
-    'DECISION': 'Decision',
-    'CONSEQUENCES': 'Consequences',
-    'APPROVAL': 'Approval',
-}
-kv_lines = []
-for raw in '''$CARD_OUT'''.split(chr(10)):
-    if raw == '':
-        continue
-    key, _, val = raw.partition('=')
-    kv_lines.append((key, val))
-
-heads = [v for k, v in kv_lines if k == 'HEAD']
-title = heads[1] if len(heads) > 1 else ''
-out_lines = ['# ' + title]
-started = False
-for key, val in kv_lines:
-    if key == 'DIV' and val == 'YOUR MOVE':
-        break
-    if not started:
-        if key == 'DIV':
-            started = True
-        else:
-            continue
-    if key == 'DIV':
-        out_lines.append('## ' + LABELS.get(val, val))
-    elif key == 'ROW':
-        out_lines.append(val)
-    elif key == 'BLANK':
-        out_lines.append('')
-got_text = '\n'.join(out_lines)
-
-norm = lambda s: re.sub(r'\s+', ' ', s).strip()
-if norm(got_text) == norm(expected_text):
-    print('MATCH')
-else:
-    print('MISMATCH')
-    print('expected:', norm(expected_text))
-    print('got:     ', norm(got_text))
-")
-echo "$DIFF" | grep -q '^MATCH$' && pass "the fresh card's text equals capture's file once the data transform is undone" || fail "the fresh card's text equals capture's file once the data transform is undone" "MATCH" "$DIFF"
-rm -rf "$ROOT"
-
-echo "-- Test: a record authored at 57 columns renders with no one-word orphan lines --"
-fresh_root
-LIVE_SHAPED_CONTEXT="The letters record rules that anything not a letter is
-the user's words, and words redraw the card and never
-file anything. So a sentence typed at a question card
-would pick, redraw, and then wait for a letter that the
-sentence had already said."
-DRY_OUT=$(bash "$CAPTURE" "A live-shaped card" --tag=guides \
-  --context="$LIVE_SHAPED_CONTEXT" --options="- A." --decision="A." --consequences="Fine." --dry-run)
-ORPHAN_CARD=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-ORPHAN_CHECK=$(python3 -c "
-import sys
-# Only the CONTEXT section's ROW= lines matter here - the paragraph is
-# many words long, so if reflow worked, no physical line inside it is
-# a single word.
-rows = []
-in_context = False
-for raw in '''$ORPHAN_CARD'''.split(chr(10)):
-    if raw == '':
-        continue
-    key, _, val = raw.partition('=')
-    if key == 'DIV' and val == 'CONTEXT':
-        in_context = True
-        continue
-    if in_context:
-        if key == 'BLANK':
-            break
-        if key == 'ROW':
-            rows.append(val)
-orphans = [l for l in rows if len(l.split()) == 1]
-print('ORPHANS=' + str(len(orphans)))
-")
-echo "$ORPHAN_CHECK" | grep -q "ORPHANS=0" && pass "a record authored at 57 columns renders with no one-word orphan lines" || fail "a record authored at 57 columns renders with no one-word orphan lines" "ORPHANS=0" "$ORPHAN_CHECK"
-rm -rf "$ROOT"
-
-echo "-- Test: the dated slug sits on its own HEAD= line, whole and unbroken --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "Guides get an index of the right length" --tag=guides --created=2026-01-01 \
-  --context="Context." --options="- A." --decision="A." --consequences="Fine." --dry-run)
-REPORTED_SLUG=$(printf '%s\n' "$DRY_OUT" | head -1 | sed 's/^SLUG=//')
-SLUG_LEN=${#REPORTED_SLUG}
-[ "$SLUG_LEN" = "50" ] && pass "the fixture's dated slug is exactly 50 characters" || fail "the fixture's dated slug is exactly 50 characters" "50" "$SLUG_LEN"
-FIRST_HEAD=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh | grep '^HEAD=' | sed -n '1p' | sed 's/^HEAD=//')
-[ "$FIRST_HEAD" = "$REPORTED_SLUG" ] && pass "the 50-character slug sits whole on its own HEAD= line" || fail "the 50-character slug sits whole on its own HEAD= line" "$REPORTED_SLUG" "$FIRST_HEAD"
-echo "$FIRST_HEAD" | grep -q ' ' && fail "the slug is not broken mid-word" "no internal space" "space present" || pass "the slug is not broken mid-word"
-rm -rf "$ROOT"
-
-echo "-- Test: section labels sit on their own DIV= line and body rows carry no extra indent (the rail supplies it) --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A labelled card" --tag=guides \
-  --context="Context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
-FRESH_CARD=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-for LABEL in CONTEXT "OPTIONS CONSIDERED" DECISION CONSEQUENCES APPROVAL "YOUR MOVE"; do
-  echo "$FRESH_CARD" | grep -qF "DIV=$LABEL" && pass "the $LABEL label sits on its own DIV= line" || fail "the $LABEL label sits on its own DIV= line" "DIV=$LABEL" "$FRESH_CARD"
-done
-echo "$FRESH_CARD" | grep -q '^ROW=Context\.$' && pass "the Context body row carries no extra indent" || fail "the Context body row carries no extra indent" "ROW=Context." "$FRESH_CARD"
-echo "$FRESH_CARD" | grep -q '^ROW=- A\.$' && pass "an option body row keeps its dash marker" || fail "an option body row keeps its dash marker" "ROW=- A." "$FRESH_CARD"
-
 mkdir -p "$ROOT/.craft/decisions/approved"
-cat > "$ROOT/.craft/decisions/approved/2026-01-01-labelled-law.md" <<'EOF'
+REFUSE_FILE="$ROOT/.craft/decisions/approved/2026-01-01-refuse-law.md"
+cat > "$REFUSE_FILE" <<'EOF'
 ---
 type: decision
 status: accepted
@@ -1024,7 +821,7 @@ created: 2026-01-01
 source: session
 tags: [guides]
 ---
-# Labelled law
+# Refuse law
 
 ## Context
 Context.
@@ -1041,14 +838,24 @@ Fine.
 ## Approval
 > "approve" - 2026-01-01, session
 EOF
-RETIRE_CARD=$(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-labelled-law.md")
-echo "$RETIRE_CARD" | grep -qF 'DIV=APPROVAL' && pass "retire's APPROVAL label sits on its own DIV= line" || fail "retire's APPROVAL label sits on its own DIV= line" "DIV=APPROVAL" "$RETIRE_CARD"
-echo "$RETIRE_CARD" | grep -q '^ROW=> "approve"' && pass "retire's approval quote is verbatim, with the '> ' prefix intact" || fail "retire's approval quote is verbatim, with the '> ' prefix intact" 'ROW=> "approve"' "$RETIRE_CARD"
-
-PENDING_CARD_STATE=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=question --proposed=a)
-echo "$PENDING_CARD_STATE" | grep -qF 'DIV=YOUR OPTIONS' && pass "the question state's YOUR OPTIONS label sits on its own DIV= line" || fail "the question state's YOUR OPTIONS label sits on its own DIV= line" "DIV=YOUR OPTIONS" "$PENDING_CARD_STATE"
-echo "$PENDING_CARD_STATE" | grep -q '^ROW=(a) Proposed: A\.$' && pass "a lettered option row carries no extra indent" || fail "a lettered option row carries no extra indent" "ROW=(a) Proposed: A." "$PENDING_CARD_STATE"
+for VARIANT in fresh pending retire bogus ""; do
+  REFUSE_RC=0
+  REFUSE_OUT=$(printf 'SLUG=x\n' | bash "$VIEW" card --variant="$VARIANT" --file="$REFUSE_FILE" 2>&1) || REFUSE_RC=$?
+  [ "$REFUSE_RC" -ne 0 ] && [ "$REFUSE_OUT" = "Error: --variant= must be reopen" ] \
+    && pass "view card --variant=${VARIANT:-<empty>} exits non-zero with 'Error: --variant= must be reopen'" \
+    || fail "view card --variant=${VARIANT:-<empty>} exits non-zero with 'Error: --variant= must be reopen'" "rc!=0, Error: --variant= must be reopen" "rc=$REFUSE_RC: $REFUSE_OUT"
+done
+REFUSE_RC=0
+REFUSE_OUT=$(bash "$VIEW" card --file="$REFUSE_FILE" 2>&1) || REFUSE_RC=$?
+[ "$REFUSE_RC" -ne 0 ] && [ "$REFUSE_OUT" = "Error: --variant= must be reopen" ] \
+  && pass "view card with no --variant= is refused the same way" \
+  || fail "view card with no --variant= is refused the same way" "rc!=0, Error: --variant= must be reopen" "rc=$REFUSE_RC: $REFUSE_OUT"
 rm -rf "$ROOT"
+
+echo "-- Test: every APPROVAL line is byte-identical to the file's '> ' lines --"
+APPROVAL_DIFF=$(diff <(grep '^> ' "$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md") \
+  <(bash "$VIEW" card --variant=reopen --file="$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md" | sed -n 's/^ROW=//p' | grep '^> '))
+[ -z "$APPROVAL_DIFF" ] && pass "every APPROVAL line is byte-identical to the file's '> ' lines" || fail "every APPROVAL line is byte-identical to the file's '> ' lines" "(no diff)" "$APPROVAL_DIFF"
 
 echo "-- Test: on a reopen card a removed bullet reads '- - text' and an unchanged bullet reads '  - text' --"
 fresh_root
@@ -1090,19 +897,7 @@ echo "$BULLET_DIFF" | grep -B1 -- '^ROW=+ - A brand new option\.$' | head -1 | g
 echo "$BULLET_DIFF" | grep -B1 -- '^ROW=  - Keep it as is\.$' | head -1 | grep -qx 'MARK=' && pass "the unchanged bullet's ROW= is preceded by an unmarked MARK=" || fail "the unchanged bullet's ROW= is preceded by an unmarked MARK=" "MARK=" "$BULLET_DIFF"
 rm -rf "$ROOT"
 
-echo "-- Test: the header shows the collision-suffixed slug the file will actually get --"
-fresh_root
-bash "$CAPTURE" "Collision title" --tag=guides --quote="a" \
-  --context="Some context." --options="- One." --decision="One." --consequences="Fine." > /dev/null
-DRY_OUT=$(bash "$CAPTURE" "Collision title" --tag=guides \
-  --context="Some context." --options="- One." --decision="One." --consequences="Fine." --dry-run)
-CARD_HEADER_SLUG=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh | grep '^HEAD=' | sed -n '1p' | sed 's/^HEAD=//')
-REPORTED_SLUG=$(printf '%s\n' "$DRY_OUT" | head -1 | sed 's/^SLUG=//')
-echo "$REPORTED_SLUG" | grep -q -- '-2$' && pass "the dry run itself reports the collision-suffixed slug" || fail "the dry run itself reports the collision-suffixed slug" "*-2" "$REPORTED_SLUG"
-[ "$CARD_HEADER_SLUG" = "$REPORTED_SLUG" ] && pass "the card's first HEAD= line carries the collision-suffixed slug" || fail "the card's first HEAD= line carries the collision-suffixed slug" "$REPORTED_SLUG" "$CARD_HEADER_SLUG"
-rm -rf "$ROOT"
-
-echo "-- Test: no card face, including reopen, emits a box-drawing character or an ANSI escape --"
+echo "-- Test: no reopen output holds a box-drawing character or an ANSI escape --"
 fresh_root
 mkdir -p "$ROOT/.craft/decisions/approved"
 cat > "$ROOT/.craft/decisions/approved/2026-01-01-wide-law.md" <<EOF
@@ -1130,68 +925,16 @@ Nothing changes.
 ## Approval
 > "approve" - 2026-01-01, session
 EOF
-FRESH_DRY=$(bash "$CAPTURE" "A fresh card" --tag=guides \
-  --context="Fresh context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
 BOX_BAD=0
-BOX_BAD=$((BOX_BAD + $(printf '%s\n' "$FRESH_DRY" | bash "$VIEW" card --variant=fresh | no_box_chars)))
-BOX_BAD=$((BOX_BAD + $(printf '%s\n' "$FRESH_DRY" | bash "$VIEW" card --variant=fresh --state=question --proposed=a | no_box_chars)))
-BOX_BAD=$((BOX_BAD + $(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/approved/2026-01-01-wide-law.md" | no_box_chars)))
-BOX_BAD=$((BOX_BAD + $(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-wide-law.md" --claimed-by="story-a:ready" | no_box_chars)))
 BOX_BAD=$((BOX_BAD + $(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-wide-law.md" --context="New context." --options="- Keep it as is." --decision="Change it." --consequences="Nothing changes." --claimed-by="story-a:ready" | no_box_chars)))
-[ "$BOX_BAD" -eq 0 ] && pass "the fresh, pending, retire and reopen faces emit no box-drawing character" || fail "the fresh, pending, retire and reopen faces emit no box-drawing character" "0" "$BOX_BAD"
+[ "$BOX_BAD" -eq 0 ] && pass "the reopen face emits no box-drawing character" || fail "the reopen face emits no box-drawing character" "0" "$BOX_BAD"
 REOPEN_ESCAPE=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-wide-law.md" \
   --context="New context." --options="- Keep it as is." --decision="Change it." --consequences="Nothing changes." | python3 -c "import sys; print('yes' if chr(27) in sys.stdin.read() else 'no')")
 [ "$REOPEN_ESCAPE" = "no" ] && pass "the reopen face emits no ANSI escape - colour is the command file's job now" || fail "the reopen face emits no ANSI escape - colour is the command file's job now" "no" "$REOPEN_ESCAPE"
 rm -rf "$ROOT"
 
-echo "-- Test: the question and decision states render from ONE input --"
+echo "-- Test: the reopen face offers exactly its ruled letter, effect and closing line --"
 fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A forked card" --tag=guides \
-  --context="Two ways to go." --options="- Option one text.
-- Option two text." --decision="Option one text." --consequences="Fine either way." --dry-run)
-QUESTION=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=question --proposed=a)
-echo "$QUESTION" | grep -q "YOUR OPTIONS" && pass "the question state relabels the options header" || fail "the question state relabels the options header" "YOUR OPTIONS" "$QUESTION"
-echo "$QUESTION" | grep -q '(a) Proposed: Option one text.' && pass "the question state marks the proposed option" || fail "the question state marks the proposed option" "(a) Proposed:" "$QUESTION"
-echo "$QUESTION" | grep -q "DECISION if (a)" && pass "the question state labels DECISION if (<letter>)" || fail "the question state labels DECISION if (<letter>)" "DECISION if (a)" "$QUESTION"
-echo "$QUESTION" | grep -q "CONSEQUENCES if (a)" && pass "the question state labels CONSEQUENCES if (<letter>)" || fail "the question state labels CONSEQUENCES if (<letter>)" "CONSEQUENCES if (a)" "$QUESTION"
-echo "$QUESTION" | grep -q "a) pick" && pass "the question state offers picking letters" || fail "the question state offers picking letters" "a) pick" "$QUESTION"
-rm -rf "$ROOT"
-
-echo "-- Test: the decision state is the default --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A default card" --tag=guides \
-  --context="Context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
-DEFAULT_CARD=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-echo "$DEFAULT_CARD" | grep -q "a) approve" && echo "$DEFAULT_CARD" | grep -q "b) keep pending" && echo "$DEFAULT_CARD" | grep -q "c) decline" && pass "with no --state, a fresh card arrives in the decision state (a/b/c)" || fail "with no --state, a fresh card arrives in the decision state (a/b/c)" "a) approve / b) keep pending / c) decline" "$DEFAULT_CARD"
-rm -rf "$ROOT"
-
-echo "-- Test: --proposed= is required in the question state and refused in the decision state --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A card" --tag=guides \
-  --context="Context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
-printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=question > /dev/null 2>&1 && fail "--state=question with no --proposed= is refused" "exit 1" "exit 0" || pass "--state=question with no --proposed= is refused"
-printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=decision --proposed=a > /dev/null 2>&1 && fail "--proposed= in the decision state is refused" "exit 1" "exit 0" || pass "--proposed= in the decision state is refused"
-rm -rf "$ROOT"
-
-echo "-- Test: each face offers exactly its ruled letters, effects and closing line --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A card" --tag=guides \
-  --context="Context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
-
-FRESH_DECISION=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-echo "$FRESH_DECISION" | grep -q "a) approve" || fail "fresh decision offers a) approve" "a) approve" "$FRESH_DECISION"
-echo "$FRESH_DECISION" | grep -q "b) keep pending" || fail "fresh decision offers b) keep pending" "b) keep pending" "$FRESH_DECISION"
-echo "$FRESH_DECISION" | grep -q "c) decline" || fail "fresh decision offers c) decline" "c) decline" "$FRESH_DECISION"
-echo "$FRESH_DECISION" | grep -q "a, b, c, or just tell me what to change." && pass "fresh decision's closing line names a, b, c" || fail "fresh decision's closing line names a, b, c" "a, b, c, or just tell me what to change." "$FRESH_DECISION"
-
-FRESH_QUESTION=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=question --proposed=a)
-echo "$FRESH_QUESTION" | grep -q "c) keep pending" && pass "fresh question offers one letter per option then keep pending" || fail "fresh question offers one letter per option then keep pending" "c) keep pending" "$FRESH_QUESTION"
-echo "$FRESH_QUESTION" | grep -q "a, b, c, or just tell me what to change." && pass "fresh question's closing line names a, b, c" || fail "fresh question's closing line names a, b, c" "a, b, c, or just tell me what to change." "$FRESH_QUESTION"
-
 mkdir -p "$ROOT/.craft/decisions/approved"
 cat > "$ROOT/.craft/decisions/approved/2026-01-01-letters-law.md" <<'EOF'
 ---
@@ -1223,66 +966,6 @@ REOPEN=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/appro
 echo "$REOPEN" | grep -q "a) approve" && echo "$REOPEN" | grep -q "the law changes to this" && pass "reopen offers a) approve, effect 'the law changes to this'" || fail "reopen offers a) approve, effect 'the law changes to this'" "a) approve ... the law changes to this" "$REOPEN"
 echo "$REOPEN" | grep -q "a, or just tell me what to change." && pass "reopen's closing line names only a" || fail "reopen's closing line names only a" "a, or just tell me what to change." "$REOPEN"
 
-RETIRE=$(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-letters-law.md")
-echo "$RETIRE" | grep -q "a) retire" && echo "$RETIRE" | grep -q "no longer applies" && echo "$RETIRE" | grep -q "archive" && echo "$RETIRE" | grep -q "your words" && pass "retire offers a) retire, effect 'no longer applies...'" || fail "retire offers a) retire, effect 'no longer applies...'" "a) retire ... no longer applies ... your words" "$RETIRE"
-echo "$RETIRE" | grep -q "a, or just tell me what to change." && pass "retire's closing line names only a" || fail "retire's closing line names only a" "a, or just tell me what to change." "$RETIRE"
-rm -rf "$ROOT"
-
-echo "-- Test: a pending card reads its state from the file's own Options shape --"
-fresh_root
-write_options_record "root" "lettered-one" "2026-01-01" "Lettered one" "pending" "guides" \
-'(a) Keep it.
-(b) Proposed: Change it.'
-write_options_record "root" "dashed-one" "2026-01-02" "Dashed one" "pending" "guides" \
-'- Keep it.
-- Change it.'
-write_options_record "root" "empty-one" "2026-01-03" "Empty one" "pending" "guides" ""
-
-LETTERED_OUT=$(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/2026-01-01-lettered-one.md")
-echo "$LETTERED_OUT" | grep -q "YOUR OPTIONS" && pass "a pending card with lettered options draws as a question" || fail "a pending card with lettered options draws as a question" "YOUR OPTIONS" "$LETTERED_OUT"
-echo "$LETTERED_OUT" | grep -q '(b) Proposed: Change it.' && pass "the Proposed option is marked from the file's own marker" || fail "the Proposed option is marked from the file's own marker" "(b) Proposed:" "$LETTERED_OUT"
-
-DASHED_OUT=$(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/2026-01-02-dashed-one.md")
-echo "$DASHED_OUT" | grep -q "OPTIONS CONSIDERED" && pass "a pending card with dashed options draws as a decision" || fail "a pending card with dashed options draws as a decision" "OPTIONS CONSIDERED" "$DASHED_OUT"
-echo "$DASHED_OUT" | grep -q "a) approve" && pass "the dashed pending card offers approve/keep pending/decline" || fail "the dashed pending card offers approve/keep pending/decline" "a) approve" "$DASHED_OUT"
-
-EMPTY_OUT=$(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/2026-01-03-empty-one.md")
-echo "$EMPTY_OUT" | grep -q "OPTIONS CONSIDERED" && pass "a pending card with no options draws as a decision" || fail "a pending card with no options draws as a decision" "OPTIONS CONSIDERED" "$EMPTY_OUT"
-
-FORCED_DECISION=$(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/2026-01-01-lettered-one.md" --state=decision)
-echo "$FORCED_DECISION" | grep -q "OPTIONS CONSIDERED" && pass "an explicit --state=decision overrides the file's lettered shape" || fail "an explicit --state=decision overrides the file's lettered shape" "OPTIONS CONSIDERED" "$FORCED_DECISION"
-rm -rf "$ROOT"
-
-echo "-- Test: a single lettered option still draws as a question --"
-fresh_root
-write_options_record "root" "single-lettered" "2026-01-01" "Single lettered" "pending" "guides" \
-'(a) Proposed: The only option.'
-SINGLE_OUT=$(bash "$VIEW" card --variant=pending --file="$ROOT/.craft/decisions/2026-01-01-single-lettered.md")
-echo "$SINGLE_OUT" | grep -q "YOUR OPTIONS" && pass "a single lettered option still draws as a question" || fail "a single lettered option still draws as a question" "YOUR OPTIONS" "$SINGLE_OUT"
-rm -rf "$ROOT"
-
-echo "-- Test: the decision state never prints a lettered option and the question state never prints a dashed one --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A card" --tag=guides \
-  --context="Context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
-DEC=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=decision)
-QUE=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --state=question --proposed=a)
-echo "$DEC" | grep -qE '\(a\)|\(b\)' && fail "the decision state never prints a lettered option" "no (a)/(b)" "$DEC" || pass "the decision state never prints a lettered option"
-echo "$QUE" | grep -q '^ROW=- ' && fail "the question state never prints a dashed option" "no dash lines" "$QUE" || pass "the question state never prints a dashed option"
-rm -rf "$ROOT"
-
-echo "-- Test: a wide body line reflows across more than one ROW line, never past the card's 65-column wrap width --"
-fresh_root
-LONG_TEXT=$(printf 'word%.0s ' $(seq 1 120))
-DRY_OUT=$(bash "$CAPTURE" "A wide card" --tag=guides \
-  --context="$LONG_TEXT" --options="- A." --decision="A." --consequences="Fine." --dry-run)
-WIDE_CARD=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-echo "$WIDE_CARD" | grep -q "word word word" && pass "a wide body line is present, wrapped" || fail "a wide body line is present, wrapped" "word word word" "$WIDE_CARD"
-CONTEXT_ROW_COUNT=$(printf '%s\n' "$WIDE_CARD" | awk '/^DIV=CONTEXT$/{f=1; next} f && /^BLANK=$/{exit} f && /^ROW=/{c++} END{print c+0}')
-[ "$CONTEXT_ROW_COUNT" -gt 1 ] && pass "the 120-word context reflows across more than one ROW line" || fail "the 120-word context reflows across more than one ROW line" ">1" "$CONTEXT_ROW_COUNT"
-LONGEST=$(printf '%s\n' "$WIDE_CARD" | grep '^ROW=' | sed 's/^ROW=//' | awk '{ print length }' | sort -rn | head -1)
-[ "$LONGEST" -le 65 ] && pass "no ROW line exceeds the card's 65-column wrap width" || fail "no ROW line exceeds the card's 65-column wrap width" "<=65" "$LONGEST"
 rm -rf "$ROOT"
 
 echo "-- Test: reopen diff rows never exceed the card's 65-column wrap width either - the diff marker comes off the width first --"
@@ -1328,38 +1011,24 @@ Fine.
 > "approve" - 2026-01-01, session
 EOF
 
-CLAIMED_RETIRE=$(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" \
-  --claimed-by="track-alpha:planning" --claimed-by="track-beta-two:ready")
-echo "$CLAIMED_RETIRE" | grep -qF 'DIV=CLAIMED BY STORIES' && pass "the retire card prints a CLAIMED BY STORIES divider" || fail "the retire card prints a CLAIMED BY STORIES divider" "DIV=CLAIMED BY STORIES" "$CLAIMED_RETIRE"
-PLANNING_ROW=$(echo "$CLAIMED_RETIRE" | grep '^ROW=track-alpha')
-READY_ROW=$(echo "$CLAIMED_RETIRE" | grep '^ROW=track-beta-two')
+CLAIMED_REOPEN=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" \
+  --context="Context." --options="- A." --decision="A." --consequences="Fine." --claimed-by="track-alpha:planning" --claimed-by="track-beta-two:ready")
+echo "$CLAIMED_REOPEN" | grep -qF 'DIV=CLAIMED BY STORIES' && pass "the reopen card prints a CLAIMED BY STORIES band" || fail "the reopen card prints a CLAIMED BY STORIES band" "DIV=CLAIMED BY STORIES" "$CLAIMED_REOPEN"
+PLANNING_ROW=$(echo "$CLAIMED_REOPEN" | grep '^ROW=track-alpha')
+READY_ROW=$(echo "$CLAIMED_REOPEN" | grep '^ROW=track-beta-two')
 PLANNING_START=$(python3 -c "print('$PLANNING_ROW'.find('planning'))")
 READY_START=$(python3 -c "print('$READY_ROW'.find('ready'))")
 [ "$PLANNING_START" = "$READY_START" ] && pass "each story's status starts in the same left-anchored fixed column" || fail "each story's status starts in the same left-anchored fixed column" "$PLANNING_START" "$READY_START"
 
-CLAIMED_REOPEN=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" \
-  --context="Context." --options="- A." --decision="A." --consequences="Fine." --claimed-by="story-planning:planning")
-echo "$CLAIMED_REOPEN" | grep -qF 'DIV=CLAIMED BY STORIES' && pass "the reopen card also prints a CLAIMED BY STORIES band" || fail "the reopen card also prints a CLAIMED BY STORIES band" "DIV=CLAIMED BY STORIES" "$CLAIMED_REOPEN"
-
-SHIPPED=$(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" --shipped-by="ship-story")
+SHIPPED=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" --shipped-by="ship-story")
 echo "$SHIPPED" | grep -qF 'DIV=SHIPPED BY STORY' && pass "SHIPPED BY STORY divider prints" || fail "SHIPPED BY STORY divider prints" "DIV=SHIPPED BY STORY" "$SHIPPED"
 echo "$SHIPPED" | grep -q '^ROW=ship-story$' && pass "the shipping story prints with no status" || fail "the shipping story prints with no status" "ROW=ship-story" "$SHIPPED"
 
-NEITHER=$(bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md")
+NEITHER=$(bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md")
 echo "$NEITHER" | grep -q "CLAIMED BY STORIES\|SHIPPED BY STORY" && fail "the band is omitted with neither flag" "no band" "$NEITHER" || pass "the band is omitted with neither flag"
 
-bash "$VIEW" card --variant=retire --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" \
+bash "$VIEW" card --variant=reopen --file="$ROOT/.craft/decisions/approved/2026-01-01-claimed-law.md" \
   --claimed-by="a:planning" --shipped-by="b" > /dev/null 2>&1 && fail "the two flags together are refused" "exit 1" "exit 0" || pass "the two flags together are refused"
-rm -rf "$ROOT"
-
-echo "-- Test: --new-group=<tag> marks that tag NEW GROUP in the header --"
-fresh_root
-DRY_OUT=$(bash "$CAPTURE" "A new group card" --tag=gameroom \
-  --context="Context." --options="- A." --decision="A." --consequences="Fine." --dry-run)
-MARKED=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh --new-group=gameroom)
-UNMARKED=$(printf '%s\n' "$DRY_OUT" | bash "$VIEW" card --variant=fresh)
-echo "$MARKED" | grep -q "gameroom (NEW GROUP)" && pass "--new-group= marks the tag NEW GROUP" || fail "--new-group= marks the tag NEW GROUP" "gameroom (NEW GROUP)" "$MARKED"
-echo "$UNMARKED" | grep -q "NEW GROUP" && fail "without the flag the tag renders plain" "no NEW GROUP" "$UNMARKED" || pass "without the flag the tag renders plain"
 rm -rf "$ROOT"
 
 echo "-- Test: a reopen card marks removed/added rows and leaves unchanged rows unmarked --"
@@ -1525,7 +1194,7 @@ EOF
 (
   unset CRAFT_PROJECT_ROOT
   cd "$UNSET_CARD_DIR"
-  bash "$VIEW" card --variant=retire --file="$FAR_FILE_DIR/2026-01-01-far-card.md" > "$UNSET_CARD_DIR/card-out.txt"
+  bash "$VIEW" card --variant=reopen --file="$FAR_FILE_DIR/2026-01-01-far-card.md" > "$UNSET_CARD_DIR/card-out.txt"
 )
 CARD_UNSET_RESULT=$(cat "$UNSET_CARD_DIR/card-out.txt")
 echo "$CARD_UNSET_RESULT" | grep -q "Far card" && pass "card renders with CRAFT_PROJECT_ROOT unset, reading only the --file= path handed to it" || fail "card renders with CRAFT_PROJECT_ROOT unset" "Far card" "$CARD_UNSET_RESULT"
@@ -1561,35 +1230,30 @@ Fine.
 ## Approval
 > "approve" - 2026-01-01, session
 EOF
-SWEEP_DRY=$(bash "$CAPTURE" "A sweep card" --tag=guides \
-  --context="Sweep context." --options="- A.
-- B." --decision="A." --consequences="Fine." --dry-run)
 SWEEP_FILE="$ROOT/.craft/decisions/approved/2026-01-01-sweep-law.md"
 SWEEP_BAD=0
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" | bash "$VIEW" shelf | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --tag=wright-journal | bash "$VIEW" group | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --room=archive | bash "$VIEW" archive | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" --tag=guides | bash "$VIEW" match --words=guides | no_box_chars)))
-SWEEP_BAD=$((SWEEP_BAD + $(printf '%s\n' "$SWEEP_DRY" | bash "$VIEW" card --variant=fresh | no_box_chars)))
-SWEEP_BAD=$((SWEEP_BAD + $(bash "$VIEW" card --variant=pending --file="$SWEEP_FILE" | no_box_chars)))
-SWEEP_BAD=$((SWEEP_BAD + $(bash "$VIEW" card --variant=retire --file="$SWEEP_FILE" --claimed-by="story-a:ready" | no_box_chars)))
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$VIEW" card --variant=reopen --file="$SWEEP_FILE" --context="New context." --options="- A." --decision="Change it." --consequences="Fine." | no_box_chars)))
 rm -rf "$ROOT"
 # The empty view holds no non-archive record on stdin.
 fresh_root
 SWEEP_BAD=$((SWEEP_BAD + $(bash "$LIST" | bash "$VIEW" shelf | no_box_chars)))
 rm -rf "$ROOT"
-[ "$SWEEP_BAD" -eq 0 ] && pass "no view or face - shelf, group, match, empty, archive, card fresh/pending/retire/reopen - emits a box-drawing character" \
+[ "$SWEEP_BAD" -eq 0 ] && pass "no view or face - shelf, group, match, empty, archive, card reopen - emits a box-drawing character" \
   || fail "no view or face emits a box-drawing character" "0" "$SWEEP_BAD"
 
-echo "-- Test: a pending card draws proposed sections passed as flags, and the file is untouched --"
+echo "-- Test: a long title wraps at the card width, one HEAD= per piece, so the rail never breaks --"
 fresh_root
-mkdir -p "$ROOT/.craft/decisions"
-PREVIEW_FILE="$ROOT/.craft/decisions/2026-01-01-preview-law.md"
-cat > "$PREVIEW_FILE" <<'EOF'
+mkdir -p "$ROOT/.craft/decisions/approved"
+LONG_FILE="$ROOT/.craft/decisions/approved/2026-01-01-long-title.md"
+SHORT_FILE="$ROOT/.craft/decisions/approved/2026-01-01-short-title.md"
+cat > "$SHORT_FILE" <<'EOF'
 ---
 type: decision
-status: pending
+status: accepted
 created: 2026-01-01
 source: session
 tags: [guides]
@@ -1601,7 +1265,6 @@ The original context.
 
 ## Options considered
 - Keep it as is.
-- Change it.
 
 ## Decision
 Keep it as is.
@@ -1610,47 +1273,62 @@ Keep it as is.
 Nothing changes.
 
 ## Approval
+> "approve" - 2026-01-01, session
 EOF
-BEFORE_SUM=$(shasum "$PREVIEW_FILE" | cut -d' ' -f1)
-PREVIEW_OUT=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --consequences="A returning user can turn it off from settings.")
-AFTER_SUM=$(shasum "$PREVIEW_FILE" | cut -d' ' -f1)
-printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=A returning user can turn it off from settings\.' \
-  && pass "a --consequences= flag on a pending card draws the proposed text" \
-  || fail "a --consequences= flag on a pending card draws the proposed text" "ROW=A returning user can turn it off from settings." "$PREVIEW_OUT"
-printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=Nothing changes\.' \
-  && fail "the file's own consequences line is replaced, not appended" "(absent)" "ROW=Nothing changes. present" \
-  || pass "the file's own consequences line is replaced, not appended"
-printf '%s\n' "$PREVIEW_OUT" | grep -q '^ROW=The original context\.' \
-  && pass "sections not passed as flags still come from the file" \
-  || fail "sections not passed as flags still come from the file" "ROW=The original context." "$PREVIEW_OUT"
-[ "$BEFORE_SUM" = "$AFTER_SUM" ] \
-  && pass "a preview draw leaves the pending file byte-identical" \
-  || fail "a preview draw leaves the pending file byte-identical" "$BEFORE_SUM" "$AFTER_SUM"
-
-echo "-- Test: a long title wraps at the card width, one HEAD= per piece, so the rail never breaks --"
-LONG_FILE="$ROOT/.craft/decisions/2026-01-01-long-title.md"
-sed 's/^# Preview law$/# A failed payment is retried automatically up to 3 times before giving up/' "$PREVIEW_FILE" > "$LONG_FILE"
-TITLE_HEADS=$(bash "$VIEW" card --variant=pending --file="$LONG_FILE" | awk '/^HEAD=/{n++; if(n>=2) print substr($0,6)} /^DIV=/{exit}')
+sed 's/^# Preview law$/# A failed payment is retried automatically up to 3 times before giving up/' "$SHORT_FILE" > "$LONG_FILE"
+TITLE_HEADS=$(bash "$VIEW" card --variant=reopen --file="$LONG_FILE" | awk '/^HEAD=/{n++; if(n>=2) print substr($0,6)} /^DIV=/{exit}')
 TITLE_COUNT=$(printf '%s\n' "$TITLE_HEADS" | grep -c .)
 [ "$TITLE_COUNT" = "2" ] && pass "a 71-character title emits two HEAD= lines" || fail "a 71-character title emits two HEAD= lines" "2" "$TITLE_COUNT: $TITLE_HEADS"
 LONGEST=$(printf '%s\n' "$TITLE_HEADS" | awk '{ if (length($0)>m) m=length($0) } END {print m+0}')
 [ "$LONGEST" -le 65 ] && pass "every title piece is at or under the 65-column card width" || fail "every title piece is at or under the 65-column card width" "<=65" "$LONGEST"
 printf '%s\n' "$TITLE_HEADS" | tr '\n' ' ' | grep -q 'before giving up' && pass "the title's words survive the wrap in order" || fail "the title's words survive the wrap in order" "before giving up" "$TITLE_HEADS"
 printf '%s\n' "$TITLE_HEADS" | grep -q -E '^(up|giving)$' && fail "no one-word orphan title line" "none" "$TITLE_HEADS" || pass "no one-word orphan title line"
-SHORT_COUNT=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" | awk '/^HEAD=/{n++} /^DIV=/{exit} END{print n}')
+SHORT_COUNT=$(bash "$VIEW" card --variant=reopen --file="$SHORT_FILE" | awk '/^HEAD=/{n++} /^DIV=/{exit} END{print n}')
 [ "$SHORT_COUNT" = "2" ] && pass "a short title still emits exactly one HEAD= line after the slug" || fail "a short title still emits exactly one HEAD= line after the slug" "2 HEAD= lines before CONTEXT" "$SHORT_COUNT"
-RETIRE_HEADS=$(bash "$VIEW" card --variant=retire --file="$LONG_FILE" | awk '/^HEAD=/{n++} /^DIV=/{exit} END{print n}')
-[ "$RETIRE_HEADS" = "3" ] && pass "the retire face wraps the same title the same way" || fail "the retire face wraps the same title the same way" "3" "$RETIRE_HEADS"
+rm -rf "$ROOT"
 
-echo "-- Test: re-lettered --options= on a pending card draws the question state --"
-PREVIEW_Q=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --options="$(printf '(a) Keep it as is.\n(b) Change it.')")
-printf '%s\n' "$PREVIEW_Q" | grep -q '^DIV=YOUR OPTIONS' \
-  && pass "re-lettered proposed options draw the question state" \
-  || fail "re-lettered proposed options draw the question state" "DIV=YOUR OPTIONS" "$PREVIEW_Q"
-PREVIEW_D=$(bash "$VIEW" card --variant=pending --file="$PREVIEW_FILE" --options="$(printf -- '- Keep it as is.\n- Change it.')")
-printf '%s\n' "$PREVIEW_D" | grep -q '^DIV=OPTIONS CONSIDERED' \
-  && pass "dashed proposed options draw the decision state" \
-  || fail "dashed proposed options draw the decision state" "DIV=OPTIONS CONSIDERED" "$PREVIEW_D"
+echo "-- Test: reopen --stdin draws the same data as the flag form, ignores an Approval, and refuses a section flag --"
+fresh_root
+mkdir -p "$ROOT/.craft/decisions/approved"
+cat > "$ROOT/.craft/decisions/approved/2026-01-01-stdin-law.md" <<'EOF'
+---
+type: decision
+status: accepted
+created: 2026-01-01
+source: session
+tags: [alpha]
+---
+# Stdin law
+
+## Context
+Old context.
+
+## Options considered
+- Keep it as is.
+
+## Decision
+Keep it as is.
+
+## Consequences
+Nothing changes.
+
+## Approval
+> "approve" - 2026-01-01, session
+EOF
+STDIN_FILE="$ROOT/.craft/decisions/approved/2026-01-01-stdin-law.md"
+PROPOSED_DEC="Change it, it's \$5 🎯."
+FLAG_FORM=$(bash "$VIEW" card --variant=reopen --file="$STDIN_FILE" --title="New title" --context="New context." --decision="$PROPOSED_DEC")
+STDIN_FORM=$(printf '# New title\n\n## Context\nNew context.\n\n## Decision\n%s\n\n## Approval\nignored, drawn before the answer\n' "$PROPOSED_DEC" | bash "$VIEW" card --variant=reopen --file="$STDIN_FILE" --stdin)
+[ -n "$FLAG_FORM" ] && [ "$FLAG_FORM" = "$STDIN_FORM" ] && pass "view reopen --stdin draws the same data as the flag form" || fail "view reopen --stdin draws the same data as the flag form" "$FLAG_FORM" "$STDIN_FORM"
+before=$(cat "$STDIN_FILE")
+set +e
+printf '## Context\nx\n' | bash "$VIEW" card --variant=reopen --file="$STDIN_FILE" --stdin --context="y" >/dev/null 2>&1
+RC=$?
+printf '## Notes\nx\n' | bash "$VIEW" card --variant=reopen --file="$STDIN_FILE" --stdin >/dev/null 2>&1
+RC2=$?
+set -e
+[ "$RC" -ne 0 ] && pass "view reopen --stdin with a section flag is refused" || fail "view reopen --stdin with a section flag is refused" "non-zero" "$RC"
+[ "$RC2" -ne 0 ] && [ "$(cat "$STDIN_FILE")" = "$before" ] && pass "view reopen --stdin refuses an unknown heading and never writes the file" || fail "view reopen --stdin refuses an unknown heading" "non-zero" "$RC2"
 rm -rf "$ROOT"
 
 echo ""

@@ -280,19 +280,24 @@ mismatched_shape = [
     n for n in shapes
     if any(s in n for s in SCRIPTS) and shapes[n] != "plaintext"
 ]
+# The one plaintext node that is not a script call: reading a parked or
+# retire record's own file, which every card face already has the path of.
+FILE_READ_NODE = "cat <FILE>"
 mismatched_prefix = [
     n for n, s in shapes.items()
-    if s == "plaintext" and not any(n.startswith(s2) for s2 in SCRIPTS)
+    if s == "plaintext" and n != FILE_READ_NODE and not any(n.startswith(s2) for s2 in SCRIPTS)
 ]
+if shapes.get(FILE_READ_NODE) != "plaintext":
+    mismatched_prefix.append("missing plaintext node: " + FILE_READ_NODE)
 if mismatched_shape or mismatched_prefix:
     out(
         "FAIL",
-        "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one",
+        "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one (or is the one file read)",
         "consistent",
         str(mismatched_shape + mismatched_prefix),
     )
 else:
-    out("PASS", "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one")
+    out("PASS", "every node naming a decisions script is shape=plaintext and every plaintext node's name begins with one (or is the one file read)")
 
 # --- 6: the never-bend rules are a hard gate, and the one octagon is red -
 hard_gate_blocks = re.findall(r"<HARD-GATE>\n(.*?)\n</HARD-GATE>", text, re.DOTALL)
@@ -318,20 +323,20 @@ else:
     else:
         out("FAIL", "the one octagon carries style=filled and fillcolor=red", "style=filled, fillcolor=red", attrs)
 
-# --- 7: one draw node serves all five file-backed card faces -------------
-face_nodes = [n for n in shapes if "--variant=<face>" in n]
-if len(face_nodes) != 1:
-    out("FAIL", "exactly one plaintext node carries --variant=<face>", "1", str(len(face_nodes)))
+# --- 7: the reopen diff is the only card the view script draws ----------
+# Every other card is drawn from text already in the conversation, so
+# exactly one plaintext node calls "decisions-view.sh card", it is the
+# reopen draw, and the reopen card is the only state that feeds it.
+view_card_nodes = [n for n in shapes if "decisions-view.sh card" in n]
+if len(view_card_nodes) != 1:
+    out("FAIL", "exactly one plaintext node calls decisions-view.sh card", "1", str(view_card_nodes))
 else:
-    face_node = face_nodes[0]
-    incoming_ellipses = [
-        s for s, d, _ in edges
-        if d == face_node and shapes.get(s) == "ellipse"
-    ]
-    if len(incoming_ellipses) == 5:
-        out("PASS", "one shared draw node serves all five file-backed card faces")
+    view_card_node = view_card_nodes[0]
+    feeders = sorted({s_ for s_, d_, _ in edges if d_ == view_card_node})
+    if "--variant=reopen" in view_card_node and feeders == ["Reopen card on screen"]:
+        out("PASS", "the only decisions-view.sh card call is the reopen draw, fed only by the reopen card")
     else:
-        out("FAIL", "one shared draw node serves all five file-backed card faces", "5 ellipse states", str(incoming_ellipses))
+        out("FAIL", "the only decisions-view.sh card call is the reopen draw, fed only by the reopen card", "--variant=reopen fed by Reopen card on screen", f"{view_card_node} <- {feeders}")
 
 # --- section bounds: "## The four scripts" up to "## How to read the graph" -
 # The contracts live in their own section, the one place a script name or
@@ -365,14 +370,14 @@ else:
 
 # --- 9: a write arrow's label never doubles as a pre-card word ------------
 # Pre-card = a node reachable from an entry before any card is on screen and
-# NOT reachable from any card. A card is an ellipse that feeds a
-# "decisions-view.sh card" draw node; the Shelf and the match drawer are
-# ellipses too but draw no card, so they are walked through. A gate a card's
+# NOT reachable from any card. A card is an ellipse that feeds a "Move on"
+# diamond; the Shelf and the match drawer are ellipses too but draw no card,
+# so they are walked through. A gate a card's
 # path can also reach (the crafted? diamonds) is not a pre-card node - its
 # answers come from data, not from what the user typed at the Shelf. The
 # retag write is exempt: the hard gate rules that a retag draws no card.
 cards = {n for n, s in shapes.items() if s == "ellipse"
-         and any("decisions-view.sh card" in nxt for nxt in adjacency.get(n, []))}
+         and any(nxt.startswith("Move on") for nxt in adjacency.get(n, []))}
 def reach(starts, stop_at=frozenset()):
     seen = set(starts); q = list(starts)
     while q:
@@ -384,7 +389,7 @@ def reach(starts, stop_at=frozenset()):
 postcard = reach(cards)
 precard = {n for n in reach(entries, stop_at=cards) if n not in postcard and n not in cards}
 precard_labels = {l for s_, d_, l in edges if l and s_ in precard}
-write_nodes = {n for n, s in shapes.items() if s == "plaintext" and ("decisions-transition.sh" in n or ("decisions-capture.sh" in n and "--dry-run" not in n))}
+write_nodes = {n for n, s in shapes.items() if s == "plaintext" and ("decisions-transition.sh" in n or "decisions-capture.sh" in n)}
 collisions = sorted({(l, d_) for s_, d_, l in edges if d_ in write_nodes and l and l in precard_labels and " retag " not in d_})
 if collisions: out("FAIL", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)", "none", str(collisions))
 else: out("PASS", "no arrow into a write carries a label that also leaves a pre-card node (retag exempt)")
@@ -454,19 +459,25 @@ else:
     out("FAIL", "the view block says match draws only what it is given and shows a two-slug match example", "fact + 1 example line with two --slug=", f"fact={'match draws every block it is given' in sec_flat_pre} examples={len(match_lines)}")
 
 # --- 13c: the capture contract states the fork options and the reopen rule -
-# Bug 2026-09-30-fresh-question-card-still-reads-script-source: the three
-# facts the desk opened the scripts to find.
+# Bug 2026-09-30-fresh-question-card-still-reads-script-source: the facts the
+# desk opened the scripts to find. The write takes its body on stdin; a
+# reopen sends only what changed and prints which sections it wrote.
 fork_ok = '"(a) Proposed: ..."' in sec_flat_pre and 'a settled ruling is "- " lines' in sec_flat_pre
-reopen_ok = "re-sends all four sections" in sec_flat_pre and "requires --quote=, in the root it refuses one" in sec_flat_pre
+reopen_ok = (
+    "only the sections that changed" in sec_flat_pre
+    and "Sections written:" in sec_flat_pre
+    and "on law it requires an ## Approval section, in the root it refuses one" in sec_flat_pre
+    and "re-sends all four sections" not in sec_flat_pre
+)
 if fork_ok and reopen_ok:
-    out("PASS", "the capture block states the lettered fork options and the reopen rule")
+    out("PASS", "the capture block states the lettered fork options and the partial-reopen rule")
 else:
-    out("FAIL", "the capture block states the lettered fork options and the reopen rule", "both facts", f"fork={fork_ok} reopen={reopen_ok}")
-q_rows = [l for l in text.split("\n") if l.startswith("| fresh question card |")]
-if len(q_rows) == 1 and "--new-group=<tag>" in q_rows[0] and "--state=question" in q_rows[0]:
-    out("PASS", "the fresh question card row carries --new-group=<tag>")
+    out("FAIL", "the capture block states the lettered fork options and the partial-reopen rule", "both facts", f"fork={fork_ok} reopen={reopen_ok}")
+flag_table_rows = [l for l in text.split("\n") if l.startswith("| fresh question card |") or l.startswith("| Card face |")]
+if not flag_table_rows:
+    out("PASS", "the flag table of draw-node flags is gone")
 else:
-    out("FAIL", "the fresh question card row carries --new-group=<tag>", "one row with the flag", str(q_rows))
+    out("FAIL", "the flag table of draw-node flags is gone", "no table rows", str(flag_table_rows))
 
 # --- 14: the find line and the glyph-to-folder line -----------------------
 if "find .craft/decisions -name '*-<slug>.md'" in scripts_section:
@@ -511,6 +522,171 @@ if "arriving at a state a second time redraws it. " + REDRAW in flat:
     out("PASS", "the redraw sentence in How to read the graph carries the words-that-change-nothing reading")
 else:
     out("FAIL", "the redraw sentence in How to read the graph carries the words-that-change-nothing reading", REDRAW, "absent")
+
+# --- 17: every write takes its body on stdin, in a quoted heredoc ---------
+all_nodes = list(shapes.keys())
+writes = [n for n, s in shapes.items() if s == "plaintext" and ("decisions-capture.sh" in n or "decisions-transition.sh" in n)]
+non_stdin = [n for n in writes if " retag " not in n and "--stdin <<'EOF'" not in n]
+dead_flags = [n for n in all_nodes if any(f in n for f in ("--quote=", "--dry-run", "--new-group"))]
+if non_stdin or dead_flags or not writes:
+    out("FAIL", "every write node except retag carries --stdin <<'EOF' and no node carries --quote=, --dry-run or --new-group", "all stdin, none dead", f"not stdin={non_stdin} dead={dead_flags} writes={len(writes)}")
+else:
+    out("PASS", "every write node except retag carries --stdin <<'EOF' and no node carries --quote=, --dry-run or --new-group")
+SECTION_FLAGS = ("--context=", "--options=", "--decision=", "--consequences=", "--title=")
+leftover = sorted({f for f in SECTION_FLAGS + ("--quote=", "--dry-run", "--new-group") if f in text})
+if leftover:
+    out("FAIL", "no removed flag appears anywhere in the command", "none", str(leftover))
+else:
+    out("PASS", "no removed flag appears anywhere in the command")
+
+# --- 18: nothing the user typed meets the shell ---------------------------
+# bash 3.2 mishandles an apostrophe in a quoted heredoc that sits inside a
+# command substitution, and an unquoted delimiter would expand what the
+# user typed - so every heredoc is quoted and feeds the script directly.
+heredoc_lines = [l for l in text.splitlines() if "<<" in l]
+unquoted = [l for l in heredoc_lines if "<<'EOF'" not in l]
+in_substitution = re.findall(r"\$\([^)]*<<", text)
+if unquoted or in_substitution:
+    out("FAIL", "the command has no unquoted heredoc and no heredoc inside a command substitution", "none", str(unquoted + in_substitution))
+else:
+    out("PASS", "the command has no unquoted heredoc and no heredoc inside a command substitution")
+
+# --- 19: call budget ------------------------------------------------------
+# Plaintext nodes between a start (an entry, or any screen already showing)
+# and the card, plus the card's own draw leaf. Nothing walks through a
+# screen: an ellipse ends a path.
+def calls_to_cards(starts):
+    import heapq
+    dist = {}
+    heap = [(0, s_) for s_ in starts]
+    while heap:
+        d_, n = heapq.heappop(heap)
+        if n in dist and dist[n] <= d_:
+            continue
+        dist[n] = d_
+        if shapes.get(n) == "ellipse" and n not in starts:
+            continue
+        for nxt in adjacency.get(n, []):
+            heapq.heappush(heap, (d_ + (1 if shapes.get(nxt) == "plaintext" else 0), nxt))
+    return dist
+
+def leaf_cost(card):
+    return 1 if any(shapes.get(n) == "plaintext" and not adjacency.get(n) for n in adjacency.get(card, [])) else 0
+
+over_budget = []
+for card in sorted(cards):
+    starts = [n for n in entries + [n for n, s in shapes.items() if s == "ellipse"] if n != card]
+    dist = calls_to_cards(starts)
+    cost = dist.get(card)
+    if cost is None or cost + leaf_cost(card) > 2:
+        over_budget.append((card, cost))
+fresh_cards = [c for c in cards if c.startswith("Fresh ")]
+fresh_bad = []
+for card in fresh_cards:
+    dist = calls_to_cards(["Ruling in conversation"])
+    if dist.get(card) != 1 or leaf_cost(card) != 0:
+        fresh_bad.append((card, dist.get(card)))
+fresh_view = [n for n in shapes if shapes[n] == "plaintext" and "decisions-view.sh" in n and any(
+    nxt == n for c in fresh_cards for nxt in adjacency.get(c, []))]
+if over_budget or fresh_bad or fresh_view or len(fresh_cards) != 2:
+    out("FAIL", "every card face is at most two plaintext calls from an entry or a prior screen, and the fresh faces exactly one with no view call", "within budget", f"over={over_budget} fresh={fresh_bad} view={fresh_view} fresh_cards={fresh_cards}")
+else:
+    out("PASS", "every card face is at most two plaintext calls from an entry or a prior screen, and the fresh faces exactly one with no view call")
+
+# --- 20: a reshaped parked write and a fresh write are different commands -
+def dsts(src, label):
+    return [d_ for s_, d_, l in edges if s_ == src and l == label]
+reshaped_keep = dsts("Which move on a reshaped parked card?", "keep pending")
+fresh_keep = dsts("Which move on a fresh card?", "keep pending") + dsts("Move on the fresh question card?", "keep pending")
+capture_nodes = [n for n in writes if "decisions-capture.sh" in n]
+if (reshaped_keep and all(d_.startswith("decisions-capture.sh --reopen=<slug>") for d_ in reshaped_keep)
+        and fresh_keep and all(d_.startswith("decisions-capture.sh --tag=<tag>") and "--reopen" not in d_ for d_ in fresh_keep)
+        and all(n.startswith("decisions-capture.sh --reopen=<slug>") or n.startswith("decisions-capture.sh --tag=<tag>") for n in capture_nodes)):
+    out("PASS", "the reshaped-parked keep-pending lands on a --reopen=<slug> write, the fresh one on a write with no --reopen")
+else:
+    out("FAIL", "the reshaped-parked keep-pending lands on a --reopen=<slug> write, the fresh one on a write with no --reopen", "distinct commands", f"reshaped={reshaped_keep} fresh={fresh_keep}")
+
+# --- 21: the retag is one call --------------------------------------------
+retag_nodes = [n for n in shapes if " retag " in n]
+records_dst = dsts("Named records or a group?", "records")
+retag_after = reach(retag_nodes[0]) - {retag_nodes[0]} if len(retag_nodes) == 1 else set()
+retag_succ = adjacency.get(retag_nodes[0], []) if len(retag_nodes) == 1 else []
+retag_bad = [n for n in retag_after if shapes.get(n) == "plaintext"]
+if len(retag_nodes) == 1 and records_dst == retag_nodes and retag_succ == ["Retagged in place"] and not retag_bad:
+    out("PASS", "the records arrow reaches the retag node directly and no list or view node follows it")
+else:
+    out("FAIL", "the records arrow reaches the retag node directly and no list or view node follows it", "records -> retag -> Retagged in place", f"retag={retag_nodes} records={records_dst} after={retag_succ} calls_after={retag_bad}")
+
+# --- 22: the retire diamond has three exits and no self-loop --------------
+retire_exits = sorted(l for s_, d_, l in edges if s_ == "Move on a retire?")
+retire_self = [(s_, d_) for s_, d_, _ in edges if s_ == "Move on a retire?" and d_ in ("Retire line on screen",)]
+if retire_exits == sorted(["a letter", "words that change the text", "the card asked for"]) and not retire_self:
+    out("PASS", "Move on a retire? has exactly three exits: a letter, words that change the text, the card asked for")
+else:
+    out("FAIL", "Move on a retire? has exactly three exits: a letter, words that change the text, the card asked for", "three named exits", str(retire_exits))
+
+# --- 23: the faces Claude draws -------------------------------------------
+faces_m = re.search(r"### The faces Claude draws\n(.*?)\n### ", text, re.DOTALL)
+faces = faces_m.group(1) if faces_m else ""
+def move_row(letter, move, effect):
+    return "{}) {}  {}".format(letter, move.ljust(14), effect)
+FACE_ROWS = [
+    move_row("a", "approve", "what it becomes, and what gets built to it"),
+    move_row("b", "keep pending", "saved on the Shelf, decide later"),
+    move_row("c", "decline", "goes to the archive with your words, never re-proposed"),
+    move_row("x", "pick", "picks this option and redraws"),
+    move_row("x", "keep pending", "saved on the Shelf as a question, decide later"),
+    move_row("a", "approve", "moves to approved/ as shown"),
+    move_row("b", "keep pending", "saves your changes, stays on the Shelf"),
+    move_row("c", "decline", "moves to the archive with your words"),
+    move_row("x", "keep pending", "saves your changes, stays on the Shelf"),
+    move_row("a", "retire", "no longer applies, goes to the archive with your words"),
+]
+# A pick row's letter varies with the options, so those rows are matched on
+# everything after the letter.
+missing_rows = [r for r in FACE_ROWS if (r[2:] if r.startswith("x)") else r) not in faces]
+FACE_WORDS = [
+    "YOUR OPTIONS", "(a) Proposed: ", "DECISION if (<letter>)", "CONSEQUENCES if (<letter>)",
+    "OPTIONS CONSIDERED", "CLAIMED BY STORIES", "(NEW GROUP)", "PENDING \u00b7 tags: <tag> \u00b7 source: session",
+    "<STATUS> \u00b7 tags: <tag> \u00b7 source: <source>", ", or just tell me what to change.",
+]
+missing_words = [w for w in FACE_WORDS if w not in faces]
+if faces and not missing_rows and not missing_words:
+    out("PASS", "the faces section carries every YOUR MOVE row verbatim and the question-state dividers")
+else:
+    out("FAIL", "the faces section carries every YOUR MOVE row verbatim and the question-state dividers", "all rows and dividers", f"section={bool(faces)} rows={missing_rows} words={missing_words}")
+
+# --- 24: the retire line --------------------------------------------------
+line_m = re.search(r"### The retire line\n(.*?)\n(?:### |## )", text, re.DOTALL)
+line_sec = " ".join(line_m.group(1).split()) if line_m else ""
+LINE_FACTS = ["title", "group", "<story> (<status>)", "nobody carries it", "no rail", "asking whether to retire it", "the typed answer", "the full retire card"]
+missing_line = [f for f in LINE_FACTS if f not in line_sec]
+if line_sec and not missing_line:
+    out("PASS", "the retire line names title, group, claimants, nobody carries it, and draws the card only when asked")
+else:
+    out("FAIL", "the retire line names title, group, claimants, nobody carries it, and draws the card only when asked", "all facts", f"section={bool(line_sec)} missing={missing_line}")
+
+# --- 25: the card-identity bullet ends with the fresh-card sentence --------
+ident_m = re.search(r"- \*\*Card identity:\*\*(.*?)\n- \*\*", text, re.DOTALL)
+ident = " ".join(ident_m.group(1).split()) if ident_m else ""
+if ident.endswith("A fresh card has no slug yet; the receipt after the write shows the path."):
+    out("PASS", "the card-identity bullet ends with the fresh-card sentence")
+else:
+    out("FAIL", "the card-identity bullet ends with the fresh-card sentence", "ends with the sentence", ident[-120:])
+
+# --- 26: the move block sits inside the frame -----------------------------
+# Three runs drew the moves three ways (outside the rail, plain text, left
+# out) because the faces section never said where they go.
+faces_lines = faces.splitlines()
+has_divider = "\u251c\u2500 YOUR MOVE" in faces
+has_row = any(re.match(r"^\u2502    a\) ", l) for l in faces_lines)
+has_closing = any(re.match(r"^\u2502  a, .*or just tell me what to change\.$", l) for l in faces_lines)
+div_i = next((i for i, l in enumerate(faces_lines) if l.startswith("\u251c\u2500 YOUR MOVE")), -1)
+close_i = next((i for i in range(max(div_i, 0), len(faces_lines)) if faces_lines[i].startswith("\u2514")), -1)
+if has_divider and has_row and has_closing and 0 <= div_i < close_i:
+    out("PASS", "the faces section places the move block in-rail: divider, rows at four spaces, closing line at two spaces, before the closing rule")
+else:
+    out("FAIL", "the faces section places the move block in-rail: divider, rows at four spaces, closing line at two spaces, before the closing rule", "in-rail block", f"divider={has_divider} row={has_row} closing={has_closing} order={div_i},{close_i}")
 
 PYEOF
 GRAPH_REPORT="$(python3 "$GRAPH_SCRIPT" "$CMD")"
@@ -585,7 +761,12 @@ echo "-- Test: no graduation flow below the frontmatter fence --"
 grep_fail_below_fence "no 'graduate' verb below the frontmatter fence" '[Gg]raduate'
 
 echo "-- Test: no direct record-writing instruction (a ## Context/## Decision heredoc or a .craft/decisions/ write path) --"
-grep_fail_below_fence "no direct record-writing instruction" '^## (Context|Decision|Consequences|Approval)$'
+SCRIPTS_SECTION_STRIPPED="$(awk '/^## The four scripts$/{p=1; next} /^## How to read the graph$/{p=0} !p{print}' "$CMD")"
+if printf '%s\n' "$SCRIPTS_SECTION_STRIPPED" | grep -qE '^## (Context|Decision|Consequences|Approval)$'; then
+  fail "no direct record-writing instruction outside the stdin examples in ## The four scripts" "absent" "a section heading on its own line"
+else
+  pass "no direct record-writing instruction outside the stdin examples in ## The four scripts"
+fi
 grep_fail_below_fence "no direct .craft/decisions/ write path" '> *"?\.craft/decisions/'
 
 echo "-- Test: AskUserQuestion is forbidden; answers are typed into the prompt --"
@@ -653,8 +834,8 @@ echo "-- Test: the command names no real decision record by slug; fictional ones
 # A slug in shipped text can name a record only this repo has. The exhibit's
 # fictional slug is the one allowed form: inside the scripts section, and
 # matching no file in this store.
-CMD_SECTION="$(awk '/^## The four scripts$/{p=1; next} /^## /{p=0} p{print}' "$CMD")"
-CMD_OUTSIDE="$(awk '/^## The four scripts$/{p=1; next} /^## /{p=0} !p{print}' "$CMD")"
+CMD_SECTION="$(awk '/^## The four scripts$/{p=1; next} /^## How to read the graph$/{p=0} p{print}' "$CMD")"
+CMD_OUTSIDE="$(awk '/^## The four scripts$/{p=1; next} /^## How to read the graph$/{p=0} !p{print}' "$CMD")"
 SLUG_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z][a-z0-9-]+'
 OUTSIDE_SLUGS="$(printf '%s\n' "$CMD_OUTSIDE" | grep -oE "$SLUG_RE" || true)"
 if [ -z "$OUTSIDE_SLUGS" ]; then

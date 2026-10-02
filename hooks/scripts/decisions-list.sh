@@ -7,6 +7,7 @@
 #          [--status=pending|accepted|declined|deprecated]
 #          [--disposition=open|claimed|crafted] [--slug=<full-dated-slug>]
 #          [--no-scan]
+#        decisions-list.sh --claimants=<full-dated-slug>
 #   Filters AND together. Unknown flags are ignored.
 #
 #   --no-scan skips the story-claim scan entirely, for callers that only
@@ -17,6 +18,16 @@
 #   Without the flag, behaviour is exactly as it has always been. A
 #   --disposition= filter is therefore meaningless alongside --no-scan and
 #   will match nothing.
+#
+#   --claimants=<slug> is its own mode: it prints, for every non-complete
+#   story file (.craft/cycles/*/stories/*.md and .craft/backlog/*.md) whose
+#   decisions: list carries the slug, one line
+#     <status> <story> <absolute story path>
+#   with single spaces and the path last, sorted by path. Nothing prints,
+#   and the exit is still 0, when no story claims the slug. Every other
+#   flag is ignored in this mode and no record is read. The story name is
+#   the same identity the STORIES= key carries. Complete stories never
+#   print - law claimed only by complete stories reads as unclaimed.
 #
 # Output (stdout): key=value blocks, one per record, separated by a blank
 # line. Keys are always present (empty value when unknown), in this order:
@@ -73,6 +84,7 @@ STATUS_FILTER=""
 DISPOSITION_FILTER=""
 SLUG_FILTER=""
 NO_SCAN=""
+CLAIMANTS_SLUG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --room=*)        ROOM_FILTER="${1#*=}"; shift ;;
@@ -81,21 +93,23 @@ while [ $# -gt 0 ]; do
     --disposition=*) DISPOSITION_FILTER="${1#*=}"; shift ;;
     --slug=*)        SLUG_FILTER="${1#*=}"; shift ;;
     --no-scan)       NO_SCAN="1"; shift ;;
+    --claimants=*)   CLAIMANTS_SLUG="${1#*=}"; shift ;;
     *) shift ;;
   esac
 done
 
 DECISIONS_DIR="$ROOT/.craft/decisions"
 
-if [ ! -d "$DECISIONS_DIR" ]; then
+# A claimants lookup reads stories only, so it runs without a decisions dir.
+if [ ! -d "$DECISIONS_DIR" ] && [ -z "$CLAIMANTS_SLUG" ]; then
   exit 0
 fi
 
-python3 - "$ROOT" "$ROOM_FILTER" "$TAG_FILTER" "$STATUS_FILTER" "$DISPOSITION_FILTER" "$SLUG_FILTER" "$NO_SCAN" <<'PYEOF'
+python3 - "$ROOT" "$ROOM_FILTER" "$TAG_FILTER" "$STATUS_FILTER" "$DISPOSITION_FILTER" "$SLUG_FILTER" "$NO_SCAN" "$CLAIMANTS_SLUG" <<'PYEOF'
 import sys, os, re, glob
 
 (root, room_filter, tag_filter, status_filter, disposition_filter, slug_filter,
- no_scan_raw) = sys.argv[1:8]
+ no_scan_raw, claimants_slug) = sys.argv[1:9]
 no_scan = bool(no_scan_raw)
 
 FENCE_RE = re.compile(r'^---\n(.*?)\n---\n?(.*)$', re.DOTALL)
@@ -145,7 +159,8 @@ def story_identity(story_path, frontmatter):
 # - no glob, no story reads - and DISPOSITION/STORIES emit empty.
 story_map = {}
 story_files = []
-if not no_scan:
+claimant_lines = []
+if not no_scan or claimants_slug:
     story_files = glob.glob(os.path.join(root, '.craft/cycles/*/stories/*.md'))
     story_files += glob.glob(os.path.join(root, '.craft/backlog/*.md'))
 for story_path in story_files:
@@ -160,6 +175,13 @@ for story_path in story_files:
     name = story_identity(story_path, fm)
     for slug in parse_inline_list(get(fm, 'decisions')):
         story_map.setdefault(slug, []).append(name)
+        if claimants_slug and slug == claimants_slug:
+            claimant_lines.append((story_path, f"{get(fm, 'status')} {name} {story_path}"))
+
+if claimants_slug:
+    for _, line in sorted(claimant_lines):
+        print(line)
+    sys.exit(0)
 
 ROOMS = (
     ('root', os.path.join(root, '.craft/decisions')),

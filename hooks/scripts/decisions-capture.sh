@@ -18,8 +18,8 @@
 #     --context="..." --options="..." --decision="..." --consequences="..." \
 #     [--quote="<words>"] [--source=session|dossier]
 #
-#   Rewrites the body in place at the same filename: created:, status:, and
-#   tags: are left untouched. Reopen is room-aware:
+#   Rewrites the given sections in place at the same filename: created:,
+#   status:, and tags: are left untouched, and so is every section not given. Reopen is room-aware:
 #     approved/ - today's ceremony: --quote= is required and a
 #       "> Reopen: ..." line is appended to the existing ## Approval block.
 #     root      - a quiet reshape: the body is rewritten, status: pending
@@ -31,6 +31,29 @@
 #   room (exit non-zero, names the shipping story, writes nothing). A
 #   "claimed" record is written, then one "Claimed: <story>" line per
 #   claiming story prints to stdout before the path line.
+#
+# The record on stdin (create and reopen):
+#   decisions-capture.sh --tag=<tag> [--tag=...] --stdin   < body
+#   decisions-capture.sh --reopen=<slug|path> --stdin      < body
+#
+#   The body is record format: an optional first non-blank "# <title>"
+#   line, then sections each opened by a line exactly "## Context",
+#   "## Options considered", "## Decision", "## Consequences" or
+#   "## Approval". A section's text is its lines with leading and trailing
+#   blank lines removed. Any other "## " line, a repeated heading, or text
+#   before the first heading is refused before any write.
+#   Create: the title comes from the "# " line, all four content sections
+#   are required, and a positional title, --quote= or a section flag
+#   alongside --stdin is refused. A non-empty "## Approval" text is the
+#   quote (approved/, accepted); absent or empty files it pending in the
+#   root. The result is byte-identical to the flag form.
+#   Reopen: only the sections given are rewritten, in place - every other
+#   byte of the file stays identical. "## Approval" is the reopen quote
+#   (required on law, refused in the root). Naming a section the record
+#   lacks is refused. The section flags work the same way for a reopen:
+#   any subset of --title/--context/--options/--decision/--consequences.
+#   stdout: any "Claimed: <story>" lines, then "Sections written: <names>"
+#   (record order), then the path.
 #
 # Dry run:
 #   decisions-capture.sh "<title>" --tag=<tag> ... --dry-run
@@ -57,8 +80,9 @@
 # All validation (required flags, the tag rule, reopen target resolution,
 # the crafted refusal) runs before any mkdir or file write.
 #
-# Output (stdout): any "Claimed: <story>" lines first, then the record's
-# absolute path as the LAST line.
+# Output (stdout): create prints the record's absolute path only. Reopen
+# prints any "Claimed: <story>" lines first, then "Sections written: ...",
+# then the record's absolute path as the LAST line.
 # Exit: 0 on success, non-zero on error.
 
 set -e
@@ -100,6 +124,7 @@ SOURCE="session"
 CREATED=""
 TAGS_LIST=""
 DRY_RUN=""
+STDIN_MODE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -114,6 +139,7 @@ while [ $# -gt 0 ]; do
     --reopen=*)       REOPEN="${1#*=}"; shift ;;
     --title=*)        TITLE_OVERRIDE="${1#*=}"; shift ;;
     --dry-run)        DRY_RUN=1; shift ;;
+    --stdin)          STDIN_MODE=1; shift ;;
     --*)
       echo "Error: unknown flag '$1'" >&2
       exit 1
@@ -136,6 +162,90 @@ if [ -n "$REOPEN" ]; then
   MODE="reopen"
 else
   MODE="create"
+fi
+
+# ── The record on stdin - read once, before any python heredoc takes fd 0,
+# and never by opening /dev/stdin by path (the eval sandbox refuses that).
+# The body is parsed by the grammar in the docstring; the parsed pieces
+# come back base64-encoded one KEY=value line each so multi-line text
+# survives the trip through the shell, then land in the same variables
+# the flags fill. ──────────────────────────────────────────────────────
+if [ -n "$STDIN_MODE" ]; then
+  if [ -n "$TITLE" ] || [ -n "$TITLE_OVERRIDE" ] || [ -n "$QUOTE" ] \
+     || [ -n "$CONTEXT" ] || [ -n "$OPTIONS" ] || [ -n "$DECISION" ] || [ -n "$CONSEQUENCES" ]; then
+    echo "Error: --stdin carries the whole record - a title, --title=, --quote= or a section flag cannot be combined with it" >&2
+    exit 1
+  fi
+  STDIN_BODY=$(cat)
+  PARSED=$(python3 - "$STDIN_BODY" <<'PYEOF'
+import sys, base64
+
+SECTIONS = {
+    '## Context': 'CONTEXT',
+    '## Options considered': 'OPTIONS',
+    '## Decision': 'DECISION',
+    '## Consequences': 'CONSEQUENCES',
+    '## Approval': 'APPROVAL',
+}
+
+text = sys.argv[1]
+found = {}
+current = None
+buf = []
+title_seen = False
+
+
+def close():
+    if current is not None:
+        found[current] = '\n'.join(buf).strip('\n')
+
+
+for line in text.split('\n'):
+    if line in SECTIONS:
+        key = SECTIONS[line]
+        if key == current or key in found:
+            sys.stderr.write("Error: repeated heading '{}' on stdin\n".format(line))
+            sys.exit(1)
+        close()
+        current, buf = key, []
+    elif line.startswith('## '):
+        sys.stderr.write("Error: unknown heading '{}' on stdin\n".format(line))
+        sys.exit(1)
+    elif current is not None:
+        buf.append(line)
+    elif line.strip() == '':
+        continue
+    elif not title_seen and line.startswith('# '):
+        title_seen = True
+        found['TITLE'] = line[2:]
+    else:
+        sys.stderr.write("Error: text before the first section heading on stdin: '{}'\n".format(line))
+        sys.exit(1)
+close()
+
+for key, value in found.items():
+    if value != '':
+        sys.stdout.write('{}={}\n'.format(key, base64.b64encode(value.encode('utf-8')).decode('ascii')))
+PYEOF
+  ) || exit 1
+
+  decode_field() {
+    local b64
+    b64=$(printf '%s\n' "$PARSED" | sed -n "s/^$1=//p")
+    [ -n "$b64" ] && printf '%s' "$b64" | base64 -d
+    return 0
+  }
+  STDIN_TITLE=$(decode_field TITLE)
+  CONTEXT=$(decode_field CONTEXT)
+  OPTIONS=$(decode_field OPTIONS)
+  DECISION=$(decode_field DECISION)
+  CONSEQUENCES=$(decode_field CONSEQUENCES)
+  QUOTE=$(decode_field APPROVAL)
+  if [ "$MODE" = "create" ]; then
+    TITLE="$STDIN_TITLE"
+  else
+    TITLE_OVERRIDE="$STDIN_TITLE"
+  fi
 fi
 
 # ── Reopen lookup - runs before validation so the room is known before the
@@ -188,10 +298,10 @@ if [ "$MODE" = "create" ]; then
   [ -z "$DECISION" ] && { echo "Error: --decision is required" >&2; exit 1; }
   [ -z "$CONSEQUENCES" ] && { echo "Error: --consequences is required" >&2; exit 1; }
 else
-  [ -z "$CONTEXT" ] && { echo "Error: --context is required" >&2; exit 1; }
-  [ -z "$OPTIONS" ] && { echo "Error: --options is required" >&2; exit 1; }
-  [ -z "$DECISION" ] && { echo "Error: --decision is required" >&2; exit 1; }
-  [ -z "$CONSEQUENCES" ] && { echo "Error: --consequences is required" >&2; exit 1; }
+  if [ -z "$TITLE_OVERRIDE" ] && [ -z "$CONTEXT" ] && [ -z "$OPTIONS" ] && [ -z "$DECISION" ] && [ -z "$CONSEQUENCES" ]; then
+    echo "Error: a reopen needs at least one of --title, --context, --options, --decision, --consequences (or a body on --stdin)" >&2
+    exit 1
+  fi
   if [ "$CUR_ROOM" = "approved" ]; then
     [ -z "$QUOTE" ] && { echo "Error: --quote is required for a reopen" >&2; exit 1; }
   else
@@ -295,31 +405,14 @@ if [ "$MODE" = "create" ]; then
     echo "SLUG=${DATE}-${FINAL_SLUG}"
   fi
 
+  # printf '%s\n' rather than echo so a section line like "-n" or one
+  # holding a backslash reaches the file exactly as given.
   render_record_body() {
-    echo "---"
-    echo "type: decision"
-    echo "status: $STATUS"
-    echo "created: $DATE"
-    echo "source: $SOURCE"
-    echo "tags: [$ALL_TAGS]"
-    echo "---"
-    echo "# $TITLE"
-    echo ""
-    echo "## Context"
-    echo "$CONTEXT"
-    echo ""
-    echo "## Options considered"
-    echo "$OPTIONS"
-    echo ""
-    echo "## Decision"
-    echo "$DECISION"
-    echo ""
-    echo "## Consequences"
-    echo "$CONSEQUENCES"
-    echo ""
-    echo "## Approval"
+    printf '%s\n' "---" "type: decision" "status: $STATUS" "created: $DATE" "source: $SOURCE" "tags: [$ALL_TAGS]" "---"
+    printf '%s\n' "# $TITLE" "" "## Context" "$CONTEXT" "" "## Options considered" "$OPTIONS" \
+      "" "## Decision" "$DECISION" "" "## Consequences" "$CONSEQUENCES" "" "## Approval"
     if [ -n "$QUOTE" ]; then
-      echo "> \"$QUOTE\" - $DATE, $SOURCE"
+      printf '%s\n' "> \"$QUOTE\" - $DATE, $SOURCE"
     fi
   }
 
@@ -337,49 +430,80 @@ if [ "$MODE" = "create" ]; then
   fi
 else
   REOPEN_DATE=$(date +%Y-%m-%d)
-  TITLE_FOR_BODY="${TITLE_OVERRIDE:-$CUR_TITLE}"
 
-  python3 - "$TARGET_FILE" "$TITLE_FOR_BODY" "$CONTEXT" "$OPTIONS" "$DECISION" "$CONSEQUENCES" "$QUOTE" "$REOPEN_DATE" "$SOURCE" "$CUR_ROOM" <<'PYEOF'
+  # Each given section is spliced into the file where it already sits;
+  # no other byte is re-emitted. Everything is checked before the one
+  # write, so a record that lacks a named section is left untouched.
+  python3 - "$TARGET_FILE" "$TITLE_OVERRIDE" "$CONTEXT" "$OPTIONS" "$DECISION" "$CONSEQUENCES" "$QUOTE" "$REOPEN_DATE" "$SOURCE" "$CUR_ROOM" <<'PYEOF'
 import sys, re
 
 path, title, context, options, decision, consequences, quote, date, source, room = sys.argv[1:11]
 
-with open(path, 'r') as f:
+with open(path, 'r', encoding='utf-8') as f:
     content = f.read()
 
 m = re.match(r'^(---\n.*?\n---\n?)(.*)$', content, re.DOTALL)
 frontmatter_block = m.group(1)
 body = m.group(2)
 
-approval_match = re.search(r'(## Approval\n.*)$', body, re.DOTALL)
-existing_approval = approval_match.group(1) if approval_match else "## Approval\n"
+HEADING = re.compile(r'^## .*$', re.MULTILINE)
+
+
+def section_span(text, name):
+    # (start, end) of the text between a heading line and the next
+    # "## " line (or the end), or None if the heading is absent.
+    heading = re.search(r'^## ' + re.escape(name) + r'$\n?', text, re.MULTILINE)
+    if heading is None:
+        return None
+    nxt = HEADING.search(text, heading.end())
+    return heading.end(), (nxt.start() if nxt else len(text))
+
+
+def splice(text, span, new_core):
+    # Replace the section's text, keeping the blank lines around it.
+    start, end = span
+    region = text[start:end]
+    if region.strip('\n') == '':
+        return text[:start] + new_core + '\n' + region + text[end:]
+    lead = region[:len(region) - len(region.lstrip('\n'))]
+    trail = region[len(region.rstrip('\n')):]
+    return text[:start] + lead + new_core + trail + text[end:]
+
+
+given = [(n, t) for n, t in (('Context', context), ('Options considered', options),
+                             ('Decision', decision), ('Consequences', consequences)) if t]
+for name, _ in given:
+    if section_span(body, name) is None:
+        sys.stderr.write("Error: the record has no '## {}' section to rewrite\n".format(name))
+        sys.exit(1)
+
+new_body = body
+if title:
+    t = re.search(r'^# (.*)$', new_body, re.MULTILINE)
+    if t is None:
+        sys.stderr.write("Error: the record has no title line to rewrite\n")
+        sys.exit(1)
+    new_body = new_body[:t.start(1)] + title + new_body[t.end(1):]
+
+for name, text in given:
+    new_body = splice(new_body, section_span(new_body, name), text)
 
 # Today's ceremony in approved/: append a "> Reopen: ..." quote line. The
 # root reshape carries no quote and leaves the Approval block untouched -
 # the quote belongs to the accept that follows.
 if room == "approved":
-    new_reopen_line = '> Reopen: "{}" - {}, {}\n'.format(quote, date, source)
-    approval_section = existing_approval.rstrip('\n') + '\n' + new_reopen_line
-else:
-    approval_section = existing_approval
+    reopen_line = '> Reopen: "{}" - {}, {}'.format(quote, date, source)
+    span = section_span(new_body, 'Approval')
+    if span is None:
+        sep = '' if new_body.endswith('\n\n') else ('\n' if new_body.endswith('\n') else '\n\n')
+        new_body = new_body + sep + '## Approval\n' + reopen_line + '\n'
+    else:
+        start, end = span
+        region = new_body[start:end]
+        trail = region[len(region.rstrip('\n')):] or '\n'
+        new_body = new_body[:start] + region.rstrip('\n') + '\n' + reopen_line + trail + new_body[end:]
 
-new_body = (
-    "# {title}\n\n"
-    "## Context\n{context}\n\n"
-    "## Options considered\n{options}\n\n"
-    "## Decision\n{decision}\n\n"
-    "## Consequences\n{consequences}\n\n"
-    "{approval_section}"
-).format(
-    title=title,
-    context=context,
-    options=options,
-    decision=decision,
-    consequences=consequences,
-    approval_section=approval_section,
-)
-
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8') as f:
     f.write(frontmatter_block + new_body)
 PYEOF
 
@@ -388,6 +512,12 @@ PYEOF
       [ -n "$s" ] && echo "Claimed: $s"
     done
   fi
+
+  SECTIONS_WRITTEN=""
+  for pair in "Title:$TITLE_OVERRIDE" "Context:$CONTEXT" "Options considered:$OPTIONS" "Decision:$DECISION" "Consequences:$CONSEQUENCES"; do
+    [ -n "${pair#*:}" ] && SECTIONS_WRITTEN="${SECTIONS_WRITTEN:+$SECTIONS_WRITTEN, }${pair%%:*}"
+  done
+  echo "Sections written: $SECTIONS_WRITTEN"
 
   echo "$TARGET_FILE"
 fi

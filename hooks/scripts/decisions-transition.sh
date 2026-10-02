@@ -3,8 +3,16 @@
 #
 # Usage: decisions-transition.sh <full-dated-slug|path>[,<slug|path>...] \
 #          <accept|decline|deprecate|craft|retag> \
-#          [--quote="<words>"] [--source=session|dossier] [--story=<story-name>] \
-#          [--tag=<target-tag>]
+#          [--quote="<words>" | --stdin] [--source=session|dossier] \
+#          [--story=<story-name>] [--tag=<target-tag>]
+#
+#   --stdin reads the typed answer from standard input instead of --quote=,
+#   so the user's words never sit on a command line. Only accept, decline
+#   and deprecate take it; it is refused alongside --quote=, and on retag
+#   or craft. Leading and trailing blank lines are stripped; an empty
+#   answer is the same error as a missing --quote. Standard input is read
+#   only when --stdin is given, so callers with no stdin (complete-story.sh
+#   runs craft) never block.
 #
 #   accept:    root, status: pending      -> approved/, status: accepted   (--quote required)
 #   decline:   root, status: pending      -> archive/,  status: declined   (--quote required)
@@ -53,7 +61,13 @@
 # survives whenever something actually moved:
 #   MOVED=<n>
 #   ALREADY=<m>
-#   <one absolute path per moved record>   <- omitted entirely when n = 0
+#   NEW_GROUP=1|0       <- 1 when no record carried the target tag before
+#                          the write
+#   TITLE=<title>       <- one per moved record, in argument order
+#   <the target group's decisions-view.sh group data: GROUP=/STRIP=/TOTAL=/
+#    COUNT_*=/MORE=/ROW=, story scan on, read after the write>
+#   <one absolute path per moved record>   <- always last
+# The group data and the paths are omitted entirely when n = 0.
 #
 # Exit: 0 on success, non-zero on any failure, with a stderr message naming
 # the slug and a reason distinct per failure case: not found, found in more
@@ -99,18 +113,43 @@ case "$ACTION" in
 esac
 
 QUOTE=""
+QUOTE_FLAG=""
+STDIN_FLAG=""
 SOURCE="session"
 STORY=""
 TAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --quote=*)  QUOTE="${1#*=}"; shift ;;
+    --quote=*)  QUOTE="${1#*=}"; QUOTE_FLAG="1"; shift ;;
+    --stdin)    STDIN_FLAG="1"; shift ;;
     --source=*) SOURCE="${1#*=}"; shift ;;
     --story=*)  STORY="${1#*=}"; shift ;;
     --tag=*)    TAG="${1#*=}"; shift ;;
     *) shift ;;
   esac
 done
+
+# ── --stdin: the typed answer arrives on fd 0. Validated and read here, once,
+# before any python3 heredoc below takes over python's own stdin. ─────────
+if [ -n "$STDIN_FLAG" ]; then
+  if [ "$ACTION" = "retag" ] || [ "$ACTION" = "craft" ]; then
+    echo "Error: --stdin carries a typed answer and $ACTION takes none" >&2
+    exit 1
+  fi
+  if [ -n "$QUOTE_FLAG" ]; then
+    echo "Error: --stdin and --quote= are two ways to give the same answer - use one" >&2
+    exit 1
+  fi
+  QUOTE=$(python3 -c '
+import sys
+lines = sys.stdin.buffer.read().decode("utf-8").split("\n")
+while lines and not lines[0].strip():
+    lines.pop(0)
+while lines and not lines[-1].strip():
+    lines.pop()
+sys.stdout.buffer.write("\n".join(lines).encode("utf-8"))
+')
+fi
 
 # ── retag: any room, any status, no card, no quote, no approval line. ────
 # Leaves the action flow entirely before the single-slug resolution below
@@ -141,6 +180,7 @@ if [ "$ACTION" = "retag" ]; then
   ALREADY=0
   QUEUE_SLUGS=()
   QUEUE_FILES=()
+  QUEUE_TITLES=()
   for s in "${SLUGS[@]}"; do
     LOOKUP=$(list --slug="$s" --no-scan)
     if [ -z "$LOOKUP" ]; then
@@ -158,6 +198,7 @@ if [ "$ACTION" = "retag" ]; then
 
     LOOKUP_FILE=$(echo "$LOOKUP" | sed -n 's/^FILE=//p')
     LOOKUP_TAGS=$(echo "$LOOKUP" | sed -n 's/^TAGS=//p')
+    LOOKUP_TITLE=$(echo "$LOOKUP" | sed -n 's/^TITLE=//p')
 
     IS_ALREADY=0
     IFS=';' read -ra TAG_LIST <<< "$LOOKUP_TAGS"
@@ -170,8 +211,16 @@ if [ "$ACTION" = "retag" ]; then
     else
       QUEUE_SLUGS+=("$s")
       QUEUE_FILES+=("$LOOKUP_FILE")
+      QUEUE_TITLES+=("$LOOKUP_TITLE")
     fi
   done
+
+  # The group is new when no record carried the target before any write.
+  if [ -z "$(list --tag="$TAG" --no-scan)" ]; then
+    NEW_GROUP=1
+  else
+    NEW_GROUP=0
+  fi
 
   MOVED=${#QUEUE_FILES[@]}
   PATHS=""
@@ -222,9 +271,21 @@ PYEOF
 )
   fi
 
+  # The receipt's group rows come from the written state, with the story
+  # scan on so claimed and crafted records draw as the Shelf draws them.
+  GROUP_DATA=""
+  if [ "$MOVED" -gt 0 ]; then
+    GROUP_DATA=$(list --tag="$TAG" | bash "$SCRIPT_DIR/decisions-view.sh" group)
+  fi
+
   echo "MOVED=$MOVED"
   echo "ALREADY=$ALREADY"
+  echo "NEW_GROUP=$NEW_GROUP"
   if [ "$MOVED" -gt 0 ]; then
+    for title in "${QUEUE_TITLES[@]}"; do
+      echo "TITLE=$title"
+    done
+    [ -n "$GROUP_DATA" ] && echo "$GROUP_DATA"
     echo "$PATHS"
   fi
   exit 0

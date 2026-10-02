@@ -1214,6 +1214,367 @@ run_flip
 echo "$FLIP_STDOUT" | grep -q "^Crafted:" && fail "abort with no decisions: no Crafted line printed" "(none)" "$FLIP_STDOUT" || pass "abort with no decisions: no Crafted line printed"
 rm -rf "$ROOT"
 
+echo "=== decisions-list.sh --claimants ==="
+echo ""
+
+echo "-- Test: claimants prints one line per non-complete claimant, sorted by path --"
+fresh_root
+write_record "approved" "claimed-law" "2026-05-01" "Claimed law" "accepted" "tag-a"
+SLUG5="2026-05-01-claimed-law"
+write_story "01-planning-claimer" "planning" "$SLUG5"
+write_story "02-active-claimer" "active" "other-slug, $SLUG5"
+write_story "03-complete-claimer" "complete" "$SLUG5"
+write_story "ready-claimer" "ready" "$SLUG5" ".craft/backlog"
+write_story "unrelated" "planning" "2026-05-01-something-else"
+set +e
+OUT=$(bash "$LIST" --claimants="$SLUG5")
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "claimants: exits 0" || fail "claimants: exits 0" "0" "$RC"
+LINES=$(echo "$OUT" | grep -c . || true)
+[ "$LINES" -eq 3 ] && pass "claimants: three lines (complete claimant omitted)" || fail "claimants: three lines" "3" "$OUT"
+# backlog sorts before cycles; within a dir, filename order
+EXPECTED="$(printf 'ready ready-claimer %s/.craft/backlog/ready-claimer.md\nplanning 01-planning-claimer %s/.craft/cycles/1-test/stories/01-planning-claimer.md\nactive 02-active-claimer %s/.craft/cycles/1-test/stories/02-active-claimer.md' "$ROOT" "$ROOT" "$ROOT")"
+[ "$OUT" = "$EXPECTED" ] && pass "claimants: lines are '<status> <story> <path>', sorted by path" || fail "claimants: lines are '<status> <story> <path>', sorted by path" "$EXPECTED" "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: claimants takes the story name from the filename when frontmatter has no name --"
+fresh_root
+write_record "approved" "nameless" "2026-05-02" "Nameless" "accepted" "tag-a"
+mkdir -p "$ROOT/.craft/backlog"
+printf -- '---\nstatus: planning\ndecisions: [2026-05-02-nameless]\n---\n# x\n' > "$ROOT/.craft/backlog/07-from-the-file.md"
+OUT=$(bash "$LIST" --claimants=2026-05-02-nameless)
+[ "$OUT" = "planning from-the-file $ROOT/.craft/backlog/07-from-the-file.md" ] && pass "claimants: name falls back to the basename minus its numeric prefix" || fail "claimants: name falls back to the basename" "planning from-the-file ..." "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: claimants on an unclaimed slug prints nothing and exits 0 --"
+fresh_root
+write_record "approved" "unclaimed" "2026-05-03" "Unclaimed" "accepted" "tag-a"
+write_story "some-story" "planning" "2026-05-03-other"
+set +e
+OUT=$(bash "$LIST" --claimants=2026-05-03-unclaimed)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && pass "claimants: unclaimed slug prints nothing, exits 0" || fail "claimants: unclaimed slug prints nothing, exits 0" "empty, 0" "rc=$RC out=$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: claimants on crafted law shipped only by complete stories prints nothing --"
+fresh_root
+write_record "approved" "shipped-law" "2026-05-04" "Shipped law" "accepted" "tag-a" "crafted" "done-story"
+write_story "done-story" "complete" "2026-05-04-shipped-law"
+OUT=$(bash "$LIST" --claimants=2026-05-04-shipped-law)
+[ -z "$OUT" ] && pass "claimants: law claimed only by complete stories prints nothing" || fail "claimants: law claimed only by complete stories prints nothing" "empty" "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: claimants ignores every other flag and works without a decisions dir --"
+fresh_root
+write_story "lonely-story" "planning" "2026-05-05-x"
+set +e
+OUT=$(bash "$LIST" --claimants=2026-05-05-x --room=archive --tag=nope)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && echo "$OUT" | grep -q "^planning lonely-story " && pass "claimants: other flags ignored" || fail "claimants: other flags ignored" "one planning line" "rc=$RC out=$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: a list call without --claimants is unchanged by the new mode --"
+fresh_root
+write_record "approved" "plain-call" "2026-05-06" "Plain call" "accepted" "tag-a"
+write_story "plain-claimer" "planning" "2026-05-06-plain-call"
+OUT=$(bash "$LIST" --slug=2026-05-06-plain-call)
+EXPECTED="$(printf 'FILE=%s/.craft/decisions/approved/2026-05-06-plain-call.md\nROOM=approved\nSLUG=2026-05-06-plain-call\nDATE=2026-05-06\nTITLE=Plain call\nSTATUS=accepted\nTAGS=tag-a\nDISPOSITION=claimed\nSTORIES=plain-claimer\n' "$ROOT")"
+[ "$OUT" = "$EXPECTED" ] && pass "list without --claimants: nine keys, same order, same values" || fail "list without --claimants unchanged" "$EXPECTED" "$OUT"
+rm -rf "$ROOT"
+
+echo "=== decisions-transition.sh --stdin ==="
+echo ""
+
+echo "-- Test: accept --stdin writes the same approval line as --quote=, answer round-trips byte-exact --"
+ANSWER='it'"'"'s $5 🎉 and `ticks` "quoted" \n'
+fresh_root
+write_record "root" "stdin-accept" "2026-05-10" "Stdin accept" "pending" "tag-a"
+printf '%s\n' "$ANSWER" | bash "$TRANSITION" 2026-05-10-stdin-accept accept --stdin > /dev/null
+GOT=$(cat "$ROOT/.craft/decisions/approved/2026-05-10-stdin-accept.md")
+rm -rf "$ROOT"
+fresh_root
+write_record "root" "stdin-accept" "2026-05-10" "Stdin accept" "pending" "tag-a"
+bash "$TRANSITION" 2026-05-10-stdin-accept accept --quote="$ANSWER" > /dev/null
+WANT=$(cat "$ROOT/.craft/decisions/approved/2026-05-10-stdin-accept.md")
+[ "$GOT" = "$WANT" ] && pass "accept --stdin: file identical to the --quote= result" || fail "accept --stdin: file identical to the --quote= result" "$WANT" "$GOT"
+echo "$GOT" | grep -qF "> \"$ANSWER\" - $(date +%Y-%m-%d), session" && pass "accept --stdin: answer round-trips byte-exact" || fail "accept --stdin: answer round-trips byte-exact" "$ANSWER" "$GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: stdin answer is stripped of leading and trailing blank lines --"
+fresh_root
+write_record "root" "stdin-strip" "2026-05-11" "Stdin strip" "pending" "tag-a"
+printf '\n\n  yes, do it\n\n\n' | bash "$TRANSITION" 2026-05-11-stdin-strip accept --stdin > /dev/null
+grep -qF "> \"  yes, do it\" - $(date +%Y-%m-%d), session" "$ROOT/.craft/decisions/approved/2026-05-11-stdin-strip.md" && pass "accept --stdin: leading and trailing blank lines stripped" || fail "accept --stdin: leading and trailing blank lines stripped" "quote '  yes, do it'" "$(tail -2 "$ROOT/.craft/decisions/approved/2026-05-11-stdin-strip.md")"
+rm -rf "$ROOT"
+
+echo "-- Test: decline and deprecate --stdin carry the answer --"
+fresh_root
+write_record "root" "stdin-decline" "2026-05-12" "Stdin decline" "pending" "tag-a"
+write_record "approved" "stdin-deprecate" "2026-05-12" "Stdin deprecate" "accepted" "tag-a"
+OUT=$(printf 'no thanks\n' | bash "$TRANSITION" 2026-05-12-stdin-decline decline --stdin)
+grep -q '^> "no thanks" - ' "$ROOT/.craft/decisions/archive/2026-05-12-stdin-decline.md" && grep -q "^status: declined$" "$ROOT/.craft/decisions/archive/2026-05-12-stdin-decline.md" && pass "decline --stdin carries the answer" || fail "decline --stdin carries the answer" "declined with quote" "$(tail -3 "$ROOT/.craft/decisions/archive/2026-05-12-stdin-decline.md" 2>&1)"
+echo "$OUT" | head -2 | tr '\n' ' ' | grep -q "^TITLE=Stdin decline CHANGED=1 $" && pass "decline --stdin: TITLE=/CHANGED= unchanged" || fail "decline --stdin: TITLE=/CHANGED= unchanged" "TITLE=Stdin decline CHANGED=1" "$OUT"
+printf 'obsolete\n' | bash "$TRANSITION" 2026-05-12-stdin-deprecate deprecate --stdin > /dev/null
+grep -q '^> "obsolete" - ' "$ROOT/.craft/decisions/archive/2026-05-12-stdin-deprecate.md" && grep -q "^status: deprecated$" "$ROOT/.craft/decisions/archive/2026-05-12-stdin-deprecate.md" && pass "deprecate --stdin carries the answer" || fail "deprecate --stdin carries the answer" "deprecated with quote" "$(tail -3 "$ROOT/.craft/decisions/archive/2026-05-12-stdin-deprecate.md" 2>&1)"
+rm -rf "$ROOT"
+
+echo "-- Test: --stdin with --quote= is refused and writes nothing --"
+fresh_root
+write_record "root" "stdin-both" "2026-05-13" "Stdin both" "pending" "tag-a"
+F="$ROOT/.craft/decisions/2026-05-13-stdin-both.md"
+B=$(cat "$F")
+set +e
+printf 'x\n' | bash "$TRANSITION" 2026-05-13-stdin-both accept --stdin --quote="y" >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && [ ! -e "$ROOT/.craft/decisions/approved/2026-05-13-stdin-both.md" ] && pass "--stdin with --quote= refused, nothing written" || fail "--stdin with --quote= refused, nothing written" "non-zero, untouched" "rc=$RC"
+rm -rf "$ROOT"
+
+echo "-- Test: --stdin on retag and on craft is refused and writes nothing --"
+fresh_root
+write_record "root" "stdin-retag" "2026-05-14" "Stdin retag" "pending" "old-tag"
+write_record "approved" "stdin-craft" "2026-05-14" "Stdin craft" "accepted" "old-tag"
+F1="$ROOT/.craft/decisions/2026-05-14-stdin-retag.md"; F2="$ROOT/.craft/decisions/approved/2026-05-14-stdin-craft.md"
+B1=$(cat "$F1"); B2=$(cat "$F2")
+set +e
+printf 'x\n' | bash "$TRANSITION" 2026-05-14-stdin-retag retag --tag=new-tag --stdin >/dev/null 2>&1
+RC1=$?
+printf 'x\n' | bash "$TRANSITION" 2026-05-14-stdin-craft craft --story=s --stdin >/dev/null 2>&1
+RC2=$?
+set -e
+[ "$RC1" -ne 0 ] && [ "$(cat "$F1")" = "$B1" ] && pass "--stdin on retag refused, nothing written" || fail "--stdin on retag refused, nothing written" "non-zero, untouched" "rc=$RC1"
+[ "$RC2" -ne 0 ] && [ "$(cat "$F2")" = "$B2" ] && pass "--stdin on craft refused, nothing written" || fail "--stdin on craft refused, nothing written" "non-zero, untouched" "rc=$RC2"
+rm -rf "$ROOT"
+
+echo "-- Test: an empty stdin answer is refused like a missing quote --"
+fresh_root
+write_record "root" "stdin-empty" "2026-05-15" "Stdin empty" "pending" "tag-a"
+F="$ROOT/.craft/decisions/2026-05-15-stdin-empty.md"
+B=$(cat "$F")
+set +e
+ERR=$(printf '\n  \n' | bash "$TRANSITION" 2026-05-15-stdin-empty accept --stdin 2>&1 >/dev/null)
+RC=$?
+ERR2=$(printf '\n\n' | bash "$TRANSITION" 2026-05-15-stdin-empty accept --stdin 2>&1 >/dev/null)
+RC2=$?
+ERR3=$(bash "$TRANSITION" 2026-05-15-stdin-empty accept 2>&1 >/dev/null)
+set -e
+[ "$RC2" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && [ "$ERR2" = "$ERR3" ] && pass "empty stdin answer: same error as a missing --quote" || fail "empty stdin answer: same error as a missing --quote" "$ERR3" "rc=$RC2 $ERR2"
+rm -rf "$ROOT"
+
+echo "-- Test: stdin is never read without --stdin (a craft call with an open stdin does not block) --"
+fresh_root
+write_record "approved" "no-read" "2026-05-16" "No read" "accepted" "tag-a"
+set +e
+START=$SECONDS
+bash "$TRANSITION" 2026-05-16-no-read craft --story=some-story > "$ROOT/no-read.out" 2>&1 < <(sleep 4)
+RC=$?
+OUT=$(cat "$ROOT/no-read.out")
+ELAPSED=$((SECONDS - START))
+set -e
+[ "$RC" -eq 0 ] && [ "$ELAPSED" -lt 3 ] && echo "$OUT" | grep -q "^TITLE=No read$" && pass "craft without --stdin returns without reading stdin" || fail "craft without --stdin returns without reading stdin" "rc 0 in under 3s with TITLE=" "rc=$RC elapsed=${ELAPSED}s $OUT"
+rm -rf "$ROOT"
+
+echo "=== decisions-transition.sh retag receipt ==="
+echo ""
+
+echo "-- Test: retag prints NEW_GROUP=1 when no record carried the target before the write --"
+fresh_root
+write_record "root" "rc-a" "2026-05-20" "Receipt a" "pending" "old-tag"
+write_record "root" "rc-b" "2026-05-20" "Receipt b" "pending" "old-tag"
+OUT=$(bash "$TRANSITION" "2026-05-20-rc-a,2026-05-20-rc-b" retag --tag=fresh-target)
+echo "$OUT" | grep -q "^NEW_GROUP=1$" && pass "retag: NEW_GROUP=1 for a tag no record carried" || fail "retag: NEW_GROUP=1 for a tag no record carried" "NEW_GROUP=1" "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: retag prints NEW_GROUP=0 when one already carried the target, with receipt order --"
+fresh_root
+write_record "root" "rd-there" "2026-05-21" "Already there" "pending" "target-tag"
+write_record "root" "rd-move" "2026-05-21" "Moving one" "pending" "old-tag"
+write_story "rd-claimer" "planning" "2026-05-21-rd-move"
+OUT=$(bash "$TRANSITION" "2026-05-21-rd-there,2026-05-21-rd-move" retag --tag=target-tag)
+echo "$OUT" | grep -q "^NEW_GROUP=0$" && echo "$OUT" | grep -q "^ALREADY=1$" && pass "retag: NEW_GROUP=0 and ALREADY=1" || fail "retag: NEW_GROUP=0 and ALREADY=1" "NEW_GROUP=0 ALREADY=1" "$OUT"
+HEADS=$(echo "$OUT" | head -4 | tr '\n' ' ')
+[ "$HEADS" = "MOVED=1 ALREADY=1 NEW_GROUP=0 TITLE=Moving one " ] && pass "retag: counts, NEW_GROUP, then TITLE= in order" || fail "retag: counts, NEW_GROUP, then TITLE= in order" "MOVED=1 ALREADY=1 NEW_GROUP=0 TITLE=Moving one" "$HEADS"
+rm -rf "$ROOT"
+
+echo "-- Test: retag prints one TITLE= per moved record and the target group's data before the paths --"
+fresh_root
+write_record "root" "rt-a" "2026-05-22" "Title alpha" "pending" "old-tag"
+write_record "approved" "rt-b" "2026-05-22" "Title beta" "accepted" "old-tag"
+write_story "rt-claimer" "planning" "2026-05-22-rt-b"
+OUT=$(bash "$TRANSITION" "2026-05-22-rt-b,2026-05-22-rt-a" retag --tag=grp-target)
+TITLES=$(echo "$OUT" | grep '^TITLE=' | tr '\n' '|')
+[ "$TITLES" = "TITLE=Title beta|TITLE=Title alpha|" ] && pass "retag: one TITLE= per moved record in argument order" || fail "retag: one TITLE= per moved record in argument order" "TITLE=Title beta|TITLE=Title alpha|" "$TITLES"
+echo "$OUT" | grep -q "^GROUP=grp-target" && echo "$OUT" | grep -q "^TOTAL=2$" && echo "$OUT" | grep -q "^ROW=" && pass "retag: the target group's GROUP=/TOTAL=/ROW= data is printed" || fail "retag: the target group's GROUP=/TOTAL=/ROW= data is printed" "GROUP= TOTAL=2 ROW=" "$OUT"
+LAST2=$(echo "$OUT" | tail -2 | tr '\n' ' ')
+[ "$LAST2" = "$ROOT/.craft/decisions/approved/2026-05-22-rt-b.md $ROOT/.craft/decisions/2026-05-22-rt-a.md " ] && pass "retag: the moved paths come last, in argument order" || fail "retag: the moved paths come last, in argument order" "two paths" "$LAST2"
+FIRST_PATH=$(echo "$OUT" | grep -n "^$ROOT" | head -1 | cut -d: -f1)
+LAST_DATA=$(echo "$OUT" | grep -n "^ROW=\|^GROUP=\|^TOTAL=\|^COUNT_\|^MORE=\|^STRIP=" | tail -1 | cut -d: -f1)
+[ "$LAST_DATA" -lt "$FIRST_PATH" ] && pass "retag: group data sits wholly before the first path" || fail "retag: group data sits wholly before the first path" "data before paths" "$OUT"
+echo "$OUT" | grep '^ROW=' | grep -q "Title beta" && pass "retag: the story scan is on (claimed record gets a Shelf row)" || fail "retag: the story scan is on" "a row for Title beta" "$(echo "$OUT" | grep '^ROW=')"
+rm -rf "$ROOT"
+
+echo "-- Test: retag that moves nothing prints no group data --"
+fresh_root
+write_record "root" "rn-a" "2026-05-23" "Nothing a" "pending" "target-tag"
+OUT=$(bash "$TRANSITION" 2026-05-23-rn-a retag --tag=target-tag)
+[ "$OUT" = "$(printf 'MOVED=0\nALREADY=1\nNEW_GROUP=0')" ] && pass "retag nothing moved: only MOVED=/ALREADY=/NEW_GROUP=" || fail "retag nothing moved: only MOVED=/ALREADY=/NEW_GROUP=" "MOVED=0 ALREADY=1 NEW_GROUP=0" "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: a failed retag prints no receipt and leaves every record byte-identical --"
+fresh_root
+write_record "root" "rf-a" "2026-05-24" "Fail a" "pending" "old-tag"
+F="$ROOT/.craft/decisions/2026-05-24-rf-a.md"; B=$(cat "$F")
+set +e
+OUT=$(bash "$TRANSITION" "2026-05-24-rf-a,2026-05-24-nope" retag --tag=new-tag 2>/dev/null)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ -z "$OUT" ] && [ "$(cat "$F")" = "$B" ] && pass "failed retag: no receipt, nothing written" || fail "failed retag: no receipt, nothing written" "non-zero, empty stdout" "rc=$RC out=$OUT"
+rm -rf "$ROOT"
+
+# ── capture: the record on stdin, partial reopen, the receipt ───────────
+
+echo "-- Test: create --stdin is byte-identical to create by flags, with and without an Approval --"
+fresh_root
+STDIN_BODY=$(printf '# Parity title\n\n## Context\nWhy we are here.\n\n## Options considered\n- one\n- two\n\n## Decision\nPick one.\n\n## Consequences\nIt costs a day.\n\n## Approval\napproved, go\n')
+P_FLAGS=$(bash "$CAPTURE" "Parity title" --tag=par --context="Why we are here." --options="$(printf -- '- one\n- two')" --decision="Pick one." --consequences="It costs a day." --quote="approved, go" --created=2026-06-01)
+cp "$P_FLAGS" "$ROOT/flags.md"; rm "$P_FLAGS"
+P_STDIN=$(printf '%s\n' "$STDIN_BODY" | bash "$CAPTURE" --tag=par --stdin --created=2026-06-01)
+[ "$P_STDIN" = "$P_FLAGS" ] && cmp -s "$ROOT/flags.md" "$P_STDIN" && pass "create --stdin with an Approval matches the flag form byte for byte" || fail "create --stdin with an Approval matches the flag form byte for byte" "identical bytes" "$(diff "$ROOT/flags.md" "$P_STDIN" 2>&1 | head -5)"
+rm "$P_STDIN"
+NOAPP=$(printf '%s\n' "$STDIN_BODY" | sed '/^## Approval$/,$d')
+F2=$(bash "$CAPTURE" "Parity title" --tag=par --context="Why we are here." --options="$(printf -- '- one\n- two')" --decision="Pick one." --consequences="It costs a day." --created=2026-06-01)
+cp "$F2" "$ROOT/flags2.md"; rm "$F2"
+S2=$(printf '%s\n' "$NOAPP" | bash "$CAPTURE" --tag=par --stdin --created=2026-06-01)
+cmp -s "$ROOT/flags2.md" "$S2" && [ "$(dirname "$S2")" = "$ROOT/.craft/decisions" ] && pass "create --stdin without an Approval matches the flag form and files pending in the root" || fail "create --stdin without an Approval matches the flag form and files pending in the root" "identical bytes, root" "$S2"
+rm -rf "$ROOT"
+
+echo "-- Test: an apostrophe, a dollar sign and an emoji round-trip byte-exact through --stdin --"
+fresh_root
+RT_CTX="It's \$HOME and \$(not run) 🎯 and a backtick \` too"
+F=$(printf '# Round trip\n\n## Context\n%s\n\n## Options considered\nopt\n\n## Decision\ndec\n\n## Consequences\ncons\n' "$RT_CTX" | bash "$CAPTURE" --tag=rt --stdin --created=2026-06-02)
+GOT=$(sed -n '/^## Context$/,/^## Options considered$/p' "$F" | sed '1d;$d' | sed '$d')
+[ "$GOT" = "$RT_CTX" ] && pass "special characters survive --stdin byte-exact" || fail "special characters survive --stdin byte-exact" "$RT_CTX" "$GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: an unknown ## heading on stdin is refused and writes nothing --"
+fresh_root
+set +e
+ERR=$(printf '# T\n\n## Context\nc\n\n## Notes\nn\n\n## Options considered\no\n\n## Decision\nd\n\n## Consequences\nk\n' | bash "$CAPTURE" --tag=bad --stdin 2>&1 1>/dev/null)
+RC=$?
+ERR2=$(printf '# T\n\n## Context\nc\n\n## Context\nagain\n\n## Options considered\no\n\n## Decision\nd\n\n## Consequences\nk\n' | bash "$CAPTURE" --tag=bad --stdin 2>&1 1>/dev/null)
+RC2=$?
+set -e
+[ "$RC" -ne 0 ] && echo "$ERR" | grep -qF '## Notes' && [ ! -d "$ROOT/.craft" ] && pass "an unknown heading exits non-zero naming it and writes nothing" || fail "an unknown heading exits non-zero naming it and writes nothing" "non-zero, names ## Notes, no .craft" "rc=$RC err=$ERR"
+[ "$RC2" -ne 0 ] && echo "$ERR2" | grep -qF '## Context' && [ ! -d "$ROOT/.craft" ] && pass "a repeated heading is refused naming it" || fail "a repeated heading is refused naming it" "non-zero, names ## Context" "rc=$RC2 err=$ERR2"
+rm -rf "$ROOT"
+
+echo "-- Test: create --stdin with --quote=, a section flag or a positional title is refused --"
+fresh_root
+BODY=$(printf '# T\n\n## Context\nc\n\n## Options considered\no\n\n## Decision\nd\n\n## Consequences\nk\n')
+for extra in '--quote=words' '--context=x' '--decision=x' 'Positional'; do
+  set +e
+  printf '%s\n' "$BODY" | bash "$CAPTURE" --tag=t --stdin "$extra" >/dev/null 2>&1
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] && [ ! -d "$ROOT/.craft" ] && pass "create --stdin with $extra is refused before any write" || fail "create --stdin with $extra is refused before any write" "non-zero, nothing written" "rc=$RC"
+done
+set +e
+printf '# T\n\n## Context\nc\n' | bash "$CAPTURE" --tag=t --stdin >/dev/null 2>"$ROOT/err.txt"
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && grep -q -- '--options is required' "$ROOT/err.txt" && pass "create --stdin missing a section gives the flag form's message" || fail "create --stdin missing a section gives the flag form's message" "--options is required" "$(cat "$ROOT/err.txt")"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen --stdin with only Consequences rewrites it and leaves every other byte identical --"
+fresh_root
+write_record "approved" "partial-law" "2026-06-03" "Partial law" "accepted" "pl"
+F="$ROOT/.craft/decisions/approved/2026-06-03-partial-law.md"
+python3 - "$F" <<'PY'
+import sys
+p=sys.argv[1]
+t=open(p,encoding='utf-8').read()
+t=t.replace("## Options considered\n## Decision\n## Consequences\n","## Options considered\n- keep\n\n## Decision\nWe keep it.\n\n## Consequences\nOld consequence.\nSecond old line.\n\n")
+open(p,'w',encoding='utf-8').write(t)
+PY
+span() { python3 - "$1" "$2" <<'PY'
+import sys,re
+t=open(sys.argv[1],encoding='utf-8').read()
+name=sys.argv[2]
+if name=='front': print(t.split('---\n')[1]); sys.exit()
+m=re.search(r'^## '+re.escape(name)+r'\n(.*?)(?=^## |\Z)',t,re.S|re.M)
+print(m.group(1) if m else 'MISSING', end='')
+PY
+}
+B_FRONT=$(span "$F" front); B_CTX=$(span "$F" Context); B_OPT=$(span "$F" "Options considered"); B_DEC=$(span "$F" Decision); B_APP=$(span "$F" Approval)
+OUT=$(printf '## Consequences\nNew consequence.\n\n## Approval\nyes, reshape it\n' | bash "$CAPTURE" --reopen=2026-06-03-partial-law --stdin)
+A_CONS=$(span "$F" Consequences)
+[ "$A_CONS" = "$(printf 'New consequence.\n\n')" ] && pass "reopen --stdin replaces the Consequences text" || fail "reopen --stdin replaces the Consequences text" "New consequence." "$A_CONS"
+[ "$(span "$F" front)" = "$B_FRONT" ] && [ "$(span "$F" Context)" = "$B_CTX" ] && [ "$(span "$F" "Options considered")" = "$B_OPT" ] && [ "$(span "$F" Decision)" = "$B_DEC" ] && pass "frontmatter, Context, Options and Decision are byte-identical after a Consequences-only reopen" || fail "untouched spans stay identical" "unchanged" "changed"
+grep -q '^# Partial law$' "$F" && grep -q '^> "approved" - 2026-06-03, session$' "$F" && pass "the title and the original approval line are untouched" || fail "the title and the original approval line are untouched" "kept" "$(cat "$F")"
+echo "-- Test: reopen receipt names the sections written before the path --"
+EXPECT=$(printf 'Sections written: Consequences\n%s' "$F")
+[ "$OUT" = "$EXPECT" ] && pass "receipt is Sections written then the path" || fail "receipt is Sections written then the path" "$EXPECT" "$OUT"
+OUT=$(printf '# Renamed law\n\n## Decision\nWe change it.\n\n## Context\nNew ctx.\n\n## Approval\nagain\n' | bash "$CAPTURE" --reopen=2026-06-03-partial-law --stdin)
+[ "$(printf '%s\n' "$OUT" | sed -n 1p)" = "Sections written: Title, Context, Decision" ] && pass "the receipt lists names in record order, Title first" || fail "the receipt lists names in record order, Title first" "Sections written: Title, Context, Decision" "$OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen --stdin on law requires an Approval and appends a Reopen line; in the root it refuses one --"
+fresh_root
+write_record "approved" "law-needs-approval" "2026-06-04" "Law needs approval" "accepted" "pl"
+F="$ROOT/.craft/decisions/approved/2026-06-04-law-needs-approval.md"; B=$(cat "$F")
+set +e
+printf '## Context\nnew\n' | bash "$CAPTURE" --reopen=2026-06-04-law-needs-approval --stdin >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && pass "reopen --stdin on law without an Approval is refused and writes nothing" || fail "reopen --stdin on law without an Approval is refused" "non-zero, unchanged" "rc=$RC"
+printf '## Context\nnew\n\n## Approval\nship it\n' | bash "$CAPTURE" --reopen=2026-06-04-law-needs-approval --stdin >/dev/null
+grep -q '^> Reopen: "ship it" - ' "$F" && grep -q '^> "approved" - 2026-06-04, session$' "$F" && pass "the Approval text lands as a Reopen line under the original approval" || fail "the Approval text lands as a Reopen line" "> Reopen: \"ship it\"" "$(tail -4 "$F")"
+write_record "root" "root-quiet" "2026-06-04" "Root quiet" "pending" "pl"
+F="$ROOT/.craft/decisions/2026-06-04-root-quiet.md"; B=$(cat "$F")
+set +e
+printf '## Context\nnew\n\n## Approval\nnot here\n' | bash "$CAPTURE" --reopen=2026-06-04-root-quiet --stdin >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && pass "reopen --stdin in the root refuses an Approval and writes nothing" || fail "reopen --stdin in the root refuses an Approval" "non-zero, unchanged" "rc=$RC"
+printf '## Context\nquiet new\n' | bash "$CAPTURE" --reopen=2026-06-04-root-quiet --stdin >/dev/null
+grep -q '^quiet new$' "$F" && pass "reopen --stdin in the root reshapes without an Approval" || fail "reopen --stdin in the root reshapes without an Approval" "quiet new" "$(cat "$F")"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen naming a section the record lacks is refused and writes nothing --"
+fresh_root
+mkdir -p "$ROOT/.craft/decisions"
+printf -- '---\ntype: decision\nstatus: pending\ncreated: 2026-06-05\nsource: session\ntags: [pl]\n---\n# Thin\n\n## Context\nonly context\n' > "$ROOT/.craft/decisions/2026-06-05-thin.md"
+F="$ROOT/.craft/decisions/2026-06-05-thin.md"; B=$(cat "$F")
+set +e
+printf '## Context\nnew\n\n## Decision\nlacking\n' | bash "$CAPTURE" --reopen=2026-06-05-thin --stdin >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && pass "a section the record lacks refuses the reopen and writes nothing" || fail "a section the record lacks refuses the reopen" "non-zero, unchanged" "rc=$RC"
+rm -rf "$ROOT"
+
+echo "-- Test: a single-section flag reopen now succeeds, and a reopen with nothing to write is refused --"
+fresh_root
+write_record "root" "single-flag" "2026-06-06" "Single flag" "pending" "pl"
+F="$ROOT/.craft/decisions/2026-06-06-single-flag.md"
+python3 - "$F" <<'PY'
+import sys
+p=sys.argv[1]
+t=open(p,encoding='utf-8').read().replace("## Decision\n","## Decision\nkeep this\n\n")
+open(p,'w',encoding='utf-8').write(t)
+PY
+OUT=$(bash "$CAPTURE" --reopen=2026-06-06-single-flag --context="flag ctx")
+grep -q '^flag ctx$' "$F" && grep -q '^keep this$' "$F" && [ "$(printf '%s\n' "$OUT" | sed -n 1p)" = "Sections written: Context" ] && pass "one section flag rewrites only that section and prints the receipt" || fail "one section flag rewrites only that section" "flag ctx, keep this kept" "$OUT"
+B=$(cat "$F")
+set +e
+bash "$CAPTURE" --reopen=2026-06-06-single-flag >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && pass "a reopen naming no section is refused" || fail "a reopen naming no section is refused" "non-zero" "rc=$RC"
+rm -rf "$ROOT"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"

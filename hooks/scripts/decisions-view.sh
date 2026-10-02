@@ -1,7 +1,7 @@
 #!/bin/bash
 # decisions-view.sh - Derives every view the decisions desk shows the user
 # (the DECISION SHELF, one group drawer, the empty state, the archive, and
-# the card's fresh/pending/reopen/retire faces) from decisions-list.sh's
+# the reopen card) from decisions-list.sh's
 # stdin blocks or a record's own text, and emits it as plain key=value
 # data - no box-drawing character and no ANSI escape anywhere in this
 # script's stdout. Claude draws the rail around that data, following
@@ -39,23 +39,18 @@
 #     closing HEAD=, then CLOSE=. This is the drawer that asks the user to
 #     name one record when their words resolved to several.
 #
-#   decisions-view.sh card --variant=<fresh|pending|reopen|retire>
-#       [--state=<question|decision>] [--proposed=<letter>] [--file=<path>]
+#   decisions-view.sh card --variant=reopen --file=<path>
 #       [--context= --options= --decision= --consequences= --title=]
-#       [--new-group=<tag>] [--claimed-by=<story>:<status> ...]
-#       [--shipped-by=<story>]
-#     `fresh` reads decisions-capture.sh --dry-run's stdout on stdin: line 1
-#     is SLUG=, the rest is the record body. `pending` and `retire` take
-#     --file=<path> (a FILE= path decisions-list.sh emits). `pending` also
-#     accepts the section flags: each one given replaces that section of
-#     the file for this draw only, nothing written - the preview of a
-#     changed pending card. `reopen` takes
-#     --file= for the base plus the proposed sections as flags, and diffs
-#     them against the file. State on a fresh card defaults to decision; on
-#     a pending card it is read from the file's own Options section
-#     (lettered "(x)" lines are a question, "- " lines or an empty section
-#     are a decision). reopen and retire ignore --state.
-#     Every variant emits BAND=/HEAD=/BLANK=/DIV=/ROW=/CLOSE= data, same
+#       [--claimed-by=<story>:<status> ...] [--shipped-by=<story>] [--stdin]
+#     --variant=reopen is the only variant; any other exits non-zero. The
+#     card takes --file= for the base record plus the proposed sections,
+#     and diffs them against the file. The proposed sections come as
+#     flags, or on stdin with --stdin (never both): a record-format body -
+#     an optional `# <title>` line, then `## Context`,
+#     `## Options considered`, `## Decision`, `## Consequences`; a
+#     `## Approval` section is ignored, any other `## ` heading is
+#     refused.
+#     The card emits BAND=/HEAD=/BLANK=/DIV=/ROW=/CLOSE= data, same
 #     vocabulary as the Shelf: body text wraps at 65 columns with hyphens
 #     never treated as a break point, and every `> ` line of the Approval
 #     section is its own ROW=, byte-identical to the file. reopen's title
@@ -90,18 +85,14 @@ for a in ARGS[1:]:
 
 def parse_card_args(args):
     opts = {
-        'variant': '', 'state': '', 'proposed': '', 'file': '',
+        'variant': '', 'file': '',
         'context': None, 'options': None, 'decision': None,
-        'consequences': None, 'title': None, 'new_group': '',
-        'claimed_by': [], 'shipped_by': '',
+        'consequences': None, 'title': None,
+        'claimed_by': [], 'shipped_by': '', 'stdin': False,
     }
     for a in args:
         if a.startswith('--variant='):
             opts['variant'] = a[len('--variant='):]
-        elif a.startswith('--state='):
-            opts['state'] = a[len('--state='):]
-        elif a.startswith('--proposed='):
-            opts['proposed'] = a[len('--proposed='):]
         elif a.startswith('--file='):
             opts['file'] = a[len('--file='):]
         elif a.startswith('--context='):
@@ -114,15 +105,67 @@ def parse_card_args(args):
             opts['consequences'] = a[len('--consequences='):]
         elif a.startswith('--title='):
             opts['title'] = a[len('--title='):]
-        elif a.startswith('--new-group='):
-            opts['new_group'] = a[len('--new-group='):]
         elif a.startswith('--claimed-by='):
             v = a[len('--claimed-by='):]
             story, _, status = v.partition(':')
             opts['claimed_by'].append((story, status))
         elif a.startswith('--shipped-by='):
             opts['shipped_by'] = a[len('--shipped-by='):]
+        elif a == '--stdin':
+            opts['stdin'] = True
     return opts
+
+
+STDIN_SECTIONS = {
+    '## Context': 'context',
+    '## Options considered': 'options',
+    '## Decision': 'decision',
+    '## Consequences': 'consequences',
+    '## Approval': 'approval',
+}
+
+
+def parse_stdin_body(text):
+    # The record-format body the reopen face accepts on --stdin: an
+    # optional first non-blank `# <title>` line, then sections opened by a
+    # line that is exactly one of the five known headings. A section's
+    # text is its lines with leading and trailing blank lines removed.
+    # Any other `## ` line, a repeated heading, or text before the first
+    # heading refuses the whole body.
+    title = None
+    sections = {}
+    current = None
+    buf = []
+
+    def close():
+        if current is not None:
+            sections[current] = '\n'.join(buf).strip('\n')
+
+    seen_content = False
+    for line in text.split('\n'):
+        if line in STDIN_SECTIONS:
+            key = STDIN_SECTIONS[line]
+            if key in sections or key == current:
+                sys.stderr.write("Error: repeated heading '{}' on stdin\n".format(line))
+                sys.exit(1)
+            close()
+            current, buf = key, []
+            seen_content = True
+        elif line.startswith('## '):
+            sys.stderr.write("Error: unknown heading '{}' on stdin\n".format(line))
+            sys.exit(1)
+        elif current is not None:
+            buf.append(line)
+        elif line.strip() == '':
+            continue
+        elif not seen_content and line.startswith('# '):
+            title = line[2:]
+            seen_content = True
+        else:
+            sys.stderr.write("Error: text before the first section heading on stdin: '{}'\n".format(line))
+            sys.exit(1)
+    close()
+    return title, sections
 
 
 CARD_OPTS = parse_card_args(ARGS[1:]) if SUBCOMMAND == 'card' else None
@@ -178,8 +221,7 @@ def display_title(block):
 
 GLYPH_ORDER = ["?", "○", "●", "✓"]
 
-# Every card face - fresh, pending, reopen and retire - wraps body text
-# at 65 columns with hyphens never treated as a break point: the width
+# The card wraps body text at 65 columns with hyphens never treated as a break point: the width
 # and setting that reproduce story 7's card exhibit line for line from a
 # real record on disk (`textwrap.wrap(t, 65, break_on_hyphens=False)`;
 # the default hyphen setting splits "(over-prescriptive)" across lines
@@ -470,13 +512,9 @@ def render_archive_view(blocks, only_filter):
 
 
 # -- The card --------------------------------------------------------
-# One shape, five faces: fresh (question or decision state), pending
-# (state read from the file), reopen (a diff against the file) and
-# retire (the file, presented unchanged). See the module docstring above
-# for the flag shape per variant. Every face draws as data - fresh and
-# pending from canonical_body, retire from raw_body_lines, reopen from
-# reopen_body_data further down, which diffs the file against the
-# proposed sections instead of relaying them straight.
+# One face: reopen, a diff of the proposed sections against the file.
+# See the module docstring above for its flags. It draws as data from
+# reopen_body_data further down.
 
 FENCE_RE = re.compile(r'^---\n(.*?)\n---\n?(.*)$', re.DOTALL)
 
@@ -539,47 +577,9 @@ def dated_slug_from_path(path):
     return base[:-3] if base.endswith('.md') else base
 
 
-# An option is a fork's alternative. Lettered while a fork is live
-# ("(a) Proposed: ..." / "(b) ..."), dashed once chosen ("- ..."); a
-# continuation line (no leading marker) folds into the option before it.
-# See 2026-09-09-letters-to-choose-dashes-once-chosen.
-DASH_OPTION_RE = re.compile(r'^-\s*(.*)$')
-LETTER_OPTION_RE = re.compile(r'^\(([a-z])\)\s*(?:Proposed:\s*)?(.*)$')
-
-
-def parse_options(text):
-    options = []
-    is_lettered = False
-    cur = None
-    for line in text.split('\n'):
-        if line.strip() == '':
-            continue
-        lm = LETTER_OPTION_RE.match(line)
-        dm = DASH_OPTION_RE.match(line)
-        if lm:
-            is_lettered = True
-            cur = {'text': lm.group(2).strip(), 'proposed': 'Proposed:' in line}
-            options.append(cur)
-        elif dm:
-            cur = {'text': dm.group(1).strip(), 'proposed': False}
-            options.append(cur)
-        elif cur is not None:
-            cur['text'] = (cur['text'] + ' ' + line.strip()).strip()
-        else:
-            cur = {'text': line.strip(), 'proposed': False}
-            options.append(cur)
-    return options, is_lettered
-
-
 # CARD_DATA_WIDTH (65, defined with the module constants above) is the
-# width every face wraps body text at; see its comment for why 65 and
+# width the card wraps body text at; see its comment for why 65 and
 # why hyphens never break.
-
-def wrap_lines_data(text):
-    if not text:
-        return []
-    return textwrap.wrap(text, width=CARD_DATA_WIDTH, break_on_hyphens=False) or []
-
 
 def prefixed_wrap_data(prefix, text):
     avail = max(CARD_DATA_WIDTH - len(prefix), 1)
@@ -633,20 +633,6 @@ def paragraphs_of(text):
     return paras
 
 
-def emit_flow_data(lines, text):
-    # Appends ROW=/BLANK= kv lines straight onto the caller's list, at
-    # CARD_DATA_WIDTH - the width every card face wraps body text at.
-    for marker, ptext, blank_before in paragraphs_of(text):
-        if blank_before:
-            lines.append(kv("BLANK"))
-        if marker:
-            for l in prefixed_wrap_data(marker, ptext):
-                lines.append(kv("ROW", l))
-        else:
-            for l in wrap_lines_data(ptext):
-                lines.append(kv("ROW", l))
-
-
 def approval_rows_data(approval_text):
     # Every `> ` line of the file's own Approval section is its own
     # ROW=, byte-identical, prefix included - never re-wrapped, never
@@ -659,85 +645,6 @@ def approval_rows_data(approval_text):
     for line in approval_text.split('\n'):
         rows.append(kv("BLANK") if line == '' else kv("ROW", line))
     return rows
-
-
-def canonical_body(parsed, options, state, proposed_letter):
-    # The record's five sections as DIV=/ROW=/BLANK= data - byte-exact
-    # in the decision state, a display transform of the same section
-    # list in the question state. See
-    # 2026-09-08-a-card-with-a-live-fork-reads-as-a-question-and.
-    # The title and dated slug are the caller's job (render_card_data);
-    # this starts at the first section divider.
-    lines = [kv("DIV", "CONTEXT")]
-    emit_flow_data(lines, parsed['context'])
-    lines.append(kv("BLANK"))
-
-    letters = None
-    marker_letter = None
-    if state == 'question':
-        lines.append(kv("DIV", "YOUR OPTIONS"))
-        letters = [chr(ord('a') + i) for i in range(len(options))]
-        proposed_idx = None
-        if proposed_letter:
-            idx = ord(proposed_letter) - ord('a')
-            if 0 <= idx < len(options):
-                proposed_idx = idx
-        if proposed_idx is None:
-            for i, o in enumerate(options):
-                if o['proposed']:
-                    proposed_idx = i
-                    break
-        for i, o in enumerate(options):
-            prefix = "({}) ".format(letters[i])
-            if i == proposed_idx:
-                prefix += "Proposed: "
-            for l in prefixed_wrap_data(prefix, o['text']):
-                lines.append(kv("ROW", l))
-        if proposed_idx is not None:
-            marker_letter = letters[proposed_idx]
-        else:
-            marker_letter = proposed_letter or (letters[0] if letters else 'a')
-    else:
-        lines.append(kv("DIV", "OPTIONS CONSIDERED"))
-        for o in options:
-            for l in prefixed_wrap_data("- ", o['text']):
-                lines.append(kv("ROW", l))
-
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "DECISION" + (" if ({})".format(marker_letter) if state == 'question' else "")))
-    emit_flow_data(lines, parsed['decision'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "CONSEQUENCES" + (" if ({})".format(marker_letter) if state == 'question' else "")))
-    emit_flow_data(lines, parsed['consequences'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "APPROVAL"))
-    lines.extend(approval_rows_data(parsed['approval']))
-    lines.append(kv("BLANK"))
-
-    return lines, letters
-
-
-def raw_body_lines(parsed):
-    # A retire face presents the record exactly as it sits on disk -
-    # never re-punctuated, never re-lettered - even a legacy record
-    # whose Options are still lettered. Same DIV=/ROW=/BLANK= shape as
-    # canonical_body above; the title and dated slug are the caller's.
-    lines = [kv("DIV", "CONTEXT")]
-    emit_flow_data(lines, parsed['context'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "OPTIONS CONSIDERED"))
-    emit_flow_data(lines, parsed['options'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "DECISION"))
-    emit_flow_data(lines, parsed['decision'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "CONSEQUENCES"))
-    emit_flow_data(lines, parsed['consequences'])
-    lines.append(kv("BLANK"))
-    lines.append(kv("DIV", "APPROVAL"))
-    lines.extend(approval_rows_data(parsed['approval']))
-    lines.append(kv("BLANK"))
-    return lines
 
 
 def diff_rows(old_text, new_text):
@@ -794,7 +701,7 @@ def emit_diff_rows_data(lines, rows):
         # The outer diff marker is part of the emitted ROW, so it comes
         # off the wrap width first - the same subtraction prefixed_wrap_data
         # and the title diff make for their own prefixes. Without it a
-        # reopen row ran up to two columns past every other face's 65.
+        # reopen row ran up to two columns past the card's 65.
         avail_width = max(CARD_DATA_WIDTH - len(outer), 1)
         if para_marker:
             avail = max(avail_width - len(para_marker), 1)
@@ -809,11 +716,10 @@ def emit_diff_rows_data(lines, rows):
 
 
 def reopen_body_data(parsed, opts):
-    # The reopen face's diff, as DIV=/MARK=/ROW=/HEAD=/BLANK= data - the
-    # same vocabulary render_card_data draws the other faces from. The
-    # title is a label, not a section body, so its diff rides HEAD= at
+    # The reopen face's diff, as DIV=/MARK=/ROW=/HEAD=/BLANK= data in
+    # the same vocabulary the Shelf draws from. The title is a label, not a section body, so its diff rides HEAD= at
     # the gutter rather than ROW= in the body indent. APPROVAL is never
-    # diffed - it is relayed verbatim, same as every other face, so the
+    # diffed - it is relayed verbatim, so the
     # `> Reopen:` lines a prior write already appended stay visible
     # before this reopen's own letter is typed.
     new_title = opts['title'] if opts['title'] is not None else parsed['title']
@@ -855,14 +761,10 @@ def reopen_body_data(parsed, opts):
     return out
 
 
-def card_band_text(status, tags, source, new_group_tag):
-    # The BAND= text every card face draws from: single spaces around
-    # each `·`, since there is no fixed width left to justify against. A
-    # tag no record carries reads `<tag> (NEW GROUP)` in the same place.
-    tag_parts = []
-    for t in tags:
-        tag_parts.append(t + " (NEW GROUP)" if new_group_tag and t == new_group_tag else t)
-    tags_text = ", ".join(tag_parts) if tag_parts else "(no tags)"
+def card_band_text(status, tags, source):
+    # The BAND= text the card draws from: single spaces around each `·`,
+    # since there is no fixed width left to justify against.
+    tags_text = ", ".join(tags) if tags else "(no tags)"
     return "{} · tags: {} · source: {}".format(status.upper() if status else "", tags_text, source)
 
 
@@ -892,55 +794,38 @@ def move_row_data(letter, move, effect):
     return prefixed_wrap_data(prefix, effect)
 
 
-def moves_for_data(variant, state, letters):
-    # Every face's letters and effects, as ROW= values.
-    moves = []
-
-    if variant == 'reopen':
-        letter_list = ['a']
-        moves.extend(move_row_data('a', 'approve', 'the law changes to this'))
-    elif variant == 'retire':
-        letter_list = ['a']
-        moves.extend(move_row_data('a', 'retire', 'no longer applies, goes to the archive with your words'))
-    elif state == 'question':
-        n = len(letters) if letters else 0
-        for letter in letters:
-            moves.extend(move_row_data(letter, 'pick', 'picks this option and redraws'))
-        keep_letter = chr(ord('a') + n)
-        letter_list = list(letters) + [keep_letter]
-        effect = ("saved on the Shelf as a question, decide later" if variant == 'fresh'
-                  else "saves your changes, stays on the Shelf")
-        moves.extend(move_row_data(keep_letter, 'keep pending', effect))
-    else:
-        letter_list = ['a', 'b', 'c']
-        if variant == 'fresh':
-            moves.extend(move_row_data('a', 'approve', 'what it becomes, and what gets built to it'))
-            moves.extend(move_row_data('b', 'keep pending', 'saved on the Shelf, decide later'))
-            moves.extend(move_row_data('c', 'decline', 'goes to the archive with your words, never re-proposed'))
-        else:
-            moves.extend(move_row_data('a', 'approve', 'moves to approved/ as shown'))
-            moves.extend(move_row_data('b', 'keep pending', 'saves your changes, stays on the Shelf'))
-            moves.extend(move_row_data('c', 'decline', 'moves to the archive with your words'))
-
-    closing = ", ".join(letter_list) + ", or just tell me what to change."
-    return moves, closing
+def moves_for_data():
+    # The reopen face's one letter and effect, as ROW= values, and the
+    # closing line that names it.
+    moves = move_row_data('a', 'approve', 'the law changes to this')
+    return moves, "a, or just tell me what to change."
 
 
 def render_card_reopen_data(opts):
     # The reopen face's diff, as BAND=/HEAD=/BLANK=/DIV=/MARK=/ROW=/
-    # CLOSE= data - the same vocabulary render_card_data draws the other
-    # faces from. The title diff replaces the plain HEAD= title line the
-    # other faces draw; everything else follows the same shape.
+    # CLOSE= data. The title diff rides HEAD= lines marked -/+ in place
+    # of a plain title line.
     if opts['claimed_by'] and opts['shipped_by']:
         sys.stderr.write("Error: --claimed-by= and --shipped-by= are mutually exclusive\n")
         sys.exit(1)
+
+    if opts['stdin']:
+        if any(opts[k] is not None for k in ('title', 'context', 'options', 'decision', 'consequences')):
+            sys.stderr.write("Error: --stdin cannot be combined with --title= or a section flag\n")
+            sys.exit(1)
+        # The draw happens before the answer exists, so a stdin Approval
+        # section is parsed for the grammar and then ignored.
+        title, sections = parse_stdin_body(read_piped_input())
+        opts['title'] = title
+        for k in ('context', 'options', 'decision', 'consequences'):
+            opts[k] = sections.get(k)
 
     text = read_file_required(opts['file'])
     parsed = parse_record_text(text)
     dated_slug = dated_slug_from_path(opts['file'])
 
     lines = [
-        kv("BAND", card_band_text(parsed['status'], parsed['tags'], parsed['source'], opts['new_group'])),
+        kv("BAND", card_band_text(parsed['status'], parsed['tags'], parsed['source'])),
         kv("HEAD", dated_slug),
         kv("BLANK"),
     ]
@@ -952,94 +837,7 @@ def render_card_reopen_data(opts):
         lines.extend(shipped_by_row_data(opts['shipped_by']))
 
     lines.append(kv("DIV", "YOUR MOVE"))
-    moves, closing = moves_for_data('reopen', None, None)
-    lines.extend(kv("ROW", mv) for mv in moves)
-    lines.append(kv("BLANK"))
-    lines.append(kv("HEAD", closing))
-    lines.append(kv("CLOSE"))
-    return lines
-
-
-def render_card_data(opts):
-    # fresh, pending and retire: the card as BAND=/HEAD=/DIV=/ROW=/
-    # BLANK=/CLOSE= data, same vocabulary the Shelf draws from.
-    variant = opts['variant']
-
-    if opts['claimed_by'] and opts['shipped_by']:
-        sys.stderr.write("Error: --claimed-by= and --shipped-by= are mutually exclusive\n")
-        sys.exit(1)
-
-    letters = None
-    state = None
-
-    if variant == 'fresh':
-        raw = read_piped_input()
-        first_nl = raw.find('\n')
-        slug_line, rest = (raw, '') if first_nl == -1 else (raw[:first_nl], raw[first_nl + 1:])
-        dated_slug = slug_line[len('SLUG='):] if slug_line.startswith('SLUG=') else ''
-        parsed = parse_record_text(rest)
-        state = opts['state'] or 'decision'
-        if state == 'question' and not opts['proposed']:
-            sys.stderr.write("Error: --proposed= is required with --state=question on a fresh card\n")
-            sys.exit(1)
-        if state == 'decision' and opts['proposed']:
-            sys.stderr.write("Error: --proposed= is refused in the decision state\n")
-            sys.exit(1)
-        options, _ = parse_options(parsed['options'])
-        body_lines, letters = canonical_body(parsed, options, state, opts['proposed'])
-
-    elif variant == 'pending':
-        text = read_file_required(opts['file'])
-        parsed = parse_record_text(text)
-        # Proposed sections replace the file's for this draw only - the
-        # same override the reopen face applies, so words that change a
-        # pending card have a data draw without a write. Applied before
-        # state detection, so re-lettered options draw the question state.
-        for key in ('title', 'context', 'options', 'decision', 'consequences'):
-            if opts[key] is not None:
-                parsed[key] = opts[key]
-        dated_slug = dated_slug_from_path(opts['file'])
-        options, is_lettered = parse_options(parsed['options'])
-        state = opts['state'] or ('question' if is_lettered else 'decision')
-        proposed_letter = opts['proposed']
-        if not proposed_letter and state == 'question':
-            for i, o in enumerate(options):
-                if o['proposed']:
-                    proposed_letter = chr(ord('a') + i)
-                    break
-        body_lines, letters = canonical_body(parsed, options, state, proposed_letter)
-
-    elif variant == 'retire':
-        text = read_file_required(opts['file'])
-        parsed = parse_record_text(text)
-        dated_slug = dated_slug_from_path(opts['file'])
-        body_lines = raw_body_lines(parsed)
-
-    else:
-        sys.stderr.write("Error: --variant= must be fresh, pending or retire\n")
-        sys.exit(1)
-
-    lines = [
-        kv("BAND", card_band_text(parsed['status'], parsed['tags'], parsed['source'], opts['new_group'])),
-        kv("HEAD", dated_slug),
-        kv("BLANK"),
-    ]
-    # The title wraps at the card width like every body row, one HEAD=
-    # per piece, so a long title never soft-wraps in the terminal and
-    # drops its rail (the reopen face already does this on its diff
-    # path). The dated slug above stays whole: capture caps it.
-    for piece in (textwrap.wrap(parsed['title'], width=CARD_DATA_WIDTH, break_on_hyphens=False) or ['']):
-        lines.append(kv("HEAD", piece))
-    lines.append(kv("BLANK"))
-    lines.extend(body_lines)
-
-    if opts['claimed_by']:
-        lines.extend(claimed_by_rows_data(opts['claimed_by']))
-    elif opts['shipped_by']:
-        lines.extend(shipped_by_row_data(opts['shipped_by']))
-
-    lines.append(kv("DIV", "YOUR MOVE"))
-    moves, closing = moves_for_data(variant, state, letters)
+    moves, closing = moves_for_data()
     lines.extend(kv("ROW", mv) for mv in moves)
     lines.append(kv("BLANK"))
     lines.append(kv("HEAD", closing))
@@ -1064,7 +862,8 @@ def main():
         if CARD_OPTS['variant'] == 'reopen':
             lines = render_card_reopen_data(CARD_OPTS)
         else:
-            lines = render_card_data(CARD_OPTS)
+            sys.stderr.write("Error: --variant= must be reopen\n")
+            sys.exit(1)
     else:
         data = read_piped_input()
         blocks = parse_blocks(data)
