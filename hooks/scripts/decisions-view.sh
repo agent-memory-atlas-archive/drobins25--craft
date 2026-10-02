@@ -60,17 +60,26 @@
 #
 # Resolves no project root, reads no environment variable for one, and
 # globs nothing under .craft/ - the only files this script opens are the
-# exact FILE= paths handed to it on stdin. Exit 0 always.
+# exact FILE= paths handed to it on stdin.
+#
+# Exit 0 is success. Exit 1 is any of: an unknown flag (stderr
+# "Error: unknown flag '<argument>'", nothing on stdout - each mode accepts
+# only its own flags, and a flag in the subcommand position is unknown), a
+# --variant= other than reopen, a missing or unreadable --file=,
+# --claimed-by= together with --shipped-by=, --stdin together with a
+# section flag, or a --stdin body the shared stdin grammar refuses.
 
 set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The python heredoc below occupies stdin (fd 0) with the script itself, so
 # the piped decisions-list.sh output is saved to fd 3 first and read back
 # from there - the house heredoc idiom, extended to also relay real input.
 exec 3<&0
 
-python3 - "$@" <<'PYEOF'
-import sys, os, re, textwrap, difflib
+DECISION_BODY_PARSER="$SCRIPT_DIR/decision-body-parser.py" python3 - "$@" <<'PYEOF'
+import sys, os, re, textwrap, difflib, subprocess, base64
 
 ARGS = sys.argv[1:]
 SUBCOMMAND = ARGS[0] if ARGS else ''
@@ -116,58 +125,53 @@ def parse_card_args(args):
     return opts
 
 
-STDIN_SECTIONS = {
-    '## Context': 'context',
-    '## Options considered': 'options',
-    '## Decision': 'decision',
-    '## Consequences': 'consequences',
-    '## Approval': 'approval',
+def parse_stdin_body(text):
+    # The record-format body the reopen face accepts on --stdin. The grammar
+    # lives in one parser shared with the capture script, so the card and
+    # the write can never read the same typed text two ways. A present but
+    # empty section stays '' and an absent one stays None. A malformed body
+    # makes the parser exit non-zero after naming the problem on stderr
+    # (inherited here), and the view exits 1 before printing anything.
+    proc = subprocess.run([sys.executable, os.environ['DECISION_BODY_PARSER'], text],
+                          stdout=subprocess.PIPE)
+    if proc.returncode != 0:
+        sys.exit(1)
+    found = {}
+    for line in proc.stdout.decode('ascii').split('\n'):
+        key, sep, b64 = line.partition('=')
+        if sep:
+            found[key] = base64.b64decode(b64).decode('utf-8')
+    sections = {k.lower(): v for k, v in found.items() if k != 'TITLE'}
+    return found.get('TITLE'), sections
+
+
+# Each mode owns its own flags: a prefix ends in '=', an exact flag does not.
+# Unknown means unknown to the mode being run, so a flag another mode owns is
+# refused here, and any subcommand that is not a named mode is the Shelf.
+FLAGS_BY_MODE = {
+    'archive': ('--only=',),
+    'match': ('--words=',),
+    'card': ('--variant=', '--file=', '--context=', '--options=', '--decision=',
+             '--consequences=', '--title=', '--claimed-by=', '--shipped-by=',
+             '--stdin'),
 }
 
 
-def parse_stdin_body(text):
-    # The record-format body the reopen face accepts on --stdin: an
-    # optional first non-blank `# <title>` line, then sections opened by a
-    # line that is exactly one of the five known headings. A section's
-    # text is its lines with leading and trailing blank lines removed.
-    # Any other `## ` line, a repeated heading, or text before the first
-    # heading refuses the whole body.
-    title = None
-    sections = {}
-    current = None
-    buf = []
-
-    def close():
-        if current is not None:
-            sections[current] = '\n'.join(buf).strip('\n')
-
-    seen_content = False
-    for line in text.split('\n'):
-        if line in STDIN_SECTIONS:
-            key = STDIN_SECTIONS[line]
-            if key in sections or key == current:
-                sys.stderr.write("Error: repeated heading '{}' on stdin\n".format(line))
-                sys.exit(1)
-            close()
-            current, buf = key, []
-            seen_content = True
-        elif line.startswith('## '):
-            sys.stderr.write("Error: unknown heading '{}' on stdin\n".format(line))
-            sys.exit(1)
-        elif current is not None:
-            buf.append(line)
-        elif line.strip() == '':
+def refuse_unknown_flags(args):
+    # Runs before anything is read or printed, so a refusal leaves no output
+    # and touches no file. A first argument that is itself a flag is refused
+    # too: it would otherwise fall through to the Shelf and be swallowed.
+    allowed = FLAGS_BY_MODE.get(args[0], ()) if args else ()
+    for i, a in enumerate(args):
+        if not a.startswith('--'):
             continue
-        elif not seen_content and line.startswith('# '):
-            title = line[2:]
-            seen_content = True
-        else:
-            sys.stderr.write("Error: text before the first section heading on stdin: '{}'\n".format(line))
-            sys.exit(1)
-    close()
-    return title, sections
+        if i > 0 and any(a == f or (f.endswith('=') and a.startswith(f)) for f in allowed):
+            continue
+        sys.stderr.write("Error: unknown flag '%s'\n" % a)
+        sys.exit(1)
 
 
+refuse_unknown_flags(ARGS)
 CARD_OPTS = parse_card_args(ARGS[1:]) if SUBCOMMAND == 'card' else None
 
 SHELF_TITLE = 'DECISION SHELF'

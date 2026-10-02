@@ -93,6 +93,8 @@ the session is - never from a changed directory, never searched for. Each
 block below is what a node points at: what the script takes, one example
 that runs as written, and what it prints.
 
+These blocks are the whole contract: what a script takes and what it prints are written here, and a script's source is never opened to learn more.
+
 **decisions-list.sh** - lists records.
 
 ```
@@ -122,6 +124,8 @@ TAGS=search
 DISPOSITION=claimed
 STORIES=search-results-page
 ```
+
+A block already carries its record's `FILE=`: the next call on a record the list just printed is `cat <FILE>`, never the list again with `--slug=`.
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/decisions-list.sh" --claimants=2026-03-14-search-ranks-titles-first
@@ -499,6 +503,10 @@ Every card but the reopen diff is drawn here, from text already in the
 conversation: the tag check's output, the record's own file, the claimants
 lines. The draw is the record's own words, framed - never reworded on the way.
 
+A fresh card's only call is the tag check: no Shelf, no list and no file read come before it.
+
+Words that reshape a parked card and name a writing move in the same message draw the reshaped card first; the move's one write follows the card, never precedes it.
+
 - **Band:** `<STATUS> · tags: <tag> · source: <source>` - the status in caps,
   a single space around each `·`. A fresh card reads
   `PENDING · tags: <tag> · source: session`; a tag no record carries (the tag
@@ -594,7 +602,7 @@ whether to retire it. For example: `Retire "Search ranks titles first"
 A bare "yes", any agreement, or a letter retires it, and the typed answer is
 the quote. A question or a remark about the record is answered in words and
 the line stands. Words asking to see the record before ruling draw the full
-retire card, from the record's own file read in place. Words that change the
+retire card, from the record's own file read in place. That draw is one `cat <FILE>`: the claimants lines are already in the conversation and are never listed again. Words that change the
 record's own text draw the reopen card.
 
 After the retire, a claimant whose status is `planning` or `ready` has the
@@ -612,6 +620,7 @@ searched for - and an `active` claimant is told to read it again.
 - The sections a card is built from are prose, one paragraph per idea, written the way every other craft markdown file is written - no hand wrapping, the card reflows on draw. A card with one option or none has no fork and is authored dashed from the start.
 - Consequences are always the chosen option's; once the options are dashes, they name the other options by what they are, never by letter.
 - The Decision section opens with the ruling in the human's terms and nothing they did not agree to, optionally followed, inside the same section, by the fixed label `Ideas to consider, not ruled:` with two to four lines of the writer's own specifics, taken from the first draft and never invented for the block - that block is not law.
+- A ruling whose subject is a literal - a character, an emoji, a colour, a line of copy - carries that literal verbatim in the Decision, never a description of it.
 - Every decision carries exactly one tag; a second tag is offered only when an existing record can be named as the reason. A tag no record carries is announced as a NEW GROUP. Once a tag is on the card, the user can rename it in words like anything else on the card.
 - The Context carries an exhibit only when one actually makes sense; an exhibit is never invented to fill the section.
 - A claiming story whose status is `planning` or `ready` has the slug removed from its own `decisions:` list by this command in the same turn - an inline edit of that one frontmatter line, scoped to the slug and touching nothing else - and the user is told which story was edited. Never an offer: an unanswered second step is a trap for a user who clears the session or starts the story next. A claimant whose status is `active` is told to read it again against the new meaning, and keeps its slug.

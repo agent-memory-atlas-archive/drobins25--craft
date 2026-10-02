@@ -5,7 +5,8 @@
 #
 # Discovers all tests/test-*.sh files, runs each, aggregates results.
 # Prints per-file summary table + regression report.
-# Exit code: 0 if all tests pass, 1 if any fail.
+# Exit code: 0 if all tests pass within the time limit, 1 if any fail or the
+# run exceeds CRAFT_SUITE_TIME_LIMIT seconds (default 240).
 
 set -e
 
@@ -112,24 +113,36 @@ echo "    - statusline.sh: malformed UTF-8 in progress bar (e2e2 byte sequence)"
 echo ""
 
 # Timing check. Budget is process-spawn headroom, not a hang detector: the suite is
-# 60+ separate bash subprocesses (git, python3, mktemp per file), so wall-clock grows
-# with the file count. Raised from 30s to 60s once the suite legitimately reached ~32s
-# across 61 files - no test spins up a live model or hits the network.
-if [ "$TOTAL_TIME" -gt 60 ]; then
-  echo "  TIMING: FAIL — ${TOTAL_TIME}s exceeds 60s limit"
-elif [ "$TOTAL_TIME" -gt 45 ]; then
-  echo "  TIMING: WARN — ${TOTAL_TIME}s approaching 60s limit"
+# about 90 separate bash subprocesses (git, python3, mktemp per file), so wall-clock
+# grows with the file count. 240s is the measured ~136s plus room for a slow machine.
+# The check is local only: CI runs the group runner, which has no timing check.
+# CRAFT_SUITE_TIME_LIMIT overrides the limit (the runner's own test sets it).
+LIMIT="${CRAFT_SUITE_TIME_LIMIT:-240}"
+TIME_EXCEEDED=""
+if [ "$TOTAL_TIME" -gt "$LIMIT" ]; then
+  TIME_EXCEEDED="1"
+  echo "  TIMING: FAIL - ${TOTAL_TIME}s exceeds ${LIMIT}s limit"
+elif [ "$TOTAL_TIME" -gt $((LIMIT * 3 / 4)) ]; then
+  echo "  TIMING: WARN - ${TOTAL_TIME}s approaching ${LIMIT}s limit"
 else
-  echo "  TIMING: OK — ${TOTAL_TIME}s (limit: 60s)"
+  echo "  TIMING: OK - ${TOTAL_TIME}s (limit: ${LIMIT}s)"
 fi
 echo ""
 
-# Final verdict
-if [ -n "$FAILED_FILES" ]; then
-  echo "Failed files:"
-  echo -e "$FAILED_FILES"
+# Final verdict: a failing file or a blown time limit fails the run
+if [ -n "$FAILED_FILES" ] || [ -n "$TIME_EXCEEDED" ]; then
+  CAUSES=""
+  [ -n "$FAILED_FILES" ] && CAUSES="$TOTAL_FAIL failures"
+  if [ -n "$TIME_EXCEEDED" ]; then
+    [ -n "$CAUSES" ] && CAUSES="$CAUSES, "
+    CAUSES="${CAUSES}${TOTAL_TIME}s, over the ${LIMIT}s limit"
+  fi
+  if [ -n "$FAILED_FILES" ]; then
+    echo "Failed files:"
+    echo -e "$FAILED_FILES"
+  fi
   echo "========================================"
-  echo "  RESULT: FAIL ($TOTAL_FAIL failures)"
+  echo "  RESULT: FAIL ($CAUSES)"
   echo "========================================"
   exit 1
 else

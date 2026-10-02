@@ -125,6 +125,10 @@ while [ $# -gt 0 ]; do
     --source=*) SOURCE="${1#*=}"; shift ;;
     --story=*)  STORY="${1#*=}"; shift ;;
     --tag=*)    TAG="${1#*=}"; shift ;;
+    --*)
+      echo "Error: unknown flag '$1'" >&2
+      exit 1
+      ;;
     *) shift ;;
   esac
 done

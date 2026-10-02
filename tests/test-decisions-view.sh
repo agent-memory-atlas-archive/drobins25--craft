@@ -1331,6 +1331,77 @@ set -e
 [ "$RC2" -ne 0 ] && [ "$(cat "$STDIN_FILE")" = "$before" ] && pass "view reopen --stdin refuses an unknown heading and never writes the file" || fail "view reopen --stdin refuses an unknown heading" "non-zero" "$RC2"
 rm -rf "$ROOT"
 
+echo "-- Test: every view mode refuses a flag it does not own, capture's way --"
+fresh_root
+REFUSE_FILE="$ROOT/refuse.md"
+cat > "$REFUSE_FILE" <<'EOF'
+---
+type: decision
+status: accepted
+created: 2026-01-01
+source: session
+tags: [refuse]
+---
+# Refusal law
+
+## Context
+A context.
+
+## Options considered
+Some options.
+
+## Decision
+A decision.
+
+## Consequences
+Nothing changes.
+
+## Approval
+> "approve" - 2026-01-01, session
+EOF
+# refusal_check LABEL ARGS... - stdin is empty, so a refusal must come from the flag alone
+refusal_check() {
+  local label="$1"; shift
+  local out err rc
+  set +e
+  out=$(bash "$VIEW" "$@" 2>"$ROOT/refuse.err" </dev/null)
+  rc=$?
+  set -e
+  err=$(cat "$ROOT/refuse.err")
+  if [ "$rc" -eq 1 ] && [ -z "$out" ] && [ "$err" = "Error: unknown flag '--bogus=1'" ]; then
+    pass "$label"
+  else
+    fail "$label" "exit 1, empty stdout, stderr: Error: unknown flag '--bogus=1'" "rc=$rc out='$out' err='$err'"
+  fi
+}
+refusal_check "view card refuses an unknown flag" card --variant=reopen --file="$REFUSE_FILE" --bogus=1
+set +e
+bash "$VIEW" card --variant=reopen --file="$REFUSE_FILE" --new-group=1 </dev/null >/dev/null 2>"$ROOT/refuse.err"
+RC=$?
+set -e
+[ "$RC" -eq 1 ] && [ "$(cat "$ROOT/refuse.err")" = "Error: unknown flag '--new-group=1'" ] && pass "view card refuses a flag no face owns (--new-group=1), naming the whole argument" || fail "view card refuses a flag no face owns (--new-group=1)" "exit 1, unknown flag '--new-group=1'" "rc=$RC $(cat "$ROOT/refuse.err")"
+refusal_check "view shelf refuses an unknown flag" shelf --bogus=1
+refusal_check "view match refuses an unknown flag" match --words=x --bogus=1
+refusal_check "view group refuses an unknown flag" group --bogus=1
+refusal_check "view archive refuses an unknown flag" archive --only=declined --bogus=1
+refusal_check "view refuses a flag in the subcommand position" --bogus=1
+set +e
+bash "$VIEW" group --words=x </dev/null >/dev/null 2>"$ROOT/refuse.err"
+RC=$?
+set -e
+[ "$RC" -eq 1 ] && [ "$(cat "$ROOT/refuse.err")" = "Error: unknown flag '--words=x'" ] && pass "a flag another mode owns is unknown here" || fail "a flag another mode owns is unknown here" "exit 1, unknown flag '--words=x'" "rc=$RC $(cat "$ROOT/refuse.err")"
+set +e
+bash "$VIEW" shelf --only=declined </dev/null >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" -eq 1 ] && pass "shelf has an empty allow-list: --only= is refused" || fail "shelf has an empty allow-list: --only= is refused" "1" "$RC"
+set +e
+OK_OUT=$(bash "$VIEW" archive --only=declined stray-positional 2>&1 </dev/null)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && pass "view still accepts its own flag and ignores a non-flag positional" || fail "view still accepts its own flag and ignores a non-flag positional" "exit 0" "rc=$RC $OK_OUT"
+rm -rf "$ROOT"
+
 echo ""
 echo "=== Summary: $PASS_COUNT/$TOTAL passed ==="
 [ "$FAIL_COUNT" -eq 0 ]

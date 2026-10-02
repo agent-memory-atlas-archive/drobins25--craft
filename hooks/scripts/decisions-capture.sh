@@ -41,7 +41,9 @@
 #   "## Options considered", "## Decision", "## Consequences" or
 #   "## Approval". A section's text is its lines with leading and trailing
 #   blank lines removed. Any other "## " line, a repeated heading, or text
-#   before the first heading is refused before any write.
+#   before the first heading is refused before any write. The grammar lives
+#   in decision-body-parser.py, which the diff-drawing view calls too, so
+#   the card and the write read typed text the same way.
 #   Create: the title comes from the "# " line, all four content sections
 #   are required, and a positional title, --quote= or a section flag
 #   alongside --stdin is refused. A non-empty "## Approval" text is the
@@ -177,57 +179,7 @@ if [ -n "$STDIN_MODE" ]; then
     exit 1
   fi
   STDIN_BODY=$(cat)
-  PARSED=$(python3 - "$STDIN_BODY" <<'PYEOF'
-import sys, base64
-
-SECTIONS = {
-    '## Context': 'CONTEXT',
-    '## Options considered': 'OPTIONS',
-    '## Decision': 'DECISION',
-    '## Consequences': 'CONSEQUENCES',
-    '## Approval': 'APPROVAL',
-}
-
-text = sys.argv[1]
-found = {}
-current = None
-buf = []
-title_seen = False
-
-
-def close():
-    if current is not None:
-        found[current] = '\n'.join(buf).strip('\n')
-
-
-for line in text.split('\n'):
-    if line in SECTIONS:
-        key = SECTIONS[line]
-        if key == current or key in found:
-            sys.stderr.write("Error: repeated heading '{}' on stdin\n".format(line))
-            sys.exit(1)
-        close()
-        current, buf = key, []
-    elif line.startswith('## '):
-        sys.stderr.write("Error: unknown heading '{}' on stdin\n".format(line))
-        sys.exit(1)
-    elif current is not None:
-        buf.append(line)
-    elif line.strip() == '':
-        continue
-    elif not title_seen and line.startswith('# '):
-        title_seen = True
-        found['TITLE'] = line[2:]
-    else:
-        sys.stderr.write("Error: text before the first section heading on stdin: '{}'\n".format(line))
-        sys.exit(1)
-close()
-
-for key, value in found.items():
-    if value != '':
-        sys.stdout.write('{}={}\n'.format(key, base64.b64encode(value.encode('utf-8')).decode('ascii')))
-PYEOF
-  ) || exit 1
+  PARSED=$(python3 "$SCRIPT_DIR/decision-body-parser.py" "$STDIN_BODY") || exit 1
 
   decode_field() {
     local b64

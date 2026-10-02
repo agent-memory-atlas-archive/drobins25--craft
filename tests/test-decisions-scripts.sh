@@ -13,6 +13,8 @@ LIST="$SCRIPT_DIR/../hooks/scripts/decisions-list.sh"
 CAPTURE="$SCRIPT_DIR/../hooks/scripts/decisions-capture.sh"
 TRANSITION="$SCRIPT_DIR/../hooks/scripts/decisions-transition.sh"
 COMPLETE_STORY="$SCRIPT_DIR/../hooks/scripts/complete-story.sh"
+VIEW="$SCRIPT_DIR/../hooks/scripts/decisions-view.sh"
+PARSER="$SCRIPT_DIR/../hooks/scripts/decision-body-parser.py"
 
 PASS_COUNT=0; FAIL_COUNT=0; TOTAL=0
 pass() { PASS_COUNT=$((PASS_COUNT+1)); TOTAL=$((TOTAL+1)); echo "  PASS: $1"; }
@@ -1573,6 +1575,91 @@ bash "$CAPTURE" --reopen=2026-06-06-single-flag >/dev/null 2>&1
 RC=$?
 set -e
 [ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && pass "a reopen naming no section is refused" || fail "a reopen naming no section is refused" "non-zero" "rc=$RC"
+rm -rf "$ROOT"
+
+echo "-- Test: the stdin grammar lives in one file, and both scripts call it --"
+if [ -f "$PARSER" ] && grep -qF "'## Options considered':" "$PARSER" \
+   && ! grep -qF "'## Options considered':" "$CAPTURE" "$VIEW" \
+   && grep -qF 'decision-body-parser.py' "$CAPTURE" && grep -qF 'decision-body-parser.py' "$VIEW"; then
+  pass "the heading table is in the parser alone and both scripts name the parser"
+else
+  fail "the heading table is in the parser alone and both scripts name the parser" "table only in the parser; capture and view call it" "parser exists: $([ -f "$PARSER" ] && echo yes || echo no)"
+fi
+
+echo "-- Test: one body through the parser, capture and the view reads the same sections --"
+fresh_root
+ONE_CTX="$(printf "It's \$HOME \360\237\216\211\n-n")"
+ONE_BODY="$(printf '# One grammar\n\n## Context\n%s\n\n## Options considered\n- a\n- b\n\n## Decision\nPick a.\n\n## Consequences\nCosts a day.\n' "$ONE_CTX")"
+PARSED=$(python3 "$PARSER" "$ONE_BODY")
+P_CTX=$(printf '%s\n' "$PARSED" | sed -n 's/^CONTEXT=//p' | base64 -d)
+[ "$P_CTX" = "$ONE_CTX" ] && pass "the parser's CONTEXT decodes to the input bytes" || fail "the parser's CONTEXT decodes to the input bytes" "$ONE_CTX" "$P_CTX"
+ONE_F=$(printf '%s\n' "$ONE_BODY" | bash "$CAPTURE" --tag=one --stdin --created=2026-06-10)
+C_CTX=$(sed -n '/^## Context$/,/^## Options considered$/p' "$ONE_F" | sed '1d;$d' | sed '$d')
+[ "$C_CTX" = "$ONE_CTX" ] && pass "the record capture writes holds the same Context bytes" || fail "the record capture writes holds the same Context bytes" "$ONE_CTX" "$C_CTX"
+ONE_CARD=$(printf '%s\n' "$ONE_BODY" | bash "$VIEW" card --variant=reopen --file="$ONE_F" --stdin)
+if echo "$ONE_CARD" | grep -q '^MARK=' && ! echo "$ONE_CARD" | grep -qE '^MARK=[-+]'; then
+  pass "the view reads the same body as unchanged against the record capture wrote"
+else
+  fail "the view reads the same body as unchanged against the record capture wrote" "MARK= lines, none - or +" "$ONE_CARD"
+fi
+rm -rf "$ROOT"
+
+echo "-- Test: an empty Approval files pending, byte-identical to no Approval --"
+fresh_root
+EA_BODY=$(printf '# Empty approval\n\n## Context\nc\n\n## Options considered\no\n\n## Decision\nd\n\n## Consequences\nk\n')
+EA_NONE=$(printf '%s\n' "$EA_BODY" | bash "$CAPTURE" --tag=ea --stdin --created=2026-06-11)
+cp "$EA_NONE" "$ROOT/none.md"; rm "$EA_NONE"
+EA_EMPTY=$(printf '%s\n\n## Approval\n\n' "$EA_BODY" | bash "$CAPTURE" --tag=ea --stdin --created=2026-06-11)
+if cmp -s "$ROOT/none.md" "$EA_EMPTY" && [ "$(dirname "$EA_EMPTY")" = "$ROOT/.craft/decisions" ]; then
+  pass "an empty Approval files pending in the root, byte-identical to no Approval"
+else
+  fail "an empty Approval files pending in the root, byte-identical to no Approval" "identical bytes, root" "$EA_EMPTY"
+fi
+rm -rf "$ROOT"
+
+echo "-- Test: transition refuses an unknown flag on every verb and touches nothing --"
+fresh_root
+write_record "root" "flag-accept" "2026-07-01" "Flag accept" "pending" "tag-a"
+write_record "root" "flag-decline" "2026-07-02" "Flag decline" "pending" "tag-a"
+write_record "approved" "flag-deprecate" "2026-07-03" "Flag deprecate" "accepted" "tag-a"
+write_record "approved" "flag-craft" "2026-07-04" "Flag craft" "accepted" "tag-a"
+write_record "approved" "flag-retag" "2026-07-05" "Flag retag" "accepted" "tag-a"
+tree_hash() { (cd "$ROOT" && find . -type f ! -name '*.err' | sort | xargs shasum); }
+BEFORE_TREE=$(tree_hash)
+for spec in "2026-07-01-flag-accept accept" "2026-07-02-flag-decline decline" "2026-07-03-flag-deprecate deprecate" "2026-07-04-flag-craft craft" "2026-07-05-flag-retag retag"; do
+  read -r T_SLUG T_VERB <<< "$spec"
+  set +e
+  OUT=$(bash "$TRANSITION" "$T_SLUG" "$T_VERB" --quote="words" --story=s --tag=t --bogus=1 2>"$ROOT/t.err")
+  RC=$?
+  set -e
+  ERR=$(cat "$ROOT/t.err")
+  if [ "$RC" -eq 1 ] && [ -z "$OUT" ] && [ "$ERR" = "Error: unknown flag '--bogus=1'" ] && [ "$BEFORE_TREE" = "$(tree_hash)" ]; then
+    pass "transition $T_VERB refuses an unknown flag and leaves every file alone"
+  else
+    fail "transition $T_VERB refuses an unknown flag and leaves every file alone" "exit 1, stderr names '--bogus=1', tree unchanged" "rc=$RC out='$OUT' err='$ERR'"
+  fi
+done
+set +e
+printf 'typed words\n' | bash "$TRANSITION" 2026-07-01-flag-accept accept --stdin --bogus=1 >/dev/null 2>"$ROOT/t.err"
+RC=$?
+set -e
+[ "$RC" -eq 1 ] && [ "$(cat "$ROOT/t.err")" = "Error: unknown flag '--bogus=1'" ] && pass "transition refuses an unknown flag alongside --stdin" || fail "transition refuses an unknown flag alongside --stdin" "exit 1 naming the flag" "rc=$RC $(cat "$ROOT/t.err")"
+rm -f "$ROOT/t.err"
+set +e
+OUT=$(bash "$TRANSITION" 2026-07-01-flag-accept accept --quote="ok" stray-positional 2>&1)
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && [ -f "$ROOT/.craft/decisions/approved/2026-07-01-flag-accept.md" ] && pass "transition still ignores a non-flag positional" || fail "transition still ignores a non-flag positional" "accepted" "rc=$RC $OUT"
+rm -rf "$ROOT"
+
+echo "-- Test: list still ignores an unknown flag --"
+fresh_root
+write_record "root" "list-flag" "2026-07-06" "List flag" "pending" "tag-a"
+set +e
+OUT=$(bash "$LIST" --bogus=1 2>"$ROOT/l.err")
+RC=$?
+set -e
+[ "$RC" -eq 0 ] && [ ! -s "$ROOT/l.err" ] && echo "$OUT" | grep -q "^TITLE=List flag$" && pass "list ignores an unknown flag, exits 0 and still lists" || fail "list ignores an unknown flag, exits 0 and still lists" "exit 0, silent, listed" "rc=$RC $(cat "$ROOT/l.err")"
 rm -rf "$ROOT"
 
 echo ""

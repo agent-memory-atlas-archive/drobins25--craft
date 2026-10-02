@@ -688,6 +688,27 @@ if has_divider and has_row and has_closing and 0 <= div_i < close_i:
 else:
     out("FAIL", "the faces section places the move block in-rail: divider, rows at four spaces, closing line at two spaces, before the closing rule", "in-rail block", f"divider={has_divider} row={has_row} closing={has_closing} order={div_i},{close_i}")
 
+# --- 27: the desk names what it already holds ----------------------------
+# Each sentence closes a path where the desk spent a call on something the
+# conversation already held, or reshaped a card after writing instead of before.
+HOLDS = [
+    ("## The four scripts", "\n## How to read the graph", "These blocks are the whole contract: what a script takes and what it prints are written here, and a script's source is never opened to learn more."),
+    ("## The four scripts", "\n## How to read the graph", "A block already carries its record's `FILE=`: the next call on a record the list just printed is `cat <FILE>`, never the list again with `--slug=`."),
+    ("### The faces Claude draws", "\n### The retire line", "A fresh card's only call is the tag check: no Shelf, no list and no file read come before it."),
+    ("### The faces Claude draws", "\n### The retire line", "Words that reshape a parked card and name a writing move in the same message draw the reshaped card first; the move's one write follows the card, never precedes it."),
+    ("### The retire line", "\n## The card", "That draw is one `cat <FILE>`: the claimants lines are already in the conversation and are never listed again."),
+    ("## The card", "\n### Refusal wording", "- A ruling whose subject is a literal - a character, an emoji, a colour, a line of copy - carries that literal verbatim in the Decision, never a description of it."),
+]
+def holds_section(heading, next_heading):
+    start = text.find(heading + "\n")
+    end = text.find(next_heading, start + 1) if start >= 0 else -1
+    return " ".join(text[start:end].split()) if start >= 0 and end >= 0 else ""
+holds_missing = [sent[:40] for head, nxt, sent in HOLDS if " ".join(sent.split()) not in holds_section(head, nxt)]
+if not holds_missing:
+    out("PASS", "the desk names what it already holds: six sentences sit in their named sections")
+else:
+    out("FAIL", "the desk names what it already holds: six sentences sit in their named sections", "all six", f"missing={holds_missing}")
+
 PYEOF
 GRAPH_REPORT="$(python3 "$GRAPH_SCRIPT" "$CMD")"
 rm -f "$GRAPH_SCRIPT"
@@ -867,6 +888,8 @@ fi
 grep -qF 'the record'"'"'s title at its full length' "$CMD" && pass "the drawing rule's rows bullet names the title at its full length" || fail "the drawing rule's rows bullet names the title at its full length" "present" "absent"
 grep -qF 'Okay - moved <title> to <tag>' "$CMD" && pass "the retag receipt line names the title" || fail "the retag receipt line names the title" "present" "absent"
 tr '\n' ' ' < "$CMD" | tr -s ' ' | grep -qF "glyph and title as the Shelf would show them" && pass "the receipt rows read as glyph and title" || fail "the receipt rows read as glyph and title" "present" "absent"
+
+grep -qF 'decision-body-parser' "$CMD" && fail "the command never names the body parser" "absent" "$(grep -nF 'decision-body-parser' "$CMD")" || pass "the command never names the body parser"
 
 echo ""
 echo "-- Summary --"
