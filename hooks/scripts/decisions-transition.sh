@@ -427,6 +427,11 @@ stories_field = 'stories: [{}]'.format(', '.join(stories))
 disposition_field = 'disposition: crafted'
 
 if disposition is None:
+    # The new fields go in under tags:, so a record without one has nowhere
+    # to take them - refuse rather than report a write that never happened.
+    if not re.search(r'^tags:.*$', fm, re.MULTILINE):
+        slug = src.rsplit('/', 1)[-1][:-len('.md')]
+        sys.exit("Error: " + slug + " has no tags: line in its frontmatter - cannot mark it crafted")
     fm = re.sub(
         r'^(tags:.*)$',
         lambda mm: mm.group(1) + '\n' + disposition_field + '\n' + stories_field,

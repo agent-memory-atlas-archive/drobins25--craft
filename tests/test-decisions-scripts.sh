@@ -1702,6 +1702,51 @@ ML_GOT=$(tail -1 "$ROOT/.craft/decisions/approved/2026-07-12-ml-one.md")
 [ "$ML_GOT" = "> \"go\" - $ML_TODAY, session" ] && pass "one-line answer unchanged" || fail "one-line answer unchanged" "> \"go\" - $ML_TODAY, session" "$ML_GOT"
 rm -rf "$ROOT"
 
+echo "=== a write the script cannot make is refused, never reported as done ==="
+echo ""
+# write_bare_record ROOM SLUG DROP - a record missing one frontmatter line
+# (DROP is tags or status), as a hand-made record might be.
+write_bare_record() {
+  local room="$1" slug="$2" drop="$3" dir="$ROOT/.craft/decisions"
+  [ "$room" = "approved" ] && dir="$dir/approved"
+  mkdir -p "$dir"
+  {
+    echo "---"
+    echo "type: decision"
+    [ "$drop" = "status" ] || { [ "$room" = "approved" ] && echo "status: accepted" || echo "status: pending"; }
+    echo "created: 2026-08-01"
+    echo "source: session"
+    [ "$drop" = "tags" ] || echo "tags: [tag-a]"
+    echo "---"
+    echo "# Bare $slug"
+  } > "$dir/2026-08-01-$slug.md"
+}
+
+echo "-- Test: craft on a record with no tags: and no disposition: is refused and writes nothing --"
+fresh_root
+write_bare_record "approved" "no-tags" "tags"
+F="$ROOT/.craft/decisions/approved/2026-08-01-no-tags.md"
+B=$(cat "$F")
+set +e
+OUT=$(bash "$TRANSITION" 2026-08-01-no-tags craft --story=s 2>"$ROOT/c.err")
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "craft with no tags: line exits non-zero" || fail "craft with no tags: line exits non-zero" "non-zero" "rc=$RC out=$OUT"
+[ "$(cat "$F")" = "$B" ] && pass "craft with no tags: line leaves the record unchanged" || fail "craft with no tags: line leaves the record unchanged" "$B" "$(cat "$F")"
+if echo "$OUT" | grep -q '^CHANGED=1$'; then fail "craft with no tags: line never reports CHANGED=1" "no CHANGED=1" "$OUT"; else pass "craft with no tags: line never reports CHANGED=1"; fi
+grep -q 'no tags: line' "$ROOT/c.err" && pass "the refusal names the missing tags: line" || fail "the refusal names the missing tags: line" "no tags: line" "stderr: $(cat "$ROOT/c.err")"
+rm -rf "$ROOT"
+
+echo "-- Test: story completion prints no Crafted: line for a record it could not mark --"
+fresh_root
+write_bare_record "approved" "no-tags-flip" "tags"
+write_flip_story "2026-08-01-no-tags-flip" 1
+run_flip
+if echo "$FLIP_STDOUT" | grep -q '^Crafted: '; then fail "no Crafted: line for an unmarked record" "none" "$FLIP_STDOUT"; else pass "no Crafted: line for an unmarked record"; fi
+echo "$FLIP_STDERR" | grep -q "^Warning: decision record '2026-08-01-no-tags-flip' could not be flipped to crafted" && pass "story completion warns about the unmarked record" || fail "story completion warns about the unmarked record" "Warning: ..." "stderr: $FLIP_STDERR"
+[ "$FLIP_RC" -eq 1 ] && pass "story completion exits 1 when a record could not be marked" || fail "story completion exits 1 when a record could not be marked" "1" "$FLIP_RC"
+rm -rf "$ROOT"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"
