@@ -8,10 +8,10 @@
 #      the shared deny-pattern list (secret-deny-patterns.sh).
 #
 # On a clean tree with a triaged ledger it stays SILENT - no allow, no deny.
-# The gate only ever blocks; it never grants push approval. Combined with
-# auto-approve-plugin-scripts.sh abstaining on git push, a clean push falls
-# through to the user's own permission flow (prompt or their allowlist).
-# Craft never decides that a push is approved - only the user does.
+# The gate only ever blocks; it never grants push approval. A clean push
+# falls through to the user's own permission flow (prompt, their allowlist,
+# or auto mode's classifier). Craft never decides that a push is approved -
+# only the user does.
 #
 # Output is exit-0 JSON (hookSpecificOutput.permissionDecision) - NEVER
 # exit 2, which can make the model stop instead of acting on the reason.

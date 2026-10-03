@@ -205,26 +205,5 @@ assert_eq "no output for quoted mention" "" "$OUT"
 rm -rf "$TEST_DIR"
 echo ""
 
-# Test 8: auto-approve abstains on git push (carve-out)
-begin_test "auto-approve no longer emits allow for git push"
-
-AUTO_APPROVE="$SCRIPTS_DIR/auto-approve-plugin-scripts.sh"
-
-set +e
-OUT=$(printf '{"tool_input":{"command":"git push origin main"}}' | bash "$AUTO_APPROVE")
-EXIT_CODE=$?
-set -e
-
-assert_eq "exits 0" "0" "$EXIT_CODE"
-assert_eq "no allow JSON for git push" "" "$OUT"
-
-# Sanity: a benign command is still auto-approved
-set +e
-OUT=$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$AUTO_APPROVE")
-set -e
-assert_contains "benign command still auto-approved" '"permissionDecision":"allow"' "$OUT"
-
-echo ""
-
 # --- Summary ---
 finish_tests

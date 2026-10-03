@@ -252,7 +252,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 - **`merge-tokens.py`** - Not a hook: a CLI invoked by craft-init's token phases. The sole writer for merges into an existing tokens.yaml - `report` mode emits a mechanical per-key CONFLICT/NEW/SAME diff for the token AUQs; `merge` mode does a line-surgical keyed union (snapshot, self-verify, restore-on-violation). Lives here beside the hook that enforces it.
 
 ### PreToolUse (Bash)
-- **`auto-approve-plugin-scripts.sh`** - Auto-approves bash invocations of plugin scripts to reduce permission prompts.
+- **`push-gate.sh`** - Denies a `git push` while custody signals are live (untriaged leftovers, secret-shaped paths in the outgoing range). Never grants approval: a clean push falls through to the user's own permission flow.
 
 ### PostToolUse (Write|Edit)
 - **`update-progress.py`** (async) - Tracks which files were modified, updates story progress counts
