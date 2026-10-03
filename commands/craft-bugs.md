@@ -2,7 +2,7 @@
 name: bugs
 description: "File a bug without fixing it, from a person mid-conversation or an agent mid-run. One door, a complete record on disk, nobody pulled out of what they were doing. Also closes a bug by moving it to closed/ with a verdict."
 when_to_use: |
-  NAMING IT (check first): "file a bug", "log a bug", "bug ticket". That IS the invocation - run now with what the session has. No offer, no question.
+  NAMING IT (check first): "file a bug", "log a bug", "bug ticket". That IS the invocation - run now with what the session has. No offer; ask only if nothing in the text or session identifies a defect.
 
   DEFERRAL + DEFECT: a deferral word ("later," "don't let me forget," "before I forget") attached to something broken. Offer once, inline and ignorable ("Worth filing in /craft:bugs? Otherwise I'll continue") - never AskUserQuestion. Nothing is filed until the user says yes.
 
@@ -33,7 +33,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md` and follow it in
 
 | What arrived | Action |
 |--------------|--------|
-| Bare `/craft:bugs` with no text | Present the pile above and stop. No question, no filing. |
+| Bare `/craft:bugs` with no text and no defect in the session | Present the pile above and stop. No question, no filing. |
 | A defect, in `$ARGUMENTS` or in the session | Follow the reference's filing rules. |
 | An open bug said to be fixed, won't be fixed, or should close | Follow the reference's closing rules. |
 

@@ -17,6 +17,9 @@ REF="$REPO/commands/references/bugs-record.md"
 begin_test "command and reference files exist"
 assert_file_exists "commands/craft-bugs.md" "$CMD"
 assert_file_exists "commands/references/bugs-record.md" "$REF"
+# Fence-scoped frontmatter of a file
+frontmatter_of() { awk '/^---$/{n++; next} n==1{print} n==2{exit}' "$1"; }
+
 if [ ! -e "$CMD" ] || [ ! -e "$REF" ]; then
   begin_test "adhoc description points deferred defects at /craft:bugs"
 ADHOC_DESC="$(grep -m1 '^description:' "$REPO/skills/adhoc/SKILL.md")"
@@ -37,8 +40,6 @@ finish_tests "test-bugs-wiring"
   exit 1
 fi
 
-# Fence-scoped frontmatter of a file
-frontmatter_of() { awk '/^---$/{n++; next} n==1{print} n==2{exit}' "$1"; }
 FRONTMATTER="$(frontmatter_of "$CMD")"
 
 begin_test "frontmatter keys in order, five and no others"
@@ -138,6 +139,19 @@ for phrase in 'bugs-list.sh" --status=open' 'bugs-close.sh' "one match" "several
 done
 assert_contains_literal "filing never summons the user" "Nothing summons the user" "$REFTEXT"
 assert_contains_literal "recurrence bumps hits instead of filing twice" "hit again" "$REFTEXT"
+
+begin_test "close and hit-again act on the record's FILE path, never a bare slug"
+assert_contains_literal "close passes the FILE path" 'bugs-close.sh" "<FILE>"' "$REFTEXT"
+assert_not_contains "close never passes a bare slug" 'bugs-close.sh" <slug>' "$REFTEXT"
+HIT_LINE="$(printf '%s\n' "$REFTEXT" | grep 'hit again' | head -1)"
+assert_contains_literal "hit-again names where the path comes from" 'FILE=' "$HIT_LINE"
+
+begin_test "command wording agrees with the reference on the no-defect case"
+assert_not_contains "naming line no longer promises no question" "No offer, no question" "$WTU"
+assert_contains_literal "naming line asks only when nothing identifies a defect" \
+  "ask only if nothing in the text or session identifies a defect" "$WTU"
+assert_contains_literal "bare row stops only when the session holds no defect" \
+  "no defect in the session" "$BODY"
 
 begin_test "no dated slug, no cd, no Skill-tool invocation in shipped text"
 ALL="$(cat "$CMD" "$REF")"

@@ -127,7 +127,7 @@ Verdict is whether it was ever a bug: bug | unspecified | spec-gap | not-reprodu
 ## Filing rules
 
 - Nothing summons the user, ever. A `yes` on the blocks line is mentioned at the next natural pause, never as an interrupt.
-- Look at the injected pile first. If an identical bug is already open, never file it twice: name the match, raise `hits:` by one in its frontmatter only, and append `- <date> hit again: <where>` to its `## Log`, both with Edit. Note where it recurred. A bug seen once is a report; the same bug seen again and again is a pattern and usually outranks the queue.
+- Look at the injected pile first. If an identical bug is already open, never file it twice: name the match, raise `hits:` by one in its frontmatter only, and append `- <date> hit again: <where>` to its `## Log`, both with Edit on the record at the `FILE=` line `bugs-list.sh --status=open` prints for it. Note where it recurred. A bug seen once is a report; the same bug seen again and again is a pattern and usually outranks the queue.
 - When neither the typed text nor the session identifies a defect, ask exactly one question and nothing more:
 
 ```yaml
@@ -162,7 +162,7 @@ options:
     description: "Leave it open. Nothing is written."
 ```
 
-4. Yes runs `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bugs-close.sh" <slug> --status=<fixed|wont-fix> [--verdict=<v>]`. No writes nothing and draws no pushback.
+4. Yes runs `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bugs-close.sh" "<FILE>" --status=<fixed|wont-fix> [--verdict=<v>]`, where `<FILE>` is the `FILE=` line of the matched block. Pass that path, never the slug: a bare slug also matches a same-day twin (`-2`) or a longer slug that contains it, and the script refuses those as ambiguous. No writes nothing and draws no pushback.
 
 `--fixed-by=<ref>` is passed only when the person names a commit or story.
 
