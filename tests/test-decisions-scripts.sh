@@ -1662,6 +1662,134 @@ set -e
 [ "$RC" -eq 0 ] && [ ! -s "$ROOT/l.err" ] && echo "$OUT" | grep -q "^TITLE=List flag$" && pass "list ignores an unknown flag, exits 0 and still lists" || fail "list ignores an unknown flag, exits 0 and still lists" "exit 0, silent, listed" "rc=$RC $(cat "$ROOT/l.err")"
 rm -rf "$ROOT"
 
+echo "=== a multi-line typed answer keeps the quote marker on every line ==="
+echo ""
+# The typed answer is the audit trail, and the view reads a quote as a run
+# of "> " lines. A line written without the marker falls out of the quote,
+# and the date with it.
+ML_TODAY=$(date +%Y-%m-%d)
+ML_WANT=$(printf '> "Yes, blue.\n> But a deep blue, not sky." - %s, session' "$ML_TODAY")
+
+echo "-- Test: accept --stdin with a two-line answer --"
+fresh_root
+write_record "root" "ml-accept" "2026-07-10" "Ml accept" "pending" "tag-a"
+printf 'Yes, blue.\nBut a deep blue, not sky.\n' | bash "$TRANSITION" 2026-07-10-ml-accept accept --stdin > /dev/null
+ML_GOT=$(tail -2 "$ROOT/.craft/decisions/approved/2026-07-10-ml-accept.md")
+[ "$ML_GOT" = "$ML_WANT" ] && pass "accept: both answer lines carry the marker, date on the last" || fail "accept: both answer lines carry the marker, date on the last" "$ML_WANT" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: capture --stdin with a two-line Approval section --"
+fresh_root
+ML_F=$(printf '# Ml capture\n\n## Context\nctx\n\n## Options considered\nopt\n\n## Decision\ndec\n\n## Consequences\ncons\n\n## Approval\nYes, blue.\nBut a deep blue, not sky.\n' | bash "$CAPTURE" --tag=ml --stdin | tail -1)
+ML_GOT=$(tail -2 "$ML_F")
+[ "$ML_GOT" = "$ML_WANT" ] && pass "capture: both answer lines carry the marker, date on the last" || fail "capture: both answer lines carry the marker, date on the last" "$ML_WANT" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen with a two-line answer --"
+fresh_root
+write_record "approved" "ml-reopen" "2026-07-11" "Ml reopen" "accepted" "tag-a"
+ML_F=$(printf '## Context\nnew ctx\n\n## Approval\nYes, blue.\nBut a deep blue, not sky.\n' | bash "$CAPTURE" --reopen=2026-07-11-ml-reopen --stdin | tail -1)
+ML_WANT_REOPEN=$(printf '> Reopen: "Yes, blue.\n> But a deep blue, not sky." - %s, session' "$ML_TODAY")
+ML_GOT=$(tail -2 "$ML_F")
+[ "$ML_GOT" = "$ML_WANT_REOPEN" ] && pass "reopen: both answer lines carry the marker, date on the last" || fail "reopen: both answer lines carry the marker, date on the last" "$ML_WANT_REOPEN" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: a one-line answer is written exactly as before --"
+fresh_root
+write_record "root" "ml-one" "2026-07-12" "Ml one" "pending" "tag-a"
+printf 'go\n' | bash "$TRANSITION" 2026-07-12-ml-one accept --stdin > /dev/null
+ML_GOT=$(tail -1 "$ROOT/.craft/decisions/approved/2026-07-12-ml-one.md")
+[ "$ML_GOT" = "> \"go\" - $ML_TODAY, session" ] && pass "one-line answer unchanged" || fail "one-line answer unchanged" "> \"go\" - $ML_TODAY, session" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "=== a write the script cannot make is refused, never reported as done ==="
+echo ""
+# write_bare_record ROOM SLUG DROP - a record missing one frontmatter line
+# (DROP is tags or status), as a hand-made record might be.
+write_bare_record() {
+  local room="$1" slug="$2" drop="$3" dir="$ROOT/.craft/decisions"
+  [ "$room" = "approved" ] && dir="$dir/approved"
+  mkdir -p "$dir"
+  {
+    echo "---"
+    echo "type: decision"
+    [ "$drop" = "status" ] || { [ "$room" = "approved" ] && echo "status: accepted" || echo "status: pending"; }
+    echo "created: 2026-08-01"
+    echo "source: session"
+    [ "$drop" = "tags" ] || echo "tags: [tag-a]"
+    echo "---"
+    echo "# Bare $slug"
+  } > "$dir/2026-08-01-$slug.md"
+}
+
+echo "-- Test: craft on a record with no tags: and no disposition: is refused and writes nothing --"
+fresh_root
+write_bare_record "approved" "no-tags" "tags"
+F="$ROOT/.craft/decisions/approved/2026-08-01-no-tags.md"
+B=$(cat "$F")
+set +e
+OUT=$(bash "$TRANSITION" 2026-08-01-no-tags craft --story=s 2>"$ROOT/c.err")
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && pass "craft with no tags: line exits non-zero" || fail "craft with no tags: line exits non-zero" "non-zero" "rc=$RC out=$OUT"
+[ "$(cat "$F")" = "$B" ] && pass "craft with no tags: line leaves the record unchanged" || fail "craft with no tags: line leaves the record unchanged" "$B" "$(cat "$F")"
+if echo "$OUT" | grep -q '^CHANGED=1$'; then fail "craft with no tags: line never reports CHANGED=1" "no CHANGED=1" "$OUT"; else pass "craft with no tags: line never reports CHANGED=1"; fi
+grep -q 'no tags: line' "$ROOT/c.err" && pass "the refusal names the missing tags: line" || fail "the refusal names the missing tags: line" "no tags: line" "stderr: $(cat "$ROOT/c.err")"
+rm -rf "$ROOT"
+
+echo "-- Test: story completion prints no Crafted: line for a record it could not mark --"
+fresh_root
+write_bare_record "approved" "no-tags-flip" "tags"
+write_flip_story "2026-08-01-no-tags-flip" 1
+run_flip
+if echo "$FLIP_STDOUT" | grep -q '^Crafted: '; then fail "no Crafted: line for an unmarked record" "none" "$FLIP_STDOUT"; else pass "no Crafted: line for an unmarked record"; fi
+echo "$FLIP_STDERR" | grep -q "^Warning: decision record '2026-08-01-no-tags-flip' could not be flipped to crafted" && pass "story completion warns about the unmarked record" || fail "story completion warns about the unmarked record" "Warning: ..." "stderr: $FLIP_STDERR"
+[ "$FLIP_RC" -eq 1 ] && pass "story completion exits 1 when a record could not be marked" || fail "story completion exits 1 when a record could not be marked" "1" "$FLIP_RC"
+rm -rf "$ROOT"
+
+echo "=== a tag or story name is one list item ==="
+echo ""
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons, so a name holding any of those - or a
+# newline - would split into two names or break the list.
+
+echo "-- Test: capture refuses a tag with a comma, semicolon, bracket or newline, and writes nothing --"
+for bad in "home, page" "home;page" "home]" "[home" "$(printf 'home\npage')"; do
+  fresh_root
+  mkdir -p "$ROOT/.craft/decisions"
+  set +e
+  OUT=$(bash "$CAPTURE" "Bad tag" --tag="$bad" --context=c --options=o --decision=d --consequences=k 2>"$ROOT/t.err")
+  RC=$?
+  set -e
+  LEFT=$(find "$ROOT/.craft" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+  [ "$RC" -ne 0 ] && [ "$LEFT" = "0" ] && grep -q "is one name" "$ROOT/t.err" && pass "capture refuses tag $(printf '%q' "$bad")" || fail "capture refuses tag $(printf '%q' "$bad")" "non-zero, no record, 'is one name'" "rc=$RC files=$LEFT stderr=$(cat "$ROOT/t.err")"
+  rm -rf "$ROOT"
+done
+
+echo "-- Test: retag refuses a target tag with a comma and leaves the record unchanged --"
+fresh_root
+write_record "approved" "bad-retag" "2026-08-02" "Bad retag" "accepted" "tag-a"
+F="$ROOT/.craft/decisions/approved/2026-08-02-bad-retag.md"
+B=$(cat "$F")
+set +e
+bash "$TRANSITION" 2026-08-02-bad-retag retag --tag="a, b" >/dev/null 2>"$ROOT/r.err"
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && grep -q "is one name" "$ROOT/r.err" && pass "retag refuses a comma tag, record unchanged" || fail "retag refuses a comma tag, record unchanged" "non-zero, unchanged, 'is one name'" "rc=$RC stderr=$(cat "$ROOT/r.err") file=$(grep '^tags:' "$F")"
+rm -rf "$ROOT"
+
+echo "-- Test: craft refuses a story name with a bracket and leaves the record unchanged --"
+fresh_root
+write_record "approved" "bad-story" "2026-08-03" "Bad story" "accepted" "tag-a"
+F="$ROOT/.craft/decisions/approved/2026-08-03-bad-story.md"
+B=$(cat "$F")
+set +e
+bash "$TRANSITION" 2026-08-03-bad-story craft --story="story-x]" >/dev/null 2>"$ROOT/s.err"
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && grep -q "is one name" "$ROOT/s.err" && pass "craft refuses a bracket story name, record unchanged" || fail "craft refuses a bracket story name, record unchanged" "non-zero, unchanged, 'is one name'" "rc=$RC stderr=$(cat "$ROOT/s.err") file=$(grep -E '^(disposition|stories):' "$F")"
+rm -rf "$ROOT"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"

@@ -2,6 +2,12 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.7.1 - 2026-10-03
+
+- Fixed decision answers typed over several lines. The whole answer now stays in the record's quote, so the archive shows every line instead of only the first.
+- Fixed story completion saying a decision was built when its record couldn't be marked. You now get a warning naming that record instead of a "Crafted" line.
+- Fixed tag and story names holding a comma, semicolon, bracket or newline. They used to split into two names or break the record's list; craft now refuses them with a clear error before writing anything.
+
 ## 2.7.0 - 2026-10-03
 
 Craft now keeps its decisions. 2.6.1 let a story carry the rulings it was built from and promised the rest: filing decisions, listing them, and watching them become real as stories ship. This release delivers all three. Rule something once and it stays ruled - visible, reusable, and marked done when the story that builds it ships.

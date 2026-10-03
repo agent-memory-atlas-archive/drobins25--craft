@@ -39,8 +39,8 @@
 #   re-written, CHANGED=0, exit 0.
 #
 #   disposition: is only ever written with the value "crafted" - this script
-#   has no code path that writes "open" or "claimed"
-#   (2026-09-05-claimed-is-read-not-written).
+#   has no code path that writes "open" or "claimed". Open is the field left
+#   out, and claimed is always derived from the story files.
 #
 #   Every move writes the finished record to its destination path first,
 #   then removes the source last, so a crash between the two can never leave
@@ -118,13 +118,25 @@ STDIN_FLAG=""
 SOURCE="session"
 STORY=""
 TAG=""
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons - so a name holding a comma, semicolon,
+# square bracket or newline would split into two names or break the list.
+require_one_name() {
+  case "$2" in
+    *,*|*\;*|*\[*|*\]*|*$'\n'*)
+      echo "Error: $1 '$2' holds a comma, semicolon, square bracket or newline - a $1 is one name" >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --quote=*)  QUOTE="${1#*=}"; QUOTE_FLAG="1"; shift ;;
     --stdin)    STDIN_FLAG="1"; shift ;;
     --source=*) SOURCE="${1#*=}"; shift ;;
-    --story=*)  STORY="${1#*=}"; shift ;;
-    --tag=*)    TAG="${1#*=}"; shift ;;
+    --story=*)  require_one_name story "${1#*=}"; STORY="${1#*=}"; shift ;;
+    --tag=*)    require_one_name tag "${1#*=}"; TAG="${1#*=}"; shift ;;
     --*)
       echo "Error: unknown flag '$1'" >&2
       exit 1
@@ -427,6 +439,11 @@ stories_field = 'stories: [{}]'.format(', '.join(stories))
 disposition_field = 'disposition: crafted'
 
 if disposition is None:
+    # The new fields go in under tags:, so a record without one has nowhere
+    # to take them - refuse rather than report a write that never happened.
+    if not re.search(r'^tags:.*$', fm, re.MULTILINE):
+        slug = src.rsplit('/', 1)[-1][:-len('.md')]
+        sys.exit("Error: " + slug + " has no tags: line in its frontmatter - cannot mark it crafted")
     fm = re.sub(
         r'^(tags:.*)$',
         lambda mm: mm.group(1) + '\n' + disposition_field + '\n' + stories_field,
@@ -461,6 +478,23 @@ import sys, re
 
 src, tmp, new_status, quote, date, source = sys.argv[1:7]
 
+
+def quote_lines(lead, quote, date, source):
+    # Every line of the typed answer carries the "> " marker, so the whole
+    # answer reads as one quote; the closing quote, date and source ride the
+    # last line. A blank line inside the answer is written as a bare ">".
+    lines = quote.split('\n')
+    out = []
+    for i, line in enumerate(lines):
+        text = line
+        if i == 0:
+            text = lead + '"' + text
+        if i == len(lines) - 1:
+            text = text + '" - {}, {}'.format(date, source)
+        out.append('> ' + text if text else '>')
+    return '\n'.join(out)
+
+
 with open(src, 'r') as f:
     content = f.read()
 
@@ -474,7 +508,7 @@ fm = re.sub(r'^status:.*$', 'status: ' + new_status, fm, count=1, flags=re.MULTI
 new_content = head + fm + fence_tail + body
 if not new_content.endswith('\n'):
     new_content += '\n'
-new_content += '> "{}" - {}, {}\n'.format(quote, date, source)
+new_content += quote_lines('', quote, date, source) + '\n'
 
 with open(tmp, 'w') as f:
     f.write(new_content)

@@ -128,9 +128,21 @@ TAGS_LIST=""
 DRY_RUN=""
 STDIN_MODE=""
 
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons - so a name holding a comma, semicolon,
+# square bracket or newline would split into two names or break the list.
+require_one_name() {
+  case "$2" in
+    *,*|*\;*|*\[*|*\]*|*$'\n'*)
+      echo "Error: $1 '$2' holds a comma, semicolon, square bracket or newline - a $1 is one name" >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tag=*)          TAGS_LIST="${TAGS_LIST}${1#*=}"$'\n'; shift ;;
+    --tag=*)          require_one_name tag "${1#*=}"; TAGS_LIST="${TAGS_LIST}${1#*=}"$'\n'; shift ;;
     --context=*)      CONTEXT="${1#*=}"; shift ;;
     --options=*)      OPTIONS="${1#*=}"; shift ;;
     --decision=*)     DECISION="${1#*=}"; shift ;;
@@ -364,7 +376,17 @@ if [ "$MODE" = "create" ]; then
     printf '%s\n' "# $TITLE" "" "## Context" "$CONTEXT" "" "## Options considered" "$OPTIONS" \
       "" "## Decision" "$DECISION" "" "## Consequences" "$CONSEQUENCES" "" "## Approval"
     if [ -n "$QUOTE" ]; then
-      printf '%s\n' "> \"$QUOTE\" - $DATE, $SOURCE"
+      # Every answer line carries the "> " marker; the date rides the last.
+      printf '%s\n' "$QUOTE" | awk -v d="$DATE" -v s="$SOURCE" '
+        { line[NR] = $0 }
+        END {
+          for (i = 1; i <= NR; i++) {
+            t = line[i]
+            if (i == 1) t = "\"" t
+            if (i == NR) t = t "\" - " d ", " s
+            print (t == "" ? ">" : "> " t)
+          }
+        }'
     fi
   }
 
@@ -440,11 +462,27 @@ if title:
 for name, text in given:
     new_body = splice(new_body, section_span(new_body, name), text)
 
+def quote_lines(lead, quote, date, source):
+    # Every line of the typed answer carries the "> " marker, so the whole
+    # answer reads as one quote; the closing quote, date and source ride the
+    # last line. A blank line inside the answer is written as a bare ">".
+    lines = quote.split('\n')
+    out = []
+    for i, line in enumerate(lines):
+        text = line
+        if i == 0:
+            text = lead + '"' + text
+        if i == len(lines) - 1:
+            text = text + '" - {}, {}'.format(date, source)
+        out.append('> ' + text if text else '>')
+    return '\n'.join(out)
+
+
 # Today's ceremony in approved/: append a "> Reopen: ..." quote line. The
 # root reshape carries no quote and leaves the Approval block untouched -
 # the quote belongs to the accept that follows.
 if room == "approved":
-    reopen_line = '> Reopen: "{}" - {}, {}'.format(quote, date, source)
+    reopen_line = quote_lines('Reopen: ', quote, date, source)
     span = section_span(new_body, 'Approval')
     if span is None:
         sep = '' if new_body.endswith('\n\n') else ('\n' if new_body.endswith('\n') else '\n\n')
