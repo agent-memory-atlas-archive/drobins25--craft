@@ -252,7 +252,7 @@ In `/craft:mockup`, craft brings the alchemist back after each of your reactions
 { "subagentPromptCacheTtl": "1h" }
 ```
 
-It's a tradeoff, not a free win. An hour-long cache costs more to write than a 5-minute one, so if you run several sessions in parallel, the default is usually cheaper.
+It's a tradeoff, not a free win. An hour-long cache costs more to write than a 5-minute one, so if you rarely pause for more than five minutes, the default is usually cheaper.
 
 ## Getting Started
 
