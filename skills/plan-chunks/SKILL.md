@@ -167,7 +167,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/alignment-check.md` and follow t
 ## Phase 0.46: Creative Spark Prerequisite Check
 
 **Skip if:** Autonomous mode (invoked from `craft:story-implement-auto`).
-**Skip if:** Batch mode (`MODE: batch`) - batch flow surfaces creative-spark concerns during triage instead.
+**Skip if:** Batch mode (`MODE: batch`) - batch planning has no visual-riff step.
 **Skip if:** `type` is anything other than `ui`, or missing - visual riffing does not apply; continue to Phase 0.5 with no prompt.
 **Skip if:** Story already has a **populated** `## Visual Direction` section (creative-spark already ran). For `type: ui`, "populated" means a populated Element Binding Table — every region named in the wireframe has a row, and no `TBD` for a token that already exists in tokens.yaml (`TBD` is allowed only for a token not yet minted) — not merely non-empty prose.
 
@@ -508,9 +508,9 @@ First do exactly what "Yes, mark ready" does: reconcile, then flip the status.
 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-story-status.sh [story-file] ready
 ```
 
-**Hand-back rule.** Decide from the conversation you are already in, never from the args: the same bare story reference reaches plan-chunks from a direct start and from a waiting flow. If the plan-chunks call was issued from inside story-implement or cycle-start, a calling flow is waiting to resume; no other caller leaves one waiting. Those flows are story-implement (planning a story with no chunks, or planning the next unplanned story mid-cycle) and cycle-start (planning before activation). When one is waiting: tell the user in one line that the story is ready and control is returning to that flow, then return. Do NOT invoke story-implement - the waiting flow continues from its own resume step and carries the user's choice forward.
+**Hand-back rule.** Decide from the conversation you are already in, never from the args: the same bare story reference reaches plan-chunks from a direct start and from a waiting flow. If story-implement or cycle-start sits anywhere up the current call chain, even behind an intermediate such as story-new's Step 11, then a calling flow is waiting to resume; with neither in the chain, nothing is waiting. Those flows are story-implement (planning a story with no chunks, or planning the next unplanned story mid-cycle) and cycle-start (planning before activation). When one is waiting: tell the user in one line that the story is ready and control is returning to that flow, then return. Do NOT invoke story-implement - the waiting flow continues from its own resume step and carries the user's choice forward.
 
-Otherwise this is a direct start (`/craft:plan-chunks`, the hub, story-new's Step 11, which only places the story afterward and never implements):
+Otherwise this is a direct start (`/craft:plan-chunks`, the hub, story-new's Step 11 when nothing above it is waiting, which only places the story afterward and never implements):
 
 ⛔ **DO NOT implement directly. You MUST invoke the skill:**
 

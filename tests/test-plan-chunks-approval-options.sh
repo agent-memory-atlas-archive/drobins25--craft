@@ -71,6 +71,7 @@ assert_contains_literal "non-ui continues with no prompt" 'continue to Phase 0.5
 assert_not_contains "no non-UI skip option" 'Skip - not a UI story' "$P046_BLOCK"
 assert_not_contains "no riff-anyway option" 'Yes, riff anyway' "$P046_BLOCK"
 assert_not_contains "no chunk-approval-time promise" 'chunk-approval time' "$P046_BLOCK"
+assert_contains_literal "batch skip line no longer promises creative-spark" 'batch planning has no visual-riff step' "$P046_BLOCK"
 
 begin_test "ui visual gate unchanged"
 assert_contains_literal "ui riff option" 'Yes, riff with creative-spark (Recommended)' "$P046_BLOCK"
@@ -99,6 +100,7 @@ assert_contains_literal "story-new only places the story afterward" 'only places
 assert_contains_literal "waiting flow carries the choice forward" "carries the user's choice forward" "$S5_BLOCK"
 assert_not_contains "no waiting flow starts implementation itself" 'starts implementation itself' "$(cat "$SKILL")"
 assert_not_contains "no open-ended waiting-flow definition" 'flow that resumes after planning' "$(cat "$SKILL")"
+assert_contains_literal "hand-back looks up the call chain" 'anywhere up the current call chain' "$S5_BLOCK"
 
 begin_test "batch Start implementing applies the hand-back rule"
 assert_contains "critical rules block extracted" 'Read story files fresh' "$CRITICAL_BLOCK"
@@ -126,7 +128,8 @@ assert_contains "one-at-a-time block extracted" 'Planning before cycle start' "$
 
 begin_test "cycle-start first-story branch returns to Step 2"
 assert_contains_literal "first-story branch has a return" 'Return to Step 2 when the story is planned - or straight to Step 3 (Activate) with that story chosen' "$STEP2B_BLOCK"
-assert_eq "other two returns unchanged" "2" "$(echo "$STEP2B_BLOCK" | grep -c 'Return to Step 2 when all stories are planned.')"
+assert_eq "one-at-a-time return unchanged" "1" "$(echo "$STEP2B_BLOCK" | grep -cF 'Return to Step 2 when all stories are planned.' || true)"
+assert_contains_literal "batch return routes Start implementing to Step 3" 'if the user picked "Start implementing" at the end of batch triage' "$STEP2B_BLOCK"
 
 begin_test "cycle-start Step 3 skips the re-asks for a chosen story"
 assert_contains_literal "chosen-story paragraph" '**If a story is already chosen, do not re-ask.**' "$STEP3_BLOCK"

@@ -184,7 +184,7 @@ Skill tool:
   CYCLE_GOAL: [goal from cycle.yaml]"
 ```
 
-This hands off to `plan-chunks` in batch mode, which launches parallel planning agents, runs batch triage, and writes approved plans. Do NOT replicate any of this inline. Return to Step 2 when all stories are planned.
+This hands off to `plan-chunks` in batch mode, which launches parallel planning agents, runs batch triage, and writes approved plans. Do NOT replicate any of this inline. Return to Step 2 when all stories are planned - or straight to Step 3 (Activate) with batch's first ready story chosen, if the user picked "Start implementing" at the end of batch triage. Stories still at `status: planning` (adjusted or rejected) stay there, exactly as "Start with ready stories" leaves them.
 
 **If "Plan one at a time" or "Plan it now":**
 
