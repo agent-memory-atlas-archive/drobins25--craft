@@ -1,0 +1,596 @@
+#!/bin/bash
+# test-bugs-scripts.sh - Behavior tests for the bugs scripts (list, capture, close).
+#
+# The list script runs inside a slash-command shell injection: a non-zero
+# exit aborts the whole invocation and stderr is merged into the prompt, so
+# the summary mode must exit 0 and stay silent on stderr for every input.
+# Usage: bash tests/test-bugs-scripts.sh
+
+source "$(dirname "${BASH_SOURCE[0]}")/test_helper.sh"
+
+LIST="$SCRIPTS_DIR/bugs-list.sh"
+CAPTURE="$SCRIPTS_DIR/bugs-capture.sh"
+CLOSE="$SCRIPTS_DIR/bugs-close.sh"
+TODAY=$(date +%Y-%m-%d)
+TMP_ROOTS=()
+
+fresh_root() {
+  ROOT=$(mktemp -d)
+  TMP_ROOTS+=("$ROOT")
+  export CRAFT_PROJECT_ROOT="$ROOT"
+  mkdir -p "$ROOT/.craft/bugs/closed"
+}
+
+cleanup_roots() {
+  local r
+  for r in "${TMP_ROOTS[@]:-}"; do [ -n "$r" ] && rm -rf "$r"; done
+  return 0
+}
+trap cleanup_roots EXIT
+
+# write_record <path> <captured_at> <found_during> <symptom> [blocks-line] [status]
+write_record() {
+  local path="$1" cap="$2" fd="$3" symptom="$4" blocks="${5:-}" status="${6:-open}"
+  {
+    echo "---"
+    echo "type: bug"
+    echo "created: ${cap%%T*}"
+    [ -n "$cap" ] && echo "captured_at: $cap"
+    echo "status: $status"
+    echo "verdict:"
+    echo "found_during: $fd"
+    echo "layer: code"
+    echo "hits: 1"
+    echo "---"
+    echo ""
+    echo "$symptom"
+    if [ -n "$blocks" ]; then
+      echo ""
+      echo "## Blocks my next step"
+      echo ""
+      echo "$blocks"
+    fi
+  } > "$path"
+}
+
+# run_list <args...> - sets OUT, ERR, RC (stderr captured separately)
+run_list() {
+  local errf
+  errf=$(mktemp)
+  OUT=$(bash "$LIST" "$@" 2>"$errf") && RC=0 || RC=$?
+  ERR=$(cat "$errf")
+  rm -f "$errf"
+}
+
+echo "=== test-bugs-scripts.sh ==="
+echo ""
+
+begin_test "summary on a missing folder"
+ROOT=$(mktemp -d); TMP_ROOTS+=("$ROOT"); export CRAFT_PROJECT_ROOT="$ROOT"
+run_list --summary
+assert_eq "stdout" "Bugs: 0 open" "$OUT"
+assert_eq "stderr empty" "" "$ERR"
+assert_eq "rc" "0" "$RC"
+
+begin_test "summary on an empty folder and an empty closed/"
+fresh_root
+run_list --summary
+assert_eq "stdout" "Bugs: 0 open" "$OUT"
+assert_eq "stderr empty" "" "$ERR"
+assert_eq "rc" "0" "$RC"
+
+begin_test "summary from a non-git cwd with no CRAFT_PROJECT_ROOT"
+NOGIT=$(mktemp -d); TMP_ROOTS+=("$NOGIT")
+OUT=$(cd "$NOGIT" && env -u CRAFT_PROJECT_ROOT bash "$LIST" --summary 2>"$NOGIT/err") && RC=0 || RC=$?
+assert_eq "rc" "0" "$RC"
+assert_eq "stdout" "Bugs: 0 open" "$OUT"
+assert_eq "stderr empty" "" "$(cat "$NOGIT/err")"
+
+begin_test "template, README, undated, binary, and unfenced files are skipped"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\nstatus: open\n---\n\n<Symptom in one line>\n' > "$B/_TEMPLATE.md"
+printf -- '# Bugs\n\n```yaml\ntype: bug\n```\n' > "$B/README.md"
+printf -- '---\ntype: bug\n---\n\nundated\n' > "$B/notes.md"
+printf '\xff\xfe\x00\x80binary' > "$B/2026-09-01-binary.md"
+printf 'no frontmatter here\n' > "$B/2026-09-02-plain.md"
+printf -- '---\ntype: note\n---\n\nwrong type\n' > "$B/2026-09-03-wrong-type.md"
+write_record "$B/2026-09-04-real.md" "2026-09-04T10:00:00Z" "conversation" "Real bug"
+run_list --summary
+assert_eq "one open" "Bugs: 1 open
+- Real bug - found during: conversation" "$OUT"
+assert_eq "stderr empty" "" "$ERR"
+assert_eq "rc" "0" "$RC"
+
+begin_test "an old-shape record with status: confirmed in the root room counts as open"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\ncreated: 2026-09-11\nstatus: confirmed\nverdict: ruled\nseverity: high\nfound_by: manual review (colons: ok)\n---\n\nOld shape symptom\n' > "$B/2026-09-11-old-shape.md"
+run_list
+assert_contains "STATUS=open" "^STATUS=open$" "$OUT"
+assert_contains "VERDICT=ruled kept" "^VERDICT=ruled$" "$OUT"
+run_list --summary
+assert_eq "summary" "Bugs: 1 open
+- Old shape symptom - found during: manual review (colons: ok)" "$OUT"
+assert_eq "rc" "0" "$RC"
+
+begin_test "newest first by captured_at, blocks marker on yes"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-01-earlier.md" "2026-10-01T10:00:00Z" "run A" "Earlier bug" "No - can work around"
+write_record "$B/2026-10-01-later.md" "2026-10-01T11:00:00Z" "run B" "Later bug" "Yes - can't finish run"
+write_record "$B/2026-09-30-oldest.md" "2026-09-30T09:00:00Z" "run C" "Oldest bug" "yes"
+run_list --summary
+assert_eq "ordered with marker" "Bugs: 3 open
+- Later bug - found during: run B [blocks my next step]
+- Earlier bug - found during: run A
+- Oldest bug - found during: run C [blocks my next step]" "$OUT"
+
+begin_test "ties fall back to created, then filename"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\ncreated: 2026-09-01\n---\n\nAlpha\n' > "$B/2026-09-01-a.md"
+printf -- '---\ntype: bug\ncreated: 2026-09-01\n---\n\nBeta\n' > "$B/2026-09-01-b.md"
+printf -- '---\ntype: bug\ncreated: 2026-09-02\n---\n\nGamma\n' > "$B/2026-09-02-c.md"
+run_list --summary
+assert_eq "created then filename desc" "Bugs: 3 open
+- Gamma
+- Beta
+- Alpha" "$OUT"
+
+begin_test "found_by fallback and empty found-during omitted"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\ncreated: 2026-09-05\nfound_by: legacy filer\n---\n\nWith found_by\n' > "$B/2026-09-05-fb.md"
+printf -- '---\ntype: bug\ncreated: 2026-09-04\nfound_during:\nfound_by:\n---\n\nNeither field\n' > "$B/2026-09-04-none.md"
+run_list --summary
+assert_eq "lines" "Bugs: 2 open
+- With found_by - found during: legacy filer
+- Neither field" "$OUT"
+
+begin_test "block mode key order and --status filter"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-02-open-one.md" "2026-10-02T10:00:00Z" "conversation" "Open one" "yes"
+write_record "$B/closed/2026-09-20-wont.md" "2026-09-20T10:00:00Z" "run X" "Wont one" "" "wont-fix"
+write_record "$B/closed/2026-09-21-fixed.md" "2026-09-21T10:00:00Z" "run Y" "Fixed one" "" "fixed"
+write_record "$B/closed/2026-09-22-odd.md" "2026-09-22T10:00:00Z" "run Z" "Odd one" "" "confirmed"
+run_list
+KEYS=$(echo "$OUT" | sed -n '1,/^$/p' | grep -v '^$' | sed 's/=.*//' | tr '\n' ' ')
+assert_eq "11 keys in order" "FILE ROOM SLUG DATE TITLE STATUS VERDICT FOUND_DURING LAYER BLOCKS HITS " "$KEYS"
+assert_eq "four blocks" "4" "$(echo "$OUT" | grep -c '^FILE=')"
+assert_eq "first block is newest" "TITLE=Open one" "$(echo "$OUT" | grep '^TITLE=' | head -1)"
+assert_contains "closed status without known word is closed" "^STATUS=closed$" "$OUT"
+assert_contains "BLOCKS=yes" "^BLOCKS=yes$" "$OUT"
+assert_contains "ROOM=closed" "^ROOM=closed$" "$OUT"
+run_list --status=wont-fix
+assert_eq "wont-fix filter" "1" "$(echo "$OUT" | grep -c '^FILE=')"
+assert_contains "wont-fix title" "^TITLE=Wont one$" "$OUT"
+run_list --status=open
+assert_eq "open filter" "1" "$(echo "$OUT" | grep -c '^FILE=')"
+run_list --status=closed
+assert_eq "closed filter" "3" "$(echo "$OUT" | grep -c '^FILE=')"
+run_list --bogus-flag --summary
+assert_eq "unknown flags ignored" "Bugs: 1 open
+- Open one - found during: conversation [blocks my next step]" "$OUT"
+assert_eq "rc" "0" "$RC"
+
+begin_test "both rooms: closed wins"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-01-dup.md" "2026-10-01T10:00:00Z" "run" "Dup open copy"
+write_record "$B/closed/2026-10-01-dup.md" "2026-10-01T10:00:00Z" "run" "Dup closed copy" "" "fixed"
+run_list --summary
+assert_eq "not counted" "Bugs: 0 open" "$OUT"
+run_list
+assert_eq "one block" "1" "$(echo "$OUT" | grep -c '^FILE=')"
+assert_contains "STATUS=fixed from closed copy" "^STATUS=fixed$" "$OUT"
+assert_contains "closed copy fields" "^TITLE=Dup closed copy$" "$OUT"
+
+begin_test "missing python3 prints the unavailable header and exits 0"
+fresh_root
+write_record "$ROOT/.craft/bugs/2026-10-01-x.md" "2026-10-01T10:00:00Z" "run" "X"
+NOPY=$(mktemp -d); TMP_ROOTS+=("$NOPY")
+for t in bash dirname cat sed grep head ls sort git env; do
+  p=$(command -v "$t" 2>/dev/null || true); [ -n "$p" ] && ln -s "$p" "$NOPY/$t"
+done
+OUT=$(PATH="$NOPY" "$NOPY/bash" "$LIST" --summary 2>"$NOPY/err") && RC=0 || RC=$?
+assert_eq "stdout" "Bugs: count unavailable (python3 not found)" "$OUT"
+assert_eq "stderr empty" "" "$(cat "$NOPY/err")"
+assert_eq "rc" "0" "$RC"
+
+# ── capture and close ───────────────────────────────────────────────
+
+# bare_root - a temp root with no .craft at all (filing works before init)
+bare_root() {
+  ROOT=$(mktemp -d)
+  TMP_ROOTS+=("$ROOT")
+  export CRAFT_PROJECT_ROOT="$ROOT"
+}
+
+# body_with <symptom> - a complete body whose symptom line is the argument
+body_with() {
+  printf '%s\n' "$1" '' '## What happened' '' \
+    '**Expected.** The record saves.' '**Actual.** Nothing happens on click.' '' \
+    '## Consequences' '' 'Users lose their edits.' '' \
+    '## Blocks my next step' '' 'no - can work around it' '' \
+    '## Reproduce' '' '1. Open the form' '2. Click save' '' \
+    '## Notes' '' 'status: this prose line must survive'
+}
+
+# cap <args...> - body on stdin; sets OUT, ERR, RC
+cap() {
+  local errf body
+  errf=$(mktemp)
+  body=$(cat)
+  OUT=$(printf '%s\n' "$body" | bash "$CAPTURE" "$@" 2>"$errf") && RC=0 || RC=$?
+  ERR=$(cat "$errf")
+  rm -f "$errf"
+}
+
+# file_bug <symptom> [extra capture args...] - files a valid bug; sets OUT (path)
+file_bug() {
+  local symptom="$1"; shift
+cap --found-during="conversation" "$@" --stdin < <(  body_with "$symptom")
+}
+
+# run_close <args...> - sets OUT, ERR, RC
+run_close() {
+  local errf
+  errf=$(mktemp)
+  OUT=$(bash "$CLOSE" "$@" 2>"$errf") && RC=0 || RC=$?
+  ERR=$(cat "$errf")
+  rm -f "$errf"
+}
+
+begin_test "capture refuses each missing required field by name"
+bare_root
+cap --found-during="conversation" --stdin < <(body_with "Save button does nothing" | grep -v '^Save button')
+assert_eq "no symptom: rc" "2" "$RC"
+assert_contains "no symptom: named" "^missing required field: symptom line" "$ERR"
+cap --found-during="conversation" --stdin < <(body_with "# a heading is not a symptom")
+assert_contains "heading-led symptom" "^missing required field: symptom line" "$ERR"
+cap --stdin < <(body_with "Symptom")
+assert_eq "no found_during: rc" "2" "$RC"
+assert_eq "no found_during: stderr" "missing required field: found_during" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | grep -v 'Expected\.')
+assert_eq "no Expected: stderr" "missing required field: Expected" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | grep -v 'Actual\.')
+assert_eq "no Actual: stderr" "missing required field: Actual" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | grep -v -e '^## Consequences' -e 'lose their edits')
+assert_eq "no Consequences: stderr" "missing required field: Consequences" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | grep -v -e '^## Blocks my next step' -e 'no - can work')
+assert_eq "no Blocks: stderr" "missing required field: Blocks my next step" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | sed 's/^no - can work around it/maybe/')
+assert_eq "Blocks not yes/no: stderr" "missing required field: Blocks my next step" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | grep -v -e '^## Reproduce' -e 'Open the form' -e 'Click save')
+assert_eq "no Reproduce: stderr" "missing required field: Reproduce" "$ERR"
+assert_eq "rc" "2" "$RC"
+assert_dir_not_exists "no .craft created" "$ROOT/.craft"
+
+begin_test "capture reports every missing field, one line each"
+bare_root
+cap --stdin < <(printf 'Only a symptom\n')
+assert_eq "rc" "2" "$RC"
+assert_eq "line count" "6" "$(echo "$ERR" | wc -l | tr -d ' ')"
+assert_eq "found_during first after symptom" "missing required field: found_during" "$(echo "$ERR" | sed -n '1p')"
+assert_dir_not_exists "no .craft created" "$ROOT/.craft"
+
+begin_test "a pointer-only field counts as missing"
+bare_root
+cap --found-during="x" --stdin < <(body_with "Symptom" | sed 's/^\*\*Actual\.\*\* .*/**Actual.** <Only what was observed.>/')
+assert_eq "Actual pointer" "missing required field: Actual" "$ERR"
+assert_eq "rc" "2" "$RC"
+cap --found-during="<where you were>" --stdin < <(body_with "Symptom")
+assert_eq "found_during pointer" "missing required field: found_during" "$ERR"
+cap --found-during="x" --stdin < <(body_with "Symptom" | sed 's/^Users lose their edits\./<What this costs>/')
+assert_eq "Consequences pointer" "missing required field: Consequences" "$ERR"
+assert_dir_not_exists "no .craft created" "$ROOT/.craft"
+
+begin_test "invalid enum flags are refused before anything is written"
+bare_root
+cap --found-during="x" --layer=vibes --stdin < <(body_with "Symptom")
+assert_eq "layer: rc" "2" "$RC"
+assert_eq "layer: stderr" "invalid --layer: vibes" "$ERR"
+cap --found-during="x" --verdict=guess --stdin < <(body_with "Symptom")
+assert_eq "verdict: stderr" "invalid --verdict: guess" "$ERR"
+assert_dir_not_exists "no .craft created" "$ROOT/.craft"
+
+begin_test "stdin is required"
+bare_root
+cap --found-during="x" < <(body_with "Symptom")
+assert_eq "rc" "2" "$RC"
+assert_contains_literal "named" "--stdin" "$ERR"
+assert_dir_not_exists "no .craft created" "$ROOT/.craft"
+
+begin_test "capture writes the frontmatter in order and the body verbatim"
+bare_root
+body_with "Save button does nothing" > "$ROOT/body.txt"
+file_bug "Save button does nothing" --requirement="Saving must persist: always" --layer=code --worked-before="v1 (yes)" --verdict=bug --tags="UI,save"
+assert_eq "rc" "0" "$RC"
+F="$OUT"
+KEYS=$(awk '/^---$/{c++; next} c==1{print}' "$F" | sed 's/:.*//' | tr '\n' ' ')
+assert_eq "key order" "type created captured_at status verdict found_during requirement layer worked_before hits fixed_by tags " "$KEYS"
+assert_contains "type" "^type: bug$" "$(cat "$F")"
+assert_contains "created" "^created: $TODAY$" "$(cat "$F")"
+assert_contains "captured_at UTC" "^captured_at: [0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9:]*Z$" "$(cat "$F")"
+assert_contains "status" "^status: open$" "$(cat "$F")"
+assert_contains "verdict" "^verdict: bug$" "$(cat "$F")"
+assert_contains "found_during raw" "^found_during: conversation$" "$(cat "$F")"
+assert_contains "requirement raw" "^requirement: Saving must persist: always$" "$(cat "$F")"
+assert_contains "worked_before raw" "^worked_before: v1 (yes)$" "$(cat "$F")"
+assert_contains "hits" "^hits: 1$" "$(cat "$F")"
+assert_contains "fixed_by blank" "^fixed_by:$" "$(cat "$F")"
+assert_contains "tags" "^tags: \[ui, save\]$" "$(cat "$F")"
+BODY_IN=$(cat "$ROOT/body.txt")
+assert_eq "body byte-equal once the Log section is lifted out" "$BODY_IN" "$(awk '/^---$/{c++; next} c>=2{print}' "$F" | sed '1{/^$/d;}' | awk '/^## Log$/{skip=1; next} /^## /{skip=0} !skip{print}')"
+assert_contains "Log entry" "^- $TODAY filed$" "$(cat "$F")"
+assert_eq "exactly one Log section" "1" "$(grep -c '^## Log$' "$F")"
+file_bug "Another symptom"
+assert_contains "empty tags" "^tags: \[\]$" "$(cat "$OUT")"
+assert_contains "blank layer" "^layer:$" "$(cat "$OUT")"
+assert_contains "blank requirement" "^requirement:$" "$(cat "$OUT")"
+
+begin_test "capture puts the Log before Notes, or appends inside an existing Log"
+bare_root
+file_bug "Log placement"
+LN=$(grep -n '^## Log$' "$OUT" | cut -d: -f1)
+NN=$(grep -n '^## Notes$' "$OUT" | cut -d: -f1)
+assert_eq "Log precedes Notes" "yes" "$([ "$LN" -lt "$NN" ] && echo yes || echo no)"
+cap --found-during="x" --stdin < <({ body_with "Has own log" | sed '/^## Notes/,$d'; printf '## Log\n\n- 2026-01-01 earlier entry\n'; })
+assert_eq "one Log" "1" "$(grep -c '^## Log$' "$OUT")"
+assert_eq "entry appended last" "- $TODAY filed" "$(tail -1 "$OUT")"
+assert_contains "earlier entry kept" "^- 2026-01-01 earlier entry$" "$(cat "$OUT")"
+cap --found-during="x" --stdin < <(body_with "No notes" | sed '/^## Notes/,$d')
+assert_eq "appended at end" "- $TODAY filed" "$(tail -1 "$OUT")"
+
+begin_test "slug rule: special chars, 50 cap, untitled"
+bare_root
+file_bug "It's a TEST!! with @#weird chars"
+case "$OUT" in
+  *its-a-test-with*|*it-s-a-test-with*) assert_eq "special chars stripped from slug" "ok" "ok" ;;
+  *) assert_eq "special chars stripped from slug" "slug without special chars" "$OUT" ;;
+esac
+assert_contains "date prefix" "/$TODAY-it-s-a-test-with-weird-chars.md$" "$OUT"
+file_bug "this is a very long title that should be capped at fifty characters and not exceed it"
+BASE=$(basename "$OUT" .md)
+SLUG_PART="${BASE#????-??-??-}"
+assert_eq "slug capped at 50 or fewer" "yes" "$([ ${#SLUG_PART} -le 50 ] && echo yes || echo no)"
+assert_eq "cap falls back to the last hyphen" "this-is-a-very-long-title-that-should-be-capped" "$SLUG_PART"
+file_bug '!!! ???'
+assert_contains "all-punctuation symptom is untitled" "/$TODAY-untitled.md$" "$OUT"
+
+begin_test "same-day collision -2 then -3"
+bare_root
+file_bug "duplicate title"; O1="$OUT"
+file_bug "duplicate title"; O2="$OUT"
+file_bug "duplicate title"; O3="$OUT"
+assert_contains "first plain" "/$TODAY-duplicate-title.md$" "$O1"
+assert_contains "second -2" "/$TODAY-duplicate-title-2.md$" "$O2"
+assert_contains "third -3" "/$TODAY-duplicate-title-3.md$" "$O3"
+
+begin_test "path is the last stdout line and rc 0"
+bare_root
+file_bug "Path check"
+assert_eq "rc" "0" "$RC"
+assert_eq "path is absolute and exists" "yes" "$([ "${OUT:0:1}" = "/" ] && [ -f "$(echo "$OUT" | tail -1)" ] && echo yes || echo no)"
+assert_eq "stdout is only the path" "1" "$(echo "$OUT" | wc -l | tr -d ' ')"
+assert_contains "lands in .craft/bugs" "^$ROOT/.craft/bugs/$TODAY-path-check.md$" "$OUT"
+
+begin_test "capture works before init"
+GITROOT=$(mktemp -d); TMP_ROOTS+=("$GITROOT")
+git -C "$GITROOT" init -q
+mkdir -p "$GITROOT/sub/dir"
+errf=$(mktemp)
+OUT=$(cd "$GITROOT/sub/dir" && env -u CRAFT_PROJECT_ROOT bash -c 'printf "%s\n" "$1" | bash "$2" --found-during=x --stdin' _ "$(body_with "Cold filing")" "$CAPTURE" 2>"$errf") && RC=0 || RC=$?
+rm -f "$errf"
+assert_eq "rc" "0" "$RC"
+GITTOP=$(cd "$GITROOT" && pwd -P)
+assert_eq "file lands at the toplevel" "yes" "$(ls "$GITROOT"/.craft/bugs/"$TODAY"-cold-filing.md >/dev/null 2>&1 && echo yes || echo no)"
+assert_eq "none in the subdirectory" "no" "$([ -e "$GITROOT/sub/dir/.craft" ] && echo yes || echo no)"
+
+# ── close ──
+
+begin_test "close: fenced edit leaves a body status line byte-identical"
+fresh_root
+file_bug "Close me"; F="$OUT"
+BEFORE_VERDICT=$(grep -n '^verdict:' "$F")
+cp "$F" "$ROOT/before.md"
+run_close "$F" --status=fixed
+assert_eq "rc" "0" "$RC"
+CLOSED="$ROOT/.craft/bugs/closed/$(basename "$F")"
+assert_file_exists "closed copy" "$CLOSED"
+assert_file_not_exists "source removed" "$F"
+assert_contains "status set in fence" "^status: fixed$" "$(awk '/^---$/{c++; next} c==1{print}' "$CLOSED")"
+assert_contains "body prose line survives" "^status: this prose line must survive$" "$(cat "$CLOSED")"
+assert_eq "body status line count unchanged" "1" "$(awk '/^---$/{c++; next} c>=2{print}' "$CLOSED" | grep -c '^status: ')"
+assert_eq "verdict line byte-identical with no --verdict" "$(grep '^verdict:' "$ROOT/before.md" | od -c)" "$(grep '^verdict:' "$CLOSED" | od -c)"
+assert_eq "title then path on stdout" "TITLE=Close me
+$CLOSED" "$OUT"
+BODY_BEFORE=$(awk '/^---$/{c++; next} c>=2{print}' "$ROOT/before.md" | awk '/^## Log$/{exit} {print}')
+BODY_AFTER=$(awk '/^---$/{c++; next} c>=2{print}' "$CLOSED" | awk '/^## Log$/{exit} {print}')
+assert_eq "body before Log untouched" "$BODY_BEFORE" "$BODY_AFTER"
+
+begin_test "close: a given verdict is written; blank verdict line kept otherwise"
+fresh_root
+file_bug "Verdict kept"; F="$OUT"
+run_close "$F" --status=wont-fix --verdict=spec-gap --fixed-by="story 12" --note="intended behavior"
+CLOSED="$ROOT/.craft/bugs/closed/$(basename "$F")"
+assert_contains "verdict written" "^verdict: spec-gap$" "$(cat "$CLOSED")"
+assert_contains "fixed_by written" "^fixed_by: story 12$" "$(cat "$CLOSED")"
+assert_contains "Log line with every part" "^- $TODAY closed: wont-fix, verdict spec-gap, fixed by story 12 - intended behavior$" "$(cat "$CLOSED")"
+fresh_root
+file_bug "No verdict"; F="$OUT"
+run_close "$F" --status=wont-fix
+CLOSED="$ROOT/.craft/bugs/closed/$(basename "$F")"
+assert_contains "blank verdict kept" "^verdict:$" "$(cat "$CLOSED")"
+assert_contains "Log line bare" "^- $TODAY closed: wont-fix$" "$(cat "$CLOSED")"
+
+begin_test "close: Log line appended; created when absent on an old record"
+fresh_root
+file_bug "Has a log"; F="$OUT"
+run_close "$F" --status=fixed
+CLOSED="$ROOT/.craft/bugs/closed/$(basename "$F")"
+assert_eq "one Log" "1" "$(grep -c '^## Log$' "$CLOSED")"
+LOGSEC=$(awk '/^## Log$/{f=1; next} /^## /{f=0} f' "$CLOSED" | grep -v '^$')
+assert_eq "filed then closed" "- $TODAY filed
+- $TODAY closed: fixed" "$LOGSEC"
+OLD="$ROOT/.craft/bugs/2026-09-11-old-shape.md"
+printf -- '---\ntype: bug\ncreated: 2026-09-11\nstatus: confirmed\nverdict: ruled\nfound_by: manual\n---\n\nOld symptom\n\n## Notes\n\nkept note\n' > "$OLD"
+run_close "$OLD" --status=fixed
+CLOSED="$ROOT/.craft/bugs/closed/2026-09-11-old-shape.md"
+assert_eq "Log created" "1" "$(grep -c '^## Log$' "$CLOSED")"
+assert_eq "Log precedes Notes" "yes" "$([ "$(grep -n '^## Log$' "$CLOSED" | cut -d: -f1)" -lt "$(grep -n '^## Notes$' "$CLOSED" | cut -d: -f1)" ] && echo yes || echo no)"
+assert_contains "close line" "^- $TODAY closed: fixed$" "$(cat "$CLOSED")"
+assert_contains "old status replaced in fence" "^status: fixed$" "$(cat "$CLOSED")"
+assert_contains "old verdict untouched" "^verdict: ruled$" "$(cat "$CLOSED")"
+printf -- '---\ntype: bug\ncreated: 2026-09-12\n---\n\nNo notes old\n' > "$ROOT/.craft/bugs/2026-09-12-no-notes.md"
+run_close 2026-09-12-no-notes --status=wont-fix
+CLOSED="$ROOT/.craft/bugs/closed/2026-09-12-no-notes.md"
+assert_eq "missing status and verdict keys appended in fence" "type: bug
+created: 2026-09-12
+status: wont-fix
+closed_at: $TODAY" "$(awk '/^---$/{c++; next} c==1{print}' "$CLOSED")"
+assert_eq "Log appended at end" "- $TODAY closed: wont-fix" "$(tail -1 "$CLOSED")"
+
+begin_test "close: stamps closed_at"
+fresh_root
+file_bug "Stamp me"; F="$OUT"
+assert_not_contains "absent before" "closed_at" "$(cat "$F")"
+run_close "$F" --status=fixed
+CLOSED="$ROOT/.craft/bugs/closed/$(basename "$F")"
+FM=$(awk '/^---$/{c++; next} c==1{print}' "$CLOSED")
+assert_contains "closed_at in the fence" "^closed_at: $TODAY$" "$FM"
+assert_eq "closed_at is the last frontmatter key" "closed_at: $TODAY" "$(echo "$FM" | tail -1)"
+
+begin_test "close: resolves a dated slug, with or without .md, and a trailing fragment"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-01-alpha-widget.md" "2026-10-01T10:00:00Z" "run" "Alpha"
+write_record "$B/2026-10-01-beta-gadget.md" "2026-10-01T11:00:00Z" "run" "Beta"
+write_record "$B/2026-10-01-gamma-gizmo.md" "2026-10-01T12:00:00Z" "run" "Gamma"
+run_close 2026-10-01-alpha-widget --status=fixed
+assert_eq "whole slug" "0" "$RC"
+run_close 2026-10-01-beta-gadget.md --status=fixed
+assert_eq "slug with .md" "0" "$RC"
+run_close gizmo --status=wont-fix
+assert_eq "fragment" "0" "$RC"
+assert_eq "all moved" "3" "$(ls "$B/closed" | wc -l | tr -d ' ')"
+
+begin_test "close: refuses an ambiguous fragment, both records untouched"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-01-save-button-a.md" "2026-10-01T10:00:00Z" "run" "Save A"
+write_record "$B/2026-10-01-save-button-b.md" "2026-10-01T11:00:00Z" "run" "Save B"
+SUM_BEFORE=$(cksum "$B"/2026-10-01-save-button-*.md)
+run_close save-button --status=fixed
+assert_eq "rc" "2" "$RC"
+assert_eq "stderr" "ambiguous: 2026-10-01-save-button-a, 2026-10-01-save-button-b" "$ERR"
+assert_eq "records byte-identical" "$SUM_BEFORE" "$(cksum "$B"/2026-10-01-save-button-*.md)"
+assert_eq "closed/ empty" "0" "$(ls "$B/closed" | wc -l | tr -d ' ')"
+
+begin_test "close: an exact slug wins over longer siblings"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-10-01-save.md" "2026-10-01T10:00:00Z" "run" "Save"
+write_record "$B/2026-10-01-save-2.md" "2026-10-01T11:00:00Z" "run" "Save two"
+run_close 2026-10-01-save --status=fixed
+assert_eq "rc" "0" "$RC"
+assert_file_exists "exact one closed" "$B/closed/2026-10-01-save.md"
+assert_file_exists "sibling untouched" "$B/2026-10-01-save-2.md"
+
+begin_test "close: destination-first - the closed copy exists even when the source cannot be removed"
+fresh_root
+file_bug "Order matters"; F="$OUT"
+run_close "$F" --status=fixed
+assert_file_exists "closed copy" "$ROOT/.craft/bugs/closed/$(basename "$F")"
+assert_file_not_exists "root file gone" "$F"
+assert_eq "no tmp left behind" "0" "$(ls "$ROOT/.craft/bugs/closed" | grep -c '\.tmp$' || true)"
+if [ "$(id -u)" != "0" ]; then
+  file_bug "Stuck source"; F="$OUT"
+  chmod a-w "$ROOT/.craft/bugs"
+  run_close "$F" --status=fixed
+  chmod u+w "$ROOT/.craft/bugs"
+  assert_eq "rm failure is not success" "yes" "$([ "$RC" != "0" ] && echo yes || echo no)"
+  assert_file_exists "closed copy still written" "$ROOT/.craft/bugs/closed/$(basename "$F")"
+  assert_file_exists "source still present" "$F"
+fi
+
+begin_test "close refuses already-closed, unknown, bad flags"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/closed/2026-09-01-done.md" "2026-09-01T10:00:00Z" "run" "Done" "" "fixed"
+write_record "$B/2026-09-02-open.md" "2026-09-02T10:00:00Z" "run" "Open"
+SUM_BEFORE=$(cksum "$B"/*.md "$B"/closed/*.md)
+run_close 2026-09-01-done --status=fixed
+assert_eq "closed rc" "2" "$RC"
+assert_eq "closed stderr" "already closed: 2026-09-01-done" "$ERR"
+run_close "$B/closed/2026-09-01-done.md" --status=fixed
+assert_eq "closed by path" "already closed: 2026-09-01-done" "$ERR"
+run_close nonexistent-thing --status=fixed
+assert_eq "unknown rc" "2" "$RC"
+assert_eq "unknown stderr" "not found: nonexistent-thing" "$ERR"
+run_close 2026-09-02-open --status=fixed --verdict=guess
+assert_eq "bad verdict rc" "2" "$RC"
+assert_eq "bad verdict stderr" "invalid --verdict: guess" "$ERR"
+run_close 2026-09-02-open --status=confirmed
+assert_eq "bad status stderr" "invalid --status: confirmed" "$ERR"
+run_close 2026-09-02-open
+assert_eq "missing status rc" "2" "$RC"
+assert_eq "missing status stderr" "missing --status" "$ERR"
+run_close --status=fixed
+assert_eq "missing target rc" "2" "$RC"
+assert_contains "missing target stderr" "missing target" "$ERR"
+assert_eq "nothing changed" "$SUM_BEFORE" "$(cksum "$B"/*.md "$B"/closed/*.md)"
+
+begin_test "close refuses a destination that already exists"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-09-02-twin.md" "2026-09-02T10:00:00Z" "run" "Twin open"
+write_record "$B/closed/2026-09-02-twin.md" "2026-09-02T10:00:00Z" "run" "Twin closed" "" "fixed"
+SUM_BEFORE=$(cksum "$B"/*.md "$B"/closed/*.md)
+run_close 2026-09-02-twin --status=fixed
+assert_eq "rc" "2" "$RC"
+assert_eq "stderr" "already in closed/: 2026-09-02-twin" "$ERR"
+assert_eq "nothing changed" "$SUM_BEFORE" "$(cksum "$B"/*.md "$B"/closed/*.md)"
+
+begin_test "closed record leaves the open pile and shows in the closed room"
+fresh_root
+file_bug "Pile check"; F="$OUT"
+run_list --summary
+assert_eq "open before" "Bugs: 1 open
+- Pile check - found during: conversation" "$OUT"
+run_close "$F" --status=fixed
+run_list --summary
+assert_eq "open after" "Bugs: 0 open" "$OUT"
+run_list --status=fixed
+assert_eq "listed as fixed" "1" "$(echo "$OUT" | grep -c '^STATUS=fixed$')"
+
+begin_test "dashboard: one open and one closed bug become exactly two bug nodes"
+fresh_root
+B="$ROOT/.craft/bugs"
+file_bug "Open one"
+file_bug "Closed one"; F2="$OUT"
+run_close "$F2" --status=fixed
+printf -- '---
+type: bug
+status: open
+---
+
+Template
+' > "$B/_TEMPLATE.md"
+printf '# Bugs\n\nPrototype readme.\n' > "$B/README.md"
+bash "$PLUGIN_ROOT/scripts/dashboard/dashboard-run.sh" --root "$ROOT" >/dev/null 2>&1
+GRAPH="$ROOT/.craft/graph/graph.js"
+assert_eq "graph written" "yes" "$([ -f "$GRAPH" ] && echo yes || echo no)"
+RESULT=$(python3 - "$GRAPH" <<'PY'
+import json, re, sys
+text = open(sys.argv[1]).read()
+data = json.loads(text[text.index("{"):text.rindex("}") + 1])
+nodes = [n for n in data["nodes"] if n["type"] == "bug"]
+print(len(nodes), sorted((n["status"], bool(n["found_during"])) for n in nodes))
+PY
+)
+assert_eq "two bug nodes" "2 [('fixed', True), ('open', True)]" "$RESULT"
+
+finish_tests test-bugs-scripts

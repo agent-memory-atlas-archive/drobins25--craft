@@ -37,7 +37,7 @@ plugins/craft/
 │   ├── ux-analyzer.md         ← Nielsen heuristics, accessibility
 │   ├── verifier.md            ← Adversarial claim checker (primary sources only)
 │   └── walkthrough-analyzer.md ← First-time user simulation (chrome-devtools MCP)
-├── commands/                  ← Slash command definitions (34 commands)
+├── commands/                  ← Slash command definitions (35 commands)
 │   ├── craft.md               ← Main entry point
 │   ├── craft-ask.md           ← Consult a workshop agent (intelligent routing)
 │   ├── craft-become.md        ← Agent crystallization (4-phase: research→checkpoint→crystallize→save)
@@ -48,6 +48,7 @@ plugins/craft/
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done
+│   ├── craft-bugs.md          ← /craft:bugs - file a bug without fixing it; opens with the open pile via shell preprocessing (the one command with allowed-tools), reads commands/references/bugs-record.md
 │   ├── craft-riff.md          ← Riff: the game - two-player idea passing in the main loop; bare invocation seeds from the oldest open notebook idea
 │   ├── craft-planning.md
 │   ├── craft-status.md
@@ -348,6 +349,10 @@ project-root/
 │   │   │       └── YYYY-MM-DD-slug.md
 │   │   └── notes/             ← Durable project facts; no lifecycle, recalled by facet
 │   │       └── YYYY-MM-DD-slug.md
+│   ├── bugs/                  ← Open bug records (created by /craft:bugs)
+│   │   ├── YYYY-MM-DD-slug.md
+│   │   └── closed/            ← Fixed or won't-fix bugs
+│   │       └── YYYY-MM-DD-slug.md
 │   ├── design/                ← Design system (enforced)
 │   │   ├── tokens.yaml        ← Design tokens
 │   │   ├── components.md      ← Component patterns
@@ -453,6 +458,14 @@ The notebook (`/craft:notebook`, `.craft/notebook/`) is a capture surface for id
 - **Deferral markers** in conversation ("later", "side note", "don't forget", "for next time", etc.) trigger an inline mention of `/craft:notebook` as a closing line. On accept the orchestrator captures silently with session context. No subcommands.
 
 The lifecycle deliberately keeps every state fast: capture is one line, graduate is one prompt (for a todo, that one prompt also closes it), done is one AUQ, and a note is captured silently on an accepted inline offer. Power-user subcommand syntax is explicitly rejected in favor of conversational verbs. Claude offers notes proactively only above a high durability bar (no built-in/vague expiry), mirroring the high-bar-for-Claude / low-bar-for-user discipline of the deferral-marker offer.
+
+## Bug Records
+
+`/craft:bugs` files a bug without fixing it, for a person mid-conversation or an agent mid-run. A bug found during a long test pass cannot be fixed on the spot because the run's own state depends on the code staying still, so the record has to hold enough to reproduce the bug from scratch. One file per bug lives in `.craft/bugs/` as `YYYY-MM-DD-slug.md`; the first line names the symptom in the user's terms, never a suspected cause, and the slug follows it. Seven fields are required at filing (symptom line, `found_during`, Expected, Actual, Consequences, Blocks my next step, Reproduce) and `bugs-capture.sh` refuses a record missing any of them. There is no severity field; the Consequences section is what a reader ranks the pile by.
+
+There are two rooms. The open folder holds what is still broken, and closing a bug (`bugs-close.sh`, after one confirmation) moves it to `closed/` with a stamped close time and a Log line, so "what is still open" never costs a read of every record that ever existed. Status is `fixed` or `wont-fix`; the verdict (`bug`, `unspecified`, `spec-gap`, `not-reproducible`) records whether it was ever a bug and stays blank until triaged. The command opens with the open pile through shell preprocessing (`bugs-list.sh --summary`), `session-start.sh` injects the same `Bugs: N open` header every session, and the dashboard reads both rooms as a `bug` type.
+
+Three trigger tiers decide how the command is reached, mirroring the notebook. Naming it ("file a bug", "log a bug", "bug ticket") is the invocation: it runs with what the session has, no offer and no question. A deferral word plus a defect ("don't let me forget, the save button is broken"), or a bare defect named while a story or chunk is in progress, earns one ignorable inline offer naming `/craft:bugs`, because dropping active work to chase a side sighting is what the feature exists to prevent; nothing is filed until the user says yes. A bare defect in an idle session routes to `/craft:adhoc` as before. Nothing guesses from vocabulary beyond those three signals.
 
 ---
 

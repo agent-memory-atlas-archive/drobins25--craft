@@ -318,6 +318,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:dashboard` | Opens the project graph page in your browser - cycles, stories, and every record, all connected |
 | `/craft:notebook` | Low-ceremony capture for ideas, todos, and notes (durable project facts). Graduate / mark done conversationally - no subcommands needed for lifecycle. |
 | `/craft:decisions` | The Shelf - what's waiting on you, what's ruled and ready, what a story is building, and what's done. Rule on a card, reopen or retire one, or move one to another topic. |
+| `/craft:bugs` | File a bug without fixing it - one door for a person mid-conversation or an agent mid-run. Opens with the open pile; closing a bug is a word and one confirmation. |
 | `/craft:riff` | Riff on an idea together - a two-player conversation in small beats, one concept at a time, until it's ready to build. Bare invocation opens from the oldest open notebook idea. |
 | `/craft:story-new` | Create story (lands in backlog) |
 | `/craft:story-implement` | Implement a story (interactive) |
@@ -616,6 +617,8 @@ After initialization, your project will have:
 ├── checkpoints/          # Chunk rollback points
 ├── fixes/                # Adhoc fix records (created by /craft:adhoc, bug path)
 ├── tweaks/               # Tweak records (created by /craft:adhoc, open until accepted)
+├── bugs/                 # Open bug records (created by /craft:bugs)
+│   └── closed/           # Fixed or won't-fix bugs
 ├── analysis/             # Persistent analysis findings
 │   └── pending/          # Findings queues (survive sessions)
 ├── inspiration/          # Reference library

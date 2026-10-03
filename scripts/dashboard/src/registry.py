@@ -12,6 +12,7 @@ from . import body as body_mod
 from . import frontmatter
 from . import identity
 from . import parse_cycle
+from . import parse_bug
 from . import parse_dial
 from . import parse_fix
 from . import parse_mockup
@@ -32,6 +33,8 @@ _RULES = [
     ("tweak", "tweaks/*.md"),
     ("mockup", "mockups/*/record.md"),
     ("dial", "dials/*.md"),
+    ("bug", "bugs/*-*-*-*.md"),
+    ("bug", "bugs/closed/*-*-*-*.md"),
     ("notebook", "notebook/ideas/*.md"),
     ("notebook", "notebook/todos/*.md"),
     ("notebook", "notebook/todos/done/*.md"),
@@ -61,6 +64,7 @@ _PARSER_FUNCS = {
     "riff": parse_riff.parse,
     "mockup": parse_mockup.parse,
     "dial": parse_dial.parse,
+    "bug": parse_bug.parse,
 }
 
 # Keyed by the definition's record types, not a second hand-kept literal -
