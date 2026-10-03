@@ -128,9 +128,21 @@ TAGS_LIST=""
 DRY_RUN=""
 STDIN_MODE=""
 
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons - so a name holding a comma, semicolon,
+# square bracket or newline would split into two names or break the list.
+require_one_name() {
+  case "$2" in
+    *,*|*\;*|*\[*|*\]*|*$'\n'*)
+      echo "Error: $1 '$2' holds a comma, semicolon, square bracket or newline - a $1 is one name" >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tag=*)          TAGS_LIST="${TAGS_LIST}${1#*=}"$'\n'; shift ;;
+    --tag=*)          require_one_name tag "${1#*=}"; TAGS_LIST="${TAGS_LIST}${1#*=}"$'\n'; shift ;;
     --context=*)      CONTEXT="${1#*=}"; shift ;;
     --options=*)      OPTIONS="${1#*=}"; shift ;;
     --decision=*)     DECISION="${1#*=}"; shift ;;

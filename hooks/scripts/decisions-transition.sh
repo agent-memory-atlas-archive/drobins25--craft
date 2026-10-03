@@ -118,13 +118,25 @@ STDIN_FLAG=""
 SOURCE="session"
 STORY=""
 TAG=""
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons - so a name holding a comma, semicolon,
+# square bracket or newline would split into two names or break the list.
+require_one_name() {
+  case "$2" in
+    *,*|*\;*|*\[*|*\]*|*$'\n'*)
+      echo "Error: $1 '$2' holds a comma, semicolon, square bracket or newline - a $1 is one name" >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --quote=*)  QUOTE="${1#*=}"; QUOTE_FLAG="1"; shift ;;
     --stdin)    STDIN_FLAG="1"; shift ;;
     --source=*) SOURCE="${1#*=}"; shift ;;
-    --story=*)  STORY="${1#*=}"; shift ;;
-    --tag=*)    TAG="${1#*=}"; shift ;;
+    --story=*)  require_one_name story "${1#*=}"; STORY="${1#*=}"; shift ;;
+    --tag=*)    require_one_name tag "${1#*=}"; TAG="${1#*=}"; shift ;;
     --*)
       echo "Error: unknown flag '$1'" >&2
       exit 1

@@ -1747,6 +1747,49 @@ echo "$FLIP_STDERR" | grep -q "^Warning: decision record '2026-08-01-no-tags-fli
 [ "$FLIP_RC" -eq 1 ] && pass "story completion exits 1 when a record could not be marked" || fail "story completion exits 1 when a record could not be marked" "1" "$FLIP_RC"
 rm -rf "$ROOT"
 
+echo "=== a tag or story name is one list item ==="
+echo ""
+# tags: and stories: are bracketed, comma-separated lists, and the list
+# script joins them with semicolons, so a name holding any of those - or a
+# newline - would split into two names or break the list.
+
+echo "-- Test: capture refuses a tag with a comma, semicolon, bracket or newline, and writes nothing --"
+for bad in "home, page" "home;page" "home]" "[home" "$(printf 'home\npage')"; do
+  fresh_root
+  mkdir -p "$ROOT/.craft/decisions"
+  set +e
+  OUT=$(bash "$CAPTURE" "Bad tag" --tag="$bad" --context=c --options=o --decision=d --consequences=k 2>"$ROOT/t.err")
+  RC=$?
+  set -e
+  LEFT=$(find "$ROOT/.craft" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+  [ "$RC" -ne 0 ] && [ "$LEFT" = "0" ] && grep -q "is one name" "$ROOT/t.err" && pass "capture refuses tag $(printf '%q' "$bad")" || fail "capture refuses tag $(printf '%q' "$bad")" "non-zero, no record, 'is one name'" "rc=$RC files=$LEFT stderr=$(cat "$ROOT/t.err")"
+  rm -rf "$ROOT"
+done
+
+echo "-- Test: retag refuses a target tag with a comma and leaves the record unchanged --"
+fresh_root
+write_record "approved" "bad-retag" "2026-08-02" "Bad retag" "accepted" "tag-a"
+F="$ROOT/.craft/decisions/approved/2026-08-02-bad-retag.md"
+B=$(cat "$F")
+set +e
+bash "$TRANSITION" 2026-08-02-bad-retag retag --tag="a, b" >/dev/null 2>"$ROOT/r.err"
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && grep -q "is one name" "$ROOT/r.err" && pass "retag refuses a comma tag, record unchanged" || fail "retag refuses a comma tag, record unchanged" "non-zero, unchanged, 'is one name'" "rc=$RC stderr=$(cat "$ROOT/r.err") file=$(grep '^tags:' "$F")"
+rm -rf "$ROOT"
+
+echo "-- Test: craft refuses a story name with a bracket and leaves the record unchanged --"
+fresh_root
+write_record "approved" "bad-story" "2026-08-03" "Bad story" "accepted" "tag-a"
+F="$ROOT/.craft/decisions/approved/2026-08-03-bad-story.md"
+B=$(cat "$F")
+set +e
+bash "$TRANSITION" 2026-08-03-bad-story craft --story="story-x]" >/dev/null 2>"$ROOT/s.err"
+RC=$?
+set -e
+[ "$RC" -ne 0 ] && [ "$(cat "$F")" = "$B" ] && grep -q "is one name" "$ROOT/s.err" && pass "craft refuses a bracket story name, record unchanged" || fail "craft refuses a bracket story name, record unchanged" "non-zero, unchanged, 'is one name'" "rc=$RC stderr=$(cat "$ROOT/s.err") file=$(grep -E '^(disposition|stories):' "$F")"
+rm -rf "$ROOT"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"
