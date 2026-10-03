@@ -1,7 +1,7 @@
 {
   "name": "craft",
   "displayName": "craft",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.",
   "author": {
     "name": "Darin Drobinski",
