@@ -244,15 +244,15 @@ Or turn on auto-update once and never think about it again:
 
 From then on, Claude Code checks for new versions shortly after each session starts and prompts `/reload-plugins` when one lands.
 
-### One setting worth flipping
+### One setting worth knowing about
 
-Craft brings subagents back for another round all the time - the alchemist after every mockup reaction, a worker when the orchestrator has a follow-up. Claude Code caches a subagent's context for 5 minutes by default, so every "welcome back" after that costs a full re-send. Give them an hour:
+In `/craft:mockup`, craft brings the alchemist back after each of your reactions. Claude Code keeps a subagent's context cached for 5 minutes, so if you take longer than that to react, the alchemist's whole context is sent again. If you often sit with a mockup that long, you can stretch the cache to an hour in `~/.claude/settings.json` (Claude Code 2.1.242+):
 
 ```json
 { "subagentPromptCacheTtl": "1h" }
 ```
 
-Add that to `~/.claude/settings.json` (Claude Code 2.1.242+). Round trips become cheap reads instead of expensive rewrites, and your usage window stops draining while you think.
+It's a tradeoff, not a free win. An hour-long cache costs more to write than a 5-minute one, so if you run several sessions in parallel, the default is usually cheaper.
 
 ## Getting Started
 
