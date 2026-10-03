@@ -46,8 +46,8 @@
 # stories: field. Otherwise DISPOSITION is claimed - with STORIES set to
 # the claiming story names - when any non-complete story file's decisions:
 # list carries this record's SLUG, and open (STORIES empty) otherwise. A
-# disk value of "claimed" is never trusted or emitted - claimed is derived,
-# never written (2026-09-05-claimed-is-read-not-written).
+# disk value of "claimed" is never trusted or emitted - claimed is derived
+# from the story files every time, never written to a record.
 #
 # Frontmatter parsing is fence-scoped: every field lookup searches only the
 # text between the opening and closing "---" markers, because record bodies

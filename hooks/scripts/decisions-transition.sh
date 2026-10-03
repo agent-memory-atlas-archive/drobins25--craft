@@ -39,8 +39,8 @@
 #   re-written, CHANGED=0, exit 0.
 #
 #   disposition: is only ever written with the value "crafted" - this script
-#   has no code path that writes "open" or "claimed"
-#   (2026-09-05-claimed-is-read-not-written).
+#   has no code path that writes "open" or "claimed". Open is the field left
+#   out, and claimed is always derived from the story files.
 #
 #   Every move writes the finished record to its destination path first,
 #   then removes the source last, so a crash between the two can never leave

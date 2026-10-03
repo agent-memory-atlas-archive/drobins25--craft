@@ -776,8 +776,7 @@ def claimed_by_rows_data(claimed_by):
     # Left-anchored fixed columns survive the rail: the story column is
     # padded to the longest claimant's name on THIS card, so every
     # status starts in the same column even though nothing right-aligns
-    # to anything - there is no right edge to align to any more. See
-    # 2026-09-09-the-reopen-card-shows-its-claimants-before-the.
+    # to anything - there is no right edge to align to any more.
     lines = [kv("DIV", "CLAIMED BY STORIES")]
     max_len = max(len(story) for story, _ in claimed_by)
     for story, status in claimed_by:
