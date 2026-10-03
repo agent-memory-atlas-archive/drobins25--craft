@@ -102,8 +102,6 @@ multiSelect: false
 options:
   - label: "Approve"
     description: "Write plan to story file, mark ready"
-  - label: "Explore creatively"
-    description: "Invoke creative-spark to riff on this story's approach"
   - label: "Adjust"
     description: "Provide feedback, re-plan this story interactively"
   - label: "Reject"
@@ -150,7 +148,7 @@ header: "Next"
 multiSelect: false
 options:
   - label: "Start implementing"
-    description: "Begin with the first ready story"
+    description: "Begin with the first ready story (hands back to cycle-start when it is waiting)"
   - label: "Re-plan adjusted stories"
     description: "Interactive planning for stories that need refinement"
   - label: "Done for now"

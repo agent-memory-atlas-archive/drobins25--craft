@@ -167,10 +167,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/alignment-check.md` and follow t
 ## Phase 0.46: Creative Spark Prerequisite Check
 
 **Skip if:** Autonomous mode (invoked from `craft:story-implement-auto`).
-**Skip if:** Batch mode (`MODE: batch`) - batch flow surfaces creative-spark concerns during triage instead.
+**Skip if:** Batch mode (`MODE: batch`) - batch planning has no visual-riff step.
+**Skip if:** `type` is anything other than `ui`, or missing - visual riffing does not apply; continue to Phase 0.5 with no prompt.
 **Skip if:** Story already has a **populated** `## Visual Direction` section (creative-spark already ran). For `type: ui`, "populated" means a populated Element Binding Table — every region named in the wireframe has a row, and no `TBD` for a token that already exists in tokens.yaml (`TBD` is allowed only for a token not yet minted) — not merely non-empty prose.
 
-Read the story file's frontmatter `type` field. Smart-default the prompt based on type:
+Read the story file's frontmatter `type` field.
 
 **For `type: ui`** — Recommend running creative-spark (UI stories benefit from visual riffing before chunks lock the implementation):
 
@@ -181,22 +182,10 @@ options:
   - label: "Yes, riff with creative-spark (Recommended)"
     description: "Generates 2-3 visual directions with vibe/layout/motion. Grounds chunk planning in a chosen direction."
   - label: "Skip - I know what I want"
-    description: "Plan straight to chunks. Creative-spark is still reachable later at chunk-approval time."
+    description: "Plan straight to chunks."
 ```
 
-**For `type: technical`, `type: content`, or any non-UI type (or missing type)** — Default to Skip:
-
-```
-question: "Want to riff visual options before planning chunks?"
-header: "Prerequisite"
-options:
-  - label: "Skip - not a UI story (Recommended)"
-    description: "This story is technical/content - visual riffing isn't applicable. Plan straight to chunks."
-  - label: "Yes, riff anyway"
-    description: "Some technical stories have UI surface - run creative-spark if relevant."
-```
-
-**If "Yes" (either path):**
+**If "Yes":**
 
 ⛔ **DO NOT invoke creative-spark via the Skill tool (chain-break risk).** Instead, Read and execute the inline reference:
 
@@ -495,12 +484,8 @@ question: "Does this implementation plan look complete?"
 options:
   - label: "Yes, mark ready"
     description: "Plan is solid, approve the story"
-  - label: "Explore creatively"
-    description: "Invoke creative-spark to riff on the approach"
-  - label: "More detail on a chunk"
-    description: "A chunk needs more specifics"
-  - label: "Adjust the approach"
-    description: "I want to change something"
+  - label: "Mark ready and start implementing now"
+    description: "Plan is solid, approve the story and move straight on to implementing it"
 ```
 
 ### S-5: Finalize Story
@@ -515,41 +500,27 @@ Triage answers already landed in the story file at answer time (S-3's answer-tim
 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-story-status.sh [story-file] ready
 ```
 
-**If "Explore creatively":**
+**If "Mark ready and start implementing now":**
 
-⛔ **DO NOT generate creative options directly. You MUST invoke the skill.** Write a breadcrumb before invoking to handle the skill-to-skill turn boundary:
+First do exactly what "Yes, mark ready" does: reconcile, then flip the status.
 
 ```bash
-cat > "${CRAFT_PROJECT_ROOT:-.}/.craft/.continuation" << CRUMB
-ACTION: Re-present plan for approval after creative-spark completes
-SKILL: craft:plan-chunks
-ARGS: [story-file-path] DIRECTION_CONFIRMED: true
-WRITTEN_BY: plan-chunks
-TIMESTAMP: $(date -u +%Y-%m-%dT%H:%M:%S)
-CRUMB
+${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-story-status.sh [story-file] ready
 ```
 
-Then invoke:
+**Hand-back rule.** Decide from the conversation you are already in, never from the args: the same bare story reference reaches plan-chunks from a direct start and from a waiting flow. If story-implement or cycle-start sits anywhere up the current call chain, even behind an intermediate such as story-new's Step 11, then a calling flow is waiting to resume; with neither in the chain, nothing is waiting. Those flows are story-implement (planning a story with no chunks, or planning the next unplanned story mid-cycle) and cycle-start (planning before activation). When one is waiting: tell the user in one line that the story is ready and control is returning to that flow, then return. Do NOT invoke story-implement - the waiting flow continues from its own resume step and carries the user's choice forward.
+
+Otherwise this is a direct start (`/craft:plan-chunks`, the hub, story-new's Step 11 when nothing above it is waiting, which only places the story afterward and never implements):
+
+⛔ **DO NOT implement directly. You MUST invoke the skill:**
+
 ```
 Skill tool:
-  skill: "craft:creative-spark"
-  args: "[story name] — Exploring implementation approach creatively.
-  STORY: [story-name]"
+  skill: "craft:craft-story-implement"
+  args: "[story-file-path]"
 ```
 
-After creative-spark completes, re-present the plan for approval.
-
-**If "More detail on a chunk":**
-
-Read the story file, discuss the specific chunk with the user, then make targeted edits to that chunk section only. Re-present for approval.
-
-**If "Adjust the approach":**
-
-Read the story file, discuss changes with the user, then make targeted edits based on their feedback. Re-present for approval.
-
-**If "This is too big":**
-
-Discuss splitting with the user. If splitting, create new story files and redistribute chunks across them.
+This hands off to the implementation workflow which will invoke the `implementer` agent for each chunk. S-6 does not run for this option.
 
 ### S-6: Offer Implementation
 
@@ -568,6 +539,8 @@ options:
 ```
 
 **If "Yes, implement now":**
+
+Apply the hand-back rule from S-5's "Mark ready and start implementing now" handler: when a calling flow is waiting to resume, say in one line that control is returning to it and do NOT invoke story-implement. Otherwise:
 
 ⛔ **DO NOT implement directly. You MUST invoke the skill:**
 
@@ -885,7 +858,7 @@ The batch triage flow (BT-1 through BT-7) reviews all plans with the user after 
 | **BT-2** | Needs Review (ask-tier product-stake, or low confidence) | Individual AskUserQuestion per item, grouped by story. |
 | **BT-3** | Worth Noting (mention-tier product-stake, or medium confidence) | Presented visibly per story; questions only where the user reacts. |
 | **BT-4** | Cohesion/Coordination | Surface file overlaps, component duplication, decision conflicts. AskUserQuestion per issue. |
-| **BT-5** | Per-Story Approval | Read story file fresh. Present ONE story at a time. Never hold two plans in context. Each gets Approve/Explore/Adjust/Reject. |
+| **BT-5** | Per-Story Approval | Read story file fresh. Present ONE story at a time. Never hold two plans in context. Each gets Approve/Adjust/Reject. |
 | **BT-6** | Finalize | Reconcile - triage adjustments already landed at answer time; verify consistency, update status to ready. Queue adjusted stories for re-planning. |
 | **BT-7** | Summary | Report counts, offer implementation or re-planning. |
 
@@ -893,9 +866,8 @@ The batch triage flow (BT-1 through BT-7) reviews all plans with the user after 
 
 - **BT-5: Read story files fresh** - use the Read tool, not memory or concerns summaries
 - **BT-5: Sequential only** - present one story, wait for response, then read the next
-- **BT-5: "Explore creatively"** invokes `craft:creative-spark` via Skill tool (never generate options inline). Write a breadcrumb before invoking to handle the skill-to-skill turn boundary.
 - **BT-6: "Approve"** runs `update-story-status.sh [story-file] ready`
-- **BT-7: "Start implementing"** invokes `craft:craft-story-implement` via Skill tool (never implement directly)
+- **BT-7: "Start implementing"** applies the hand-back rule from S-5: when cycle-start is waiting to resume, return to it with the first ready story; otherwise invoke `craft:craft-story-implement` via Skill tool (never implement directly)
 
 ---
 

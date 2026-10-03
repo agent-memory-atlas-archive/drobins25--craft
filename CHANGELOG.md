@@ -2,6 +2,13 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.7.2 - 2026-10-03
+
+- Changed plan approval to two forward choices: mark the story ready, or mark it ready and start implementing right away. The options that edited a finished plan after its checks had run, or reopened creative riffing on a technical story, are gone.
+- Changed what happens when you plan a story from cycle start and choose to implement it right away: craft activates the cycle and starts that story, with no "ready to start?" prompts and no switch to a different story. The same holds after batch planning and when implementation activates a cycle for a story you already picked.
+- Removed the visual-riff question from technical and content stories. Only a UI story is asked whether to riff on the look before planning.
+- Removed creative riffing from batch approval after the plans are drawn. Approve, Adjust, and Reject stay.
+
 ## 2.7.1 - 2026-10-03
 
 - Fixed decision answers typed over several lines. The whole answer now stays in the record's quote, so the archive shows every line instead of only the first.
