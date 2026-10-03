@@ -2,6 +2,19 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.7.0 - 2026-10-03
+
+Craft now keeps its decisions. 2.6.1 let a story carry the rulings it was built from; this release adds the desk where those rulings live. Rule something once and it stays ruled - visible, reusable, and marked done when the story that builds it ships.
+
+- Added `/craft:decisions`, the decision desk. The Shelf shows every decision grouped by topic: what's waiting on you, what's ruled and ready, what a story is building, and what's done. Name one to see its card, then approve, keep it pending, or decline it with one letter - or just say what to change.
+- Added reopening and retiring. Reopening ruled law shows exactly what would change before anything is written. A decision a shipped story already built is frozen; change your mind and craft drafts a new decision instead of rewriting history.
+- Added moving decisions between topics in plain words, with the moved record shown where it landed.
+- Added the finish line: when a story ships, every decision it carries is marked done on the Shelf.
+- Changed stories to carry only the decisions you name for them. Claude never attaches one it judged relevant.
+- Changed the desk to close once you finish a card, so a "go with that" later in the same session stays a normal conversation unless you call it a decision.
+- Changed small fixes that add a test: craft now runs the new test against the broken version first and records both runs, so a fix is proven, not just claimed.
+- Fixed tests that passed while your change was unsaved and then failed forever once it was committed. Craft now checks a file's actual content instead.
+
 ## 2.6.1 - 2026-09-04
 
 Craft is learning to keep its decisions. This release lays the first plank: a story can now carry the approved decisions it was built from, and craft treats those decisions as the frame the story fills in. Rule something once, and every story that grows out of that ruling knows about it before planning begins. The rest of the feature - filing decisions, listing them, watching them become real as stories ship - lands over the coming releases.
