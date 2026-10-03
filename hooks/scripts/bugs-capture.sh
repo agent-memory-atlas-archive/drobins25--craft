@@ -27,12 +27,14 @@ fi
 
 # Cold fallback: no initialized project resolved. Anchor to the git toplevel
 # (never a subdirectory), else PWD, so filing works before /craft:init. A
-# non-git landing spot is announced - an orphaned bug must be loud.
+# non-git landing spot is announced - an orphaned bug must be loud - but only
+# after the record exists, so a refused filing never claims a file.
+LOCAL_FILING=0
 if [ -z "$ROOT" ]; then
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ -z "$ROOT" ]; then
     ROOT="$PWD"
-    echo "not a git repo - filing to $ROOT/.craft/bugs/ (local to this directory)" >&2
+    LOCAL_FILING=1
   fi
 fi
 
@@ -260,6 +262,10 @@ until ( set -C; cat "$WORK_DIR/record.md" > "$TARGET_FILE" ) 2>/dev/null; do
   TARGET_FILE="$TARGET_DIR/${DATE}-${SLUG}-${COUNTER}.md"
   COUNTER=$((COUNTER + 1))
 done
+
+if [ "$LOCAL_FILING" -eq 1 ]; then
+  echo "not a git repo - filed to $TARGET_FILE (local to this directory)" >&2
+fi
 
 # Refresh the dashboard graph data. Silenced so callers still read this
 # script's own final line; guarded so a missing wrapper never fails a flow.

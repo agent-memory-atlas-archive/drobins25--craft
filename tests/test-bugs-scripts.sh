@@ -389,6 +389,22 @@ GITTOP=$(cd "$GITROOT" && pwd -P)
 assert_eq "file lands at the toplevel" "yes" "$(ls "$GITROOT"/.craft/bugs/"$TODAY"-cold-filing.md >/dev/null 2>&1 && echo yes || echo no)"
 assert_eq "none in the subdirectory" "no" "$([ -e "$GITROOT/sub/dir/.craft" ] && echo yes || echo no)"
 
+begin_test "outside git, the local-filing notice appears only when a record is written"
+NOGITCAP=$(mktemp -d); TMP_ROOTS+=("$NOGITCAP")
+errf=$(mktemp)
+(cd "$NOGITCAP" && env -u CRAFT_PROJECT_ROOT bash -c 'printf "%s\n" "only a symptom" | bash "$1" --found-during=x --stdin' _ "$CAPTURE" 2>"$errf") && RC=0 || RC=$?
+ERR=$(cat "$errf")
+assert_eq "refused rc" "2" "$RC"
+assert_not_contains "a refusal announces no filing" "not a git repo" "$ERR"
+assert_eq "nothing written" "no" "$([ -e "$NOGITCAP/.craft" ] && echo yes || echo no)"
+OUT=$(cd "$NOGITCAP" && env -u CRAFT_PROJECT_ROOT bash -c 'printf "%s\n" "$1" | bash "$2" --found-during=x --stdin' _ "$(body_with "Local filing")" "$CAPTURE" 2>"$errf") && RC=0 || RC=$?
+ERR=$(cat "$errf")
+rm -f "$errf"
+assert_eq "written rc" "0" "$RC"
+FILED="$(printf '%s\n' "$OUT" | tail -1)"
+assert_eq "record exists" "yes" "$([ -f "$FILED" ] && echo yes || echo no)"
+assert_contains "the notice names the written file" "not a git repo - filed to $FILED" "$ERR"
+
 # ── close ──
 
 begin_test "close: fenced edit leaves a body status line byte-identical"
