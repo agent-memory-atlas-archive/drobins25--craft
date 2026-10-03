@@ -444,6 +444,8 @@ current_chunk: 0
 ---
 ```
 
+The `decisions:` line holds only the approved decision records the user named for this story in the conversation, each as its full dated slug (the record's file name without `.md`): never add a record by tag, by topic, or by judged relevance, and never scan the store for candidates - any record the user did not name is NOT LAW for this story - it is history; write `[]` when the user named none.
+
 `source_concept` is the ABSOLUTE path, consistent with Reference Materials. Not relative.
 
 **`source_concept_last_updated` snapshot:** Read the planning concept file's frontmatter `last_updated:` field and copy that value verbatim into the story's frontmatter. This captures "the version of the planning the story was created against" - a downstream consume-time check can later compare this snapshot to the planning concept's current `last_updated` and flag content staleness if they diverge. If the planning concept file has no `last_updated:` field, omit `source_concept_last_updated:` from the story frontmatter entirely (do not substitute another date).

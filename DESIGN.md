@@ -37,13 +37,14 @@ plugins/craft/
 │   ├── ux-analyzer.md         ← Nielsen heuristics, accessibility
 │   ├── verifier.md            ← Adversarial claim checker (primary sources only)
 │   └── walkthrough-analyzer.md ← First-time user simulation (chrome-devtools MCP)
-├── commands/                  ← Slash command definitions (33 commands)
+├── commands/                  ← Slash command definitions (34 commands)
 │   ├── craft.md               ← Main entry point
 │   ├── craft-ask.md           ← Consult a workshop agent (intelligent routing)
 │   ├── craft-become.md        ← Agent crystallization (4-phase: research→checkpoint→crystallize→save)
 │   ├── craft-docs.md          ← Documentation generation (two-pass: brief then generate)
 │   ├── craft-init.md
 │   ├── craft-dashboard.md     ← Opens the project graph page - rebuilds first, offers a template pull when stale, then opens (distinct from craft-status.md's terminal snapshot)
+│   ├── craft-decisions.md     ← /craft:decisions - the Shelf: renders decisions live from decisions-view.sh, writes through decisions-capture.sh and decisions-transition.sh only
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done

@@ -244,6 +244,16 @@ Or turn on auto-update once and never think about it again:
 
 From then on, Claude Code checks for new versions shortly after each session starts and prompts `/reload-plugins` when one lands.
 
+### One setting worth knowing about
+
+In `/craft:mockup`, craft brings the alchemist back after each of your reactions. Claude Code keeps a subagent's context cached for 5 minutes, so if you take longer than that to react, the alchemist's whole context is sent again. If you often sit with a mockup that long, you can stretch the cache to an hour in `~/.claude/settings.json` (Claude Code 2.1.242+):
+
+```json
+{ "subagentPromptCacheTtl": "1h" }
+```
+
+It's a tradeoff, not a free win. An hour-long cache costs more to write than a 5-minute one, so if you rarely pause for more than five minutes, the default is usually cheaper.
+
 ## Getting Started
 
 ### New project or existing?
@@ -307,6 +317,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:status` | Terminal snapshot of progress - cycles, stories, backlog |
 | `/craft:dashboard` | Opens the project graph page in your browser - cycles, stories, and every record, all connected |
 | `/craft:notebook` | Low-ceremony capture for ideas, todos, and notes (durable project facts). Graduate / mark done conversationally - no subcommands needed for lifecycle. |
+| `/craft:decisions` | The Shelf - what's waiting on you, what's ruled and ready, what a story is building, and what's done. Rule on a card, reopen or retire one, or move one to another topic. |
 | `/craft:riff` | Riff on an idea together - a two-player conversation in small beats, one concept at a time, until it's ready to build. Bare invocation opens from the oldest open notebook idea. |
 | `/craft:story-new` | Create story (lands in backlog) |
 | `/craft:story-implement` | Implement a story (interactive) |
@@ -429,6 +440,53 @@ Claude offers a note proactively only for solidly durable facts with no built-in
 ### Forward: backlinks (Story 23)
 
 A future story adds `[[wikilink]]` syntax and a craft-wide graph helper that resolves backlinks across `.craft/`. The notebook is the prove-it surface for that pattern. Until then, tags handle retrieval.
+
+## Decisions
+
+A decision is the one thing you're already sure of about a feature before it has a cycle, a story, or even a name. Craft keeps those rulings in one place, so nothing gets decided twice.
+
+```
+/craft:decisions              # bare → the Shelf
+/craft:decisions homescreen   # one topic's decisions
+```
+
+### The Shelf
+
+Every decision, grouped by topic, each marked by where it stands:
+
+- `?` **pending** - waiting on you.
+- `○` **unclaimed** - ruled, ready for a story to pick up.
+- `●` **claimed** - a story is building it.
+- `✓` **done** - a story shipped it.
+
+Name a decision and you get its card: the question, the options, and what it would become. Answer with one letter - approve, keep pending, or decline - or just say what to change and the card is redrawn. Declined decisions go to the archive with your words and are never proposed again.
+
+Say "save this as a decision" mid-conversation and craft draws a fresh card. Once that card is ruled or put away, the desk closes. A "go with that" later on is just conversation.
+
+### How decisions reach a story
+
+A story carries only the decisions you name for it. Say "put the blue hero decision on this story" and it's written in. Claude never attaches one because it looked relevant. A decision you didn't name is history for that story, not law.
+
+When the story is planned, the planner reads its decisions first and treats them as the frame the story fills in. The alignment check gets them too, so it won't ask you something a ruling already answered.
+
+### Changing your mind
+
+Name a ruled decision and say what changed. Craft shows exactly what would change before it writes anything. You can also retire a decision to the archive, or move decisions to another topic in plain words ("move the guides ones to wright").
+
+Once a shipped story has built a decision, it's frozen. The record is the history of why the code looks the way it does. Change your mind and craft drafts a new decision with your changes instead of rewriting the old one.
+
+### The finish line
+
+When a story ships, every decision it carries turns `✓` on the Shelf. The Shelf stays a live picture of what you've ruled and what's real.
+
+### What it looks like
+
+> "Save that as a decision - the homescreen hero is blue."
+> *The card is drawn. You type `a`. It's on the Shelf, ruled.*
+> "Start a homescreen story with the blue hero decision on it."
+> *The story is born knowing the hero is blue. When it ships, the decision turns ✓.*
+
+*What shipped in 2.7.0: [CHANGELOG](CHANGELOG.md#270---2026-10-03).*
 
 ## Skills
 

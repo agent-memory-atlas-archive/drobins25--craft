@@ -68,7 +68,7 @@ If the codebase has any source files: continue to Step 0.5 as normal.
 
 ### Step 0.5: Planning Context Injection
 
-Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials and decision records so the agent doesn't surface false-positive product questions for decisions already captured in planning.
+Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials, and hand decision records to the agent as paths (see 4a - they never enter the block or its token cap), so the agent doesn't surface false-positive product questions for decisions already captured in planning.
 
 **Detection:** Read the story frontmatter. If `source_concept:` is populated OR the story's `decisions:` list is non-empty, continue with the injection below. Otherwise, skip directly to Step 1 with the existing prompt unchanged.
 
@@ -102,20 +102,19 @@ Before spawning the Explore agent, check whether this story was created from a p
 
    "Skip" -> proceed without that excerpt; "Re-extract" -> exit alignment-check with instruction to re-run story-from-planning; "Provide replacement anchor" -> capture user's input, retry the Read, continue.
 
-4a. **Record extraction (decision records).** For each slug in the story's `decisions:` frontmatter list, read `## Decision` and `## Consequences` from `.craft/decisions/approved/<slug>.md` under the project root. Add each record to the Planning Context block using the existing `=== From [basename] ([anchor]) ===` format, with the slug as the basename and `Decision, Consequences` as the anchor. This step is separate from the Reference Materials anchor-aware loop in step 3 - decision records are not Reference Materials, and step 3's anchor-type list gains no entry for them. If a slug does not resolve to a file in `approved/`, note it inside the Planning Context block (e.g. "NOTE: decision record [slug] not found in approved/") and continue - this does NOT raise the stale-anchor AskUserQuestion from step 4, which applies to Reference Materials anchors only.
+4a. **Decision records (pointer, not extraction).** For each slug in the story's `decisions:` frontmatter list, add the path `.craft/decisions/approved/<slug>.md` (under the project root) to a DECISION RECORDS list in the agent prompt, followed by this sentence verbatim: "Read the Decision and Consequences of each record above before investigating. What they rule is settled - never surface it as a question. If the story or the codebase contradicts a ruling, or two rulings contradict each other, report it as a CONFLICT naming the record." Then add this sentence verbatim: "Two exceptions resolve without a question: when two records disagree, the newer record's Decision is the truth and the older is cited as superseded; and a record whose frontmatter reads `disposition: crafted` is frozen law - never propose reopening it, since a changed mind against frozen law is a new record." Records are not Reference Materials: they never enter the Planning Context block or its token cap, and step 3's anchor-type list gains no entry for them. A slug that does not resolve to a file in `approved/` is listed anyway with "(not found)" after it - the agent reports it - and this does NOT raise the stale-anchor AskUserQuestion from step 4, which applies to Reference Materials anchors only. The list holds the story's own records and no others: the orchestrator never adds records from the store by tag, by topic, or by judged relevance, and never names records the story does not carry anywhere in the prompt. Then add this sentence verbatim: "Any decision record not listed above is NOT LAW for this story - it is history. Do not read one as a constraint, and do not report one as a CONFLICT."
 
 5. Concatenate resolved excerpts into the Planning Context block.
 
 6. **Hard 2000-token cap.** If excerpts would exceed 2000 tokens, prioritize in this order and drop lowest-priority until under cap:
-   1. Approved decision records (ruled before the story existed - the frame the story fills in)
-   2. active.md dated entries (highest authority - current state)
-   3. Concept Locked Decisions sections
-   4. Sibling story precedents
-   5. Mockups (visual contracts, less critical for product-question evaluation)
+   1. active.md dated entries (highest authority - current state)
+   2. Concept Locked Decisions sections
+   3. Sibling story precedents
+   4. Mockups (visual contracts, less critical for product-question evaluation)
    
    If citations are dropped, note this in the Planning Context block so the agent knows content was elided.
 
-**Format of the Planning Context block (decision records included, same shape):**
+**Format of the Planning Context block (Reference Materials only - decision records travel as paths, see 4a):**
 
 ```
 PLANNING CONTEXT (from story Reference Materials, capped at 2000 tokens):
@@ -152,7 +151,13 @@ Agent tool:
     LIKELY FILES: [paste likely files if exist]
 
     [PLANNING-SOURCED STORIES ONLY - include the Planning Context block built in Step 0.5 here, BEFORE the Investigate instructions:]
-    [PLANNING CONTEXT block from Step 0.5]
+    [PLANNING CONTEXT block from Step 0.5 - Reference Materials only]
+
+    [STORIES CARRYING DECISION RECORDS - include the DECISION RECORDS list from Step 0.5 item 4a here, with its verbatim sentence:]
+    DECISION RECORDS:
+    [one path per line, "(not found)" appended where the slug did not resolve]
+    Read the Decision and Consequences of each record above before investigating. What they rule is settled - never surface it as a question. If the story or the codebase contradicts a ruling, or two rulings contradict each other, report it as a CONFLICT naming the record.
+    Any decision record not listed above is NOT LAW for this story - it is history. Do not read one as a constraint, and do not report one as a CONFLICT.
 
     **When evaluating whether the story specifies a product question, FIRST check the Planning Context above (if present). Decisions captured in planning are NOT product questions - do NOT surface them. If the Planning Context note says citations were dropped due to token cap, you may flag a CONCERN that some planning content wasn't injected - the user can address by re-running with narrower Reference Materials.**
 

@@ -51,6 +51,49 @@ fi
 # Aggregate knowledge-gap failures for reflect pipeline
 python3 "$SCRIPT_DIR/aggregate-failures.py" "$PROJECT_ROOT" 2>/dev/null || true
 
+# --- The flip: mark every decision record this story carries as crafted ---
+#
+# A missing/empty `decisions:` field is a byte-identical no-op: no transition
+# call, no warning, no buffered line. A failing slug never exits the loop -
+# it warns and moves on, so one bad slug can never strand the state
+# transitions (cycle/global/event) that still have to run below. The flip
+# never stages anything; it only writes into .craft/decisions.
+
+DECISIONS_FLIP_FAILED=0
+DECISIONS_FAIL_COUNT=0
+CRAFTED_LINES=""
+
+DECISIONS_NAME=$(grep "^name:" "$STORY_FILE" 2>/dev/null | head -1 | sed 's/^name: *//' | tr -d '"' | tr -d '\r')
+if [ -z "$DECISIONS_NAME" ]; then
+  DECISIONS_NAME=$(basename "$STORY_FILE" .md | sed -E 's/^[0-9]+[a-z]?-//')
+fi
+
+DECISIONS_RAW=$(grep "^decisions:" "$STORY_FILE" 2>/dev/null | head -1 | sed 's/^decisions: *//' | tr -d '\r')
+DECISIONS_RAW="${DECISIONS_RAW#\[}"
+DECISIONS_RAW="${DECISIONS_RAW%\]}"
+
+if [ -n "$DECISIONS_RAW" ]; then
+  IFS=',' read -ra DECISIONS_SLUGS <<< "$DECISIONS_RAW"
+  for decisions_slug in "${DECISIONS_SLUGS[@]}"; do
+    decisions_slug="$(echo "$decisions_slug" | sed 's/^ *//; s/ *$//')"
+    [ -z "$decisions_slug" ] && continue
+
+    if ! DECISIONS_TRANSITION_OUT=$(CRAFT_PROJECT_ROOT="${PROJECT_ROOT%/}" "$SCRIPT_DIR/decisions-transition.sh" "$decisions_slug" craft --story="$DECISIONS_NAME" 2>&1); then
+      decisions_reason=$(echo "$DECISIONS_TRANSITION_OUT" | tail -1 | sed 's/^Error: *//')
+      echo "Warning: decision record '$decisions_slug' could not be flipped to crafted - $decisions_reason - continuing" >&2
+      DECISIONS_FLIP_FAILED=1
+      DECISIONS_FAIL_COUNT=$((DECISIONS_FAIL_COUNT + 1))
+      continue
+    fi
+
+    decisions_title=$(echo "$DECISIONS_TRANSITION_OUT" | sed -n 's/^TITLE=//p')
+    decisions_changed=$(echo "$DECISIONS_TRANSITION_OUT" | sed -n 's/^CHANGED=//p')
+    if [ "$decisions_changed" = "1" ]; then
+      CRAFTED_LINES="${CRAFTED_LINES}Crafted: ${decisions_title}"$'\n'
+    fi
+  done
+fi
+
 # --- Git commit: one commit per story, staged from the validated manifest ---
 #
 # The commit is a receipt of validated work, not a working-tree snapshot.
@@ -123,6 +166,16 @@ ${CHUNK_BODY}"
           echo "Warning: skipping gitignored manifest entry: $entry" >&2
           continue
         fi
+        # An entry gone from the worktree is either a bad manifest line
+        # (abort, below) or the old name of a rename the implementer already
+        # staged with `git mv`. Git records the second case - the old path
+        # appears as the SOURCE of a staged rename - and only that case is
+        # safe to skip: the rename is already in the index and rides the
+        # commit. A path git has no record of still aborts.
+        if [ ! -e "$entry" ] && git diff --cached --name-status -M 2>/dev/null \
+             | awk -F'\t' '$1 ~ /^R/ {print $2}' | grep -qxF -- "$entry"; then
+          continue
+        fi
         if ! git add -- "$entry" 2>/dev/null; then
           echo "Error: failed to stage manifest entry '$entry' - no commit made" >&2
           COMMIT_ABORTED=1
@@ -181,10 +234,23 @@ rm -f "${PROJECT_ROOT}.craft/.chunk-state" 2>/dev/null
 # never fails a flow.
 bash "$SCRIPT_DIR/../../scripts/dashboard/dashboard-run.sh" --root "${PROJECT_ROOT:-.}" >/dev/null 2>&1 || true
 
+# The Crafted: lines are buffered from the flip above and print here, right
+# before the deferred abort exit, so they are present on every run - clean
+# or refused - because the flip's writes already happened regardless of
+# what the commit block decided.
+printf '%s' "$CRAFTED_LINES"
+
 # Deferred abort exit: state transitions above must complete even when the
-# commit was aborted, so the non-zero exit is the very last thing that happens.
-if [ "${COMMIT_ABORTED:-0}" = "1" ]; then
-  echo "Error: story state transitions completed, but the commit was aborted - see messages above" >&2
+# commit was aborted or a decision record failed to flip, so the non-zero
+# exit is the very last thing that happens. The two failure sources report
+# distinct messages so neither is ever mistaken for the other.
+if [ "${COMMIT_ABORTED:-0}" = "1" ] || [ "${DECISIONS_FLIP_FAILED:-0}" = "1" ]; then
+  if [ "${COMMIT_ABORTED:-0}" = "1" ]; then
+    echo "Error: story state transitions completed, but the commit was aborted - see messages above" >&2
+  fi
+  if [ "${DECISIONS_FLIP_FAILED:-0}" = "1" ]; then
+    echo "Error: story state transitions completed, but ${DECISIONS_FAIL_COUNT} decision record(s) could not be flipped to crafted - see messages above" >&2
+  fi
   exit 1
 fi
 

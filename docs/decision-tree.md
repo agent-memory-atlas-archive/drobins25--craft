@@ -743,6 +743,7 @@ flowchart LR
 | `/craft:research-verify` | Verify existing research findings against independent primary sources |
 | `/craft:adhoc` | Adhoc fix or tweak without story ceremony. Bugs record to `.craft/fixes/`, tweaks to `.craft/tweaks/` |
 | `/craft:notebook` | Low-ceremony capture for ideas, todos, and notes (durable project facts) before they harden into stories |
+| `/craft:decisions` | The Shelf - what waits on you, what's ruled, what's claimed, what became real. Rule on a card, or graduate a selection into a cycle |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration - 2-4 lettered candidates injected into the running app, chosen by eye against real data |
 | `/craft:riff` | Two-player thinking game in the main loop - pass an idea in small beats until it's ready to build; bare invocation opens from the oldest open notebook idea |

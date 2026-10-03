@@ -199,6 +199,8 @@ it('calls onSubmit with form data when submitted', () => {
 })
 ```
 
+**Pin content, never the repo's uncommitted diff.** When a criterion says a file is unchanged or gained one line, check the file's content - the text it must or must not contain - never `git diff HEAD` or `git status` of the project's own tree. That check passes only until the change is committed, then fails forever. A throwaway git repo that a test builds for itself is fine.
+
 ---
 
 ## Your Standards

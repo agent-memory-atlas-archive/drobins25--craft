@@ -6,6 +6,8 @@
 #   Chunk 2 - the planning agent carries it through its rewrite and reads records
 #   Chunk 3 - the S-2 row 9 belt that fails a plan citing none of its records
 #   Chunk 4 - the alignment gate, story-final claim, and the release pins
+#   Writers' rule - each story writer states, right after its frontmatter
+#                   fence, that the list holds only the records the user named
 #
 # A missing `decisions:` field always reads as `[]` - no warning, no error,
 # no rewrite. Every assertion below either pins that or pins the one writer
@@ -111,6 +113,18 @@ extract_block_text() {
 extract_block_keys() {
   local file="$1" anchor="$2"
   extract_block_text "$file" "$anchor" | grep -oE '^[a-z_]+:' | sed 's/:$//'
+}
+
+# Prints the three lines after the bare closing code fence that follows a
+# prose writer's frontmatter sample (found by the same anchor locate_fence
+# takes). The writers' rule sentence must sit in this window, outside the fence.
+writer_rule_window() {
+  local file="$1" anchor="$2"
+  local range fence_end closer
+  range=$(locate_fence "$file" "$anchor")
+  fence_end=$(echo "$range" | cut -d' ' -f2)
+  closer=$(awk -v start="$fence_end" 'NR >= start && /^```$/ { print NR; exit }' "$file")
+  sed -n "$((closer + 1)),$((closer + 3))p" "$file"
 }
 
 TEMPLATES_DIR_LOCAL="$PLUGIN_ROOT/templates"
@@ -613,33 +627,34 @@ assert_file_not_contains "old heading suffix is gone" 'Planning-Sourced Stories 
 assert_file_contains "Step 0.5 heading still present" '^### Step 0\.5: Planning Context Injection$' "$ALIGNMENT_CHECK"
 
 # --- Record extraction is its own numbered step, reading the two record headings ---
-begin_test "record extraction reads ## Decision and ## Consequences from approved/"
-RECORD_STEP_LINE=$(grep -n -F '4a. **Record extraction' "$ALIGNMENT_CHECK" | head -1 | cut -d: -f1)
+begin_test "record pointer step hands paths and the read-first sentence, never excerpts"
+RECORD_STEP_LINE=$(grep -n -F '4a. **Decision records (pointer, not extraction)' "$ALIGNMENT_CHECK" | head -1 | cut -d: -f1)
 RECORD_STEP_TEXT=""
 if [ -n "$RECORD_STEP_LINE" ]; then
   RECORD_STEP_TEXT=$(sed -n "${RECORD_STEP_LINE}p" "$ALIGNMENT_CHECK")
 fi
-assert_contains_literal "record step reads ## Decision" '## Decision' "$RECORD_STEP_TEXT"
-assert_contains_literal "record step reads ## Consequences" '## Consequences' "$RECORD_STEP_TEXT"
+assert_contains_literal "record step tells the agent to read Decision and Consequences first" 'Read the Decision and Consequences of each record above before investigating' "$RECORD_STEP_TEXT"
+assert_contains_literal "record step tells the agent to raise contradictions as CONFLICT" 'report it as a CONFLICT naming the record' "$RECORD_STEP_TEXT"
+assert_contains_literal "records never enter the Planning Context block or its cap" 'never enter the Planning Context block or its token cap' "$RECORD_STEP_TEXT"
 assert_contains_literal "record step names the approved/ path shape" '.craft/decisions/approved/' "$RECORD_STEP_TEXT"
 assert_contains_literal "record step keys off the decisions: frontmatter list" "story's \`decisions:\`" "$RECORD_STEP_TEXT"
 
 # --- Record extraction is NOT folded into the Reference Materials anchor loop ---
 begin_test "record extraction is not folded into the Reference Materials anchor rules"
-ANCHOR_LOOP_TEXT=$(extract_section_text "$ALIGNMENT_CHECK" '3. For each cited file + anchor' '4a. **Record extraction')
+ANCHOR_LOOP_TEXT=$(extract_section_text "$ALIGNMENT_CHECK" '3. For each cited file + anchor' '4a. **Decision records (pointer')
 assert_not_contains "step 3's anchor-type list gains no decisions entry" 'approved/' "$ANCHOR_LOOP_TEXT"
 assert_not_contains "step 3's anchor-type list names no decision record type" 'decision record' "$ANCHOR_LOOP_TEXT"
-assert_contains_literal "the record step is its own numbered entry (4a), not folded into step 3 or 4" '4a. **Record extraction' "$RECORD_STEP_TEXT"
+assert_contains_literal "the record step is its own numbered entry (4a), not folded into step 3 or 4" '4a. **Decision records (pointer' "$RECORD_STEP_TEXT"
 
 # --- Unresolvable slug: noted in the block, not raised as a stale-anchor question ---
-begin_test "an unresolvable slug is noted in the block, not raised as a stale-anchor question"
-assert_contains_literal "an unresolvable slug is noted inside the Planning Context block" 'note it inside the Planning Context block' "$RECORD_STEP_TEXT"
+begin_test "an unresolvable slug is listed as (not found), not raised as a stale-anchor question"
+assert_contains_literal "an unresolvable slug is listed with (not found)" 'listed anyway with "(not found)"' "$RECORD_STEP_TEXT"
 assert_contains_literal "it explicitly does not raise the stale-anchor AskUserQuestion" 'does NOT raise the stale-anchor AskUserQuestion' "$RECORD_STEP_TEXT"
 
 # --- Approved records lead the keep-order; the four existing tiers survive in order ---
-begin_test "approved records lead the keep-order and the four existing tiers survive in order"
+begin_test "the keep-order holds the four Reference Materials tiers in order; records are not in it"
+assert_not_contains "records no longer compete for the cap" 'Approved decision records' "$(sed -n '/Hard 2000-token cap/,/If citations are dropped/p' "$ALIGNMENT_CHECK")"
 KEEP_ORDER_STRINGS=(
-  'Approved decision records'
   'active.md dated entries'
   'Concept Locked Decisions sections'
   'Sibling story precedents'
@@ -658,7 +673,7 @@ for tier in "${KEEP_ORDER_STRINGS[@]}"; do
   PREV_LINE="$line"
 done
 if [ "$KEEP_ORDER_OK" = "1" ]; then
-  echo "  PASS: keep-order runs records, active.md, Concept Locked Decisions, Sibling story, Mockups, in ascending line order"
+  echo "  PASS: keep-order runs active.md, Concept Locked Decisions, Sibling story, Mockups, in ascending line order"
   PASS=$((PASS + 1))
 else
   echo "  FAIL: keep-order out of order or missing a tier"
@@ -824,5 +839,40 @@ else
   echo "  FAIL: legacy fixture check failed (see above)"
   FAIL=$((FAIL + 1))
 fi
+
+# =====================================================================
+# The writers' rule: only the records the user named
+# =====================================================================
+
+assert_writer_rule() {
+  local window="$1"
+  assert_contains_literal "window holds 'never scan the store for candidates'" 'never scan the store for candidates' "$window"
+  assert_contains_literal "window holds the reader-side 'by tag, by topic, or by judged relevance'" 'by tag, by topic, or by judged relevance' "$window"
+  assert_contains_literal "window holds 'NOT LAW for this story - it is history'" 'NOT LAW for this story - it is history' "$window"
+}
+
+begin_test "craft-story-new.md Step 10: the writers' rule sits right after the frontmatter fence"
+assert_writer_rule "$(writer_rule_window "$STORY_NEW" "**Frontmatter (always required):**")"
+
+begin_test "story-from-planning.md Phase 5: the writers' rule sits right after the frontmatter fence"
+assert_writer_rule "$(writer_rule_window "$STORY_FROM_PLANNING" "### Frontmatter construction")"
+
+begin_test "default-mode.md Step 3e: the writers' rule sits right after the story fence, outside it"
+assert_writer_rule "$(writer_rule_window "$DEFAULT_MODE" "**3e. Save Story**")"
+
+begin_test "roadmap-mode.md step 3: the writers' rule sits right after the story fence, outside it"
+assert_writer_rule "$(writer_rule_window "$ROADMAP_MODE" 'Write to `.craft/cycles/[cycle-dir]/stories/[N]-[slug].md`:')"
+
+begin_test "each writer carries the writers' rule exactly once"
+for writer_file in "$STORY_NEW" "$STORY_FROM_PLANNING" "$DEFAULT_MODE" "$ROADMAP_MODE"; do
+  rule_count=$(grep -c -F "never scan the store for candidates" "$writer_file" || true)
+  if [ "$rule_count" = "1" ]; then
+    echo "  PASS: $(basename "$writer_file") carries the rule once"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $(basename "$writer_file") carries the rule $rule_count times"
+    FAIL=$((FAIL + 1))
+  fi
+done
 
 finish_tests

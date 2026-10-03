@@ -17,6 +17,9 @@ CLAUDE.local.md
 # Local research scratch - /craft:research output, not distributed
 research/
 
+# Local eval suites for claude plugin eval - maintainer-run, not distributed
+evals/
+
 # (Previous fine-grained patterns below are now redundant under the blanket .craft/ rule.
 # Kept commented out for reference; remove during a follow-up cleanup if desired.)
 # .craft/.global-state

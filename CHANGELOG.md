@@ -2,6 +2,19 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.7.0 - 2026-10-03
+
+Craft now keeps its decisions. 2.6.1 let a story carry the rulings it was built from and promised the rest: filing decisions, listing them, and watching them become real as stories ship. This release delivers all three. Rule something once and it stays ruled - visible, reusable, and marked done when the story that builds it ships.
+
+- Added `/craft:decisions`, the decision desk. The Shelf shows every decision grouped by topic: what's waiting on you, what's ruled and ready, what a story is building, and what's done. Name one to see its card, then approve, keep it pending, or decline it with one letter - or just say what to change.
+- Added reopening and retiring. Reopening ruled law shows exactly what would change before anything is written. A decision a shipped story already built is frozen; change your mind and craft drafts a new decision instead of rewriting history.
+- Added moving decisions between topics in plain words, with the moved record shown where it landed.
+- Added the finish line: when a story ships, every decision it carries is marked done on the Shelf.
+- Changed stories to carry only the decisions you name for them. Claude never attaches one it judged relevant.
+- Changed the desk to close once you finish a card, so a "go with that" later in the same session stays a normal conversation unless you call it a decision.
+- Changed `/craft:adhoc` fixes that add a test. The test now has to fail on the bug before the fix goes in, so when craft says a fix works, it has watched it go from red to green.
+- Fixed story checks that turned red the moment you committed. When a story promises a file stays unchanged, craft now checks what the file says, not whether it differs from your last commit.
+
 ## 2.6.1 - 2026-09-04
 
 Craft is learning to keep its decisions. This release lays the first plank: a story can now carry the approved decisions it was built from, and craft treats those decisions as the frame the story fills in. Rule something once, and every story that grows out of that ruling knows about it before planning begins. The rest of the feature - filing decisions, listing them, watching them become real as stories ship - lands over the coming releases.

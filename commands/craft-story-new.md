@@ -434,6 +434,8 @@ current_chunk: 0
 ---
 ```
 
+The `decisions:` line holds only the approved decision records the user named for this story in the conversation, each as its full dated slug (the record's file name without `.md`): never add a record by tag, by topic, or by judged relevance, and never scan the store for candidates - any record the user did not name is NOT LAW for this story - it is history; write `[]` when the user named none.
+
 **Spark section (always required):**
 ```markdown
 # Story: [Title]
