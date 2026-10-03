@@ -51,8 +51,16 @@ else
 fi
 
 echo "-- Test: description and when_to_use match the frontmatter record, whitespace-normalized --"
-RECORD="$REPO/.craft/decisions/approved/2026-09-05-the-decisions-skill-frontmatter.md"
+# A tracked copy of the frontmatter ruling - this repo's own decision store is
+# gitignored, so CI has no .craft/ to read it from
+RECORD="$SCRIPT_DIR/fixtures/decision-records/2026-09-05-the-decisions-skill-frontmatter.md"
 norm() { tr '\n' ' ' <<<"$1" | tr -s ' ' | sed 's/^ *//; s/ *$//'; }
+if [ -s "$RECORD" ]; then
+  pass "the frontmatter record fixture exists"
+else
+  fail "the frontmatter record fixture exists" "$RECORD" "absent"
+  RECORD=/dev/null
+fi
 
 RECORD_DESC="$(sed -n '/^  description: "The Shelf/,/into a cycle\."/p' "$RECORD")"
 CMD_DESC="$(sed -n '/^description: "The Shelf/,/into a cycle\."/p' "$CMD")"

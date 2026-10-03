@@ -853,8 +853,15 @@ REFUSE_OUT=$(bash "$VIEW" card --file="$REFUSE_FILE" 2>&1) || REFUSE_RC=$?
 rm -rf "$ROOT"
 
 echo "-- Test: every APPROVAL line is byte-identical to the file's '> ' lines --"
-APPROVAL_DIFF=$(diff <(grep '^> ' "$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md") \
-  <(bash "$VIEW" card --variant=reopen --file="$SCRIPT_DIR/../.craft/decisions/approved/2026-09-03-every-decision-carries-tags.md" | sed -n 's/^ROW=//p' | grep '^> '))
+# A tracked copy of a real record - this repo's own decision store is
+# gitignored, so CI has no .craft/ to read it from. The existence check stops
+# a missing fixture from passing the diff below on two empty sides.
+APPROVAL_RECORD="$SCRIPT_DIR/fixtures/decision-records/2026-09-03-every-decision-carries-tags.md"
+[ -s "$APPROVAL_RECORD" ] && grep -q '^> ' "$APPROVAL_RECORD" \
+  && pass "the approval-lines record fixture exists and carries '> ' lines" \
+  || fail "the approval-lines record fixture exists and carries '> ' lines" "$APPROVAL_RECORD" "absent or empty"
+APPROVAL_DIFF=$(diff <(grep '^> ' "$APPROVAL_RECORD" 2>/dev/null) \
+  <(bash "$VIEW" card --variant=reopen --file="$APPROVAL_RECORD" 2>/dev/null | sed -n 's/^ROW=//p' | grep '^> '))
 [ -z "$APPROVAL_DIFF" ] && pass "every APPROVAL line is byte-identical to the file's '> ' lines" || fail "every APPROVAL line is byte-identical to the file's '> ' lines" "(no diff)" "$APPROVAL_DIFF"
 
 echo "-- Test: on a reopen card a removed bullet reads '- - text' and an unchanged bullet reads '  - text' --"
