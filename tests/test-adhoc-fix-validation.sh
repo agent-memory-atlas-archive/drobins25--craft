@@ -21,7 +21,7 @@ source "$SCRIPT_DIR/test_helper.sh"
 # Working-tree file - guards THIS repo's edits, not the installed plugin copy
 FIX_MD="$SCRIPT_DIR/../skills/adhoc/references/fix.md"
 
-BULLET='- **A fix that adds a test or a structural check**: Before applying the edit (or against a copy without it), run the new check and confirm it fails on exactly the bug and nothing else. After the edit, run it again and confirm it passes. Record both runs in the Validation section - a check never run against the broken version has not proven anything.'
+BULLET='- **A fix that adds a test or a structural check**: Before applying the edit (or against a copy without it), run the new check and confirm it fails on exactly the bug and nothing else. After the edit, run it again and confirm it passes. Record both runs in the Validation section - a check never run against the broken version has not proven anything. This never asks a fix to add a check it would not otherwise have.'
 ALL_FIXES='- **All fixes**:'
 # assert_contains_literal passes the needle to grep without "--", so a needle
 # starting with "- " is read as an option; the contains-checks drop the marker
