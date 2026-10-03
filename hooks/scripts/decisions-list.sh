@@ -139,7 +139,7 @@ def parse_inline_list(raw):
 
 def read(path):
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
             return f.read()
     except OSError:
         return None
