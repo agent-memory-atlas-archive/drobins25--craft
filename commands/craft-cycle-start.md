@@ -130,6 +130,8 @@ Include the story path plus cycle activation context so plan-chunks understands 
 
 This hands off to `plan-chunks` which produces detailed implementation plans. Do NOT replicate planning inline.
 
+Return to Step 2 when the story is planned - or straight to Step 3 (Activate) with that story chosen, if the user chose to implement it now.
+
 **If SOME stories are `planning`:**
 
 > "[N] of [M] stories still need planning:
@@ -200,6 +202,8 @@ Skill tool:
 
 This hands off to `plan-chunks` which produces detailed implementation plans. Do NOT replicate planning inline. Return to Step 2 when all stories are planned.
 
+**Now means now:** if the user chose to implement now on any story, stop planning, leave the remaining stories at `status: planning`, and go straight to Step 3 (Activate) with that story chosen. Never go back through Step 2, whose overview falls into Step 2b and would ask again.
+
 **If "Start with ready stories":**
 - Proceed to activation
 - Only ready stories can be implemented
@@ -214,6 +218,8 @@ This hands off to `plan-chunks` which produces detailed implementation plans. Do
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/start-cycle.sh .craft/cycles/[cycle-name]
 ```
+
+**If a story is already chosen, do not re-ask.** A story is already chosen when you arrive here from one of three places: (a) the user clicked "Mark ready and start implementing now" or "Yes, implement now" in single-story plan-chunks - that story; (b) the user clicked "Start implementing" at the end of batch planning - batch's first ready story, the lowest-numbered ready one; (c) story-implement called cycle-start to activate the cycle for a story it named. Confirm activation in one line without "Ready?", skip "Ready to start?", "Ready to implement this story?" and "Which story do you want to start?", and never fall back to the lowest-numbered default for a story you were handed. For (a) and (b), go straight to Step 4's story-implement hand-off for that story. For (c), return to story-implement, which is already waiting and runs the original story itself - do not invoke it again from here.
 
 This updates:
 - Global: `ACTIVE_CYCLE` set, `PLANNING_CYCLE` cleared

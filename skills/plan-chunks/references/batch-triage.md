@@ -148,7 +148,7 @@ header: "Next"
 multiSelect: false
 options:
   - label: "Start implementing"
-    description: "Begin with the first ready story"
+    description: "Begin with the first ready story (hands back to cycle-start when it is waiting)"
   - label: "Re-plan adjusted stories"
     description: "Interactive planning for stories that need refinement"
   - label: "Done for now"

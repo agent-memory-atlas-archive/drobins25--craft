@@ -508,9 +508,9 @@ First do exactly what "Yes, mark ready" does: reconcile, then flip the status.
 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-story-status.sh [story-file] ready
 ```
 
-**Hand-back rule.** Decide from the conversation you are already in, never from the args: the same bare story reference reaches plan-chunks from a direct start and from a waiting flow. If you issued this plan-chunks call from inside another flow that resumes after planning, a calling flow is waiting to resume. Those flows are story-implement (planning a story with no chunks, or planning the next unplanned story mid-cycle) and cycle-start (planning before activation). When one is waiting: tell the user in one line that the story is ready and control is returning to that flow, then return. Do NOT invoke story-implement - the waiting flow resumes and starts implementation itself.
+**Hand-back rule.** Decide from the conversation you are already in, never from the args: the same bare story reference reaches plan-chunks from a direct start and from a waiting flow. If the plan-chunks call was issued from inside story-implement or cycle-start, a calling flow is waiting to resume; no other caller leaves one waiting. Those flows are story-implement (planning a story with no chunks, or planning the next unplanned story mid-cycle) and cycle-start (planning before activation). When one is waiting: tell the user in one line that the story is ready and control is returning to that flow, then return. Do NOT invoke story-implement - the waiting flow continues from its own resume step and carries the user's choice forward.
 
-Otherwise this is a direct start (`/craft:plan-chunks`, the hub, story-new's Step 11):
+Otherwise this is a direct start (`/craft:plan-chunks`, the hub, story-new's Step 11, which only places the story afterward and never implements):
 
 ⛔ **DO NOT implement directly. You MUST invoke the skill:**
 
@@ -867,7 +867,7 @@ The batch triage flow (BT-1 through BT-7) reviews all plans with the user after 
 - **BT-5: Read story files fresh** - use the Read tool, not memory or concerns summaries
 - **BT-5: Sequential only** - present one story, wait for response, then read the next
 - **BT-6: "Approve"** runs `update-story-status.sh [story-file] ready`
-- **BT-7: "Start implementing"** invokes `craft:craft-story-implement` via Skill tool (never implement directly)
+- **BT-7: "Start implementing"** applies the hand-back rule from S-5: when cycle-start is waiting to resume, return to it with the first ready story; otherwise invoke `craft:craft-story-implement` via Skill tool (never implement directly)
 
 ---
 
