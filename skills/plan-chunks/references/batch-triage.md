@@ -102,8 +102,6 @@ multiSelect: false
 options:
   - label: "Approve"
     description: "Write plan to story file, mark ready"
-  - label: "Explore creatively"
-    description: "Invoke creative-spark to riff on this story's approach"
   - label: "Adjust"
     description: "Provide feedback, re-plan this story interactively"
   - label: "Reject"
