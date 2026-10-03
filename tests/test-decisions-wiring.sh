@@ -813,15 +813,6 @@ else
   fail "the command file carries the rail characters ┌ │ ├ └ - it is where Claude reads the shape from" "present" "absent"
 fi
 
-echo "-- Test: no story template is touched by this story --"
-for f in commands/craft-story-new.md commands/references/cycle-design/default-mode.md commands/references/cycle-design/roadmap-mode.md; do
-  if git -C "$REPO" diff --quiet HEAD -- "$f" 2>/dev/null; then
-    pass "$f unchanged vs HEAD"
-  else
-    fail "$f unchanged vs HEAD" "no diff" "diff present"
-  fi
-done
-
 echo "-- Test: craft-notebook.md's when_to_use ends with the ruled Not-for line --"
 NOTEBOOK="$REPO/commands/craft-notebook.md"
 LAST_LINE_OF_WTU="$(awk '/^when_to_use: \|/{p=1; next} p && /^argument-hint:/{exit} p{last=$0} END{print last}' "$NOTEBOOK")"

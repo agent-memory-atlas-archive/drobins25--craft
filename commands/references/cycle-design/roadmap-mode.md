@@ -91,6 +91,8 @@ current_chunk: 0
 <!-- Added via plan-chunks -->
 ```
 
+The `decisions:` line holds only the approved decision records the user named for this story in the conversation, each as its full dated slug (the record's file name without `.md`): never add a record by tag, by topic, or by judged relevance, and never scan the store for candidates - any record the user did not name is NOT LAW for this story - it is history; write `[]` when the user named none.
+
 3. **Clear PLANNING_CYCLE** — the cycle shell is done:
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-global-state.sh PLANNING_CYCLE ""

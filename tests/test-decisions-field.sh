@@ -6,6 +6,8 @@
 #   Chunk 2 - the planning agent carries it through its rewrite and reads records
 #   Chunk 3 - the S-2 row 9 belt that fails a plan citing none of its records
 #   Chunk 4 - the alignment gate, story-final claim, and the release pins
+#   Writers' rule - each story writer states, right after its frontmatter
+#                   fence, that the list holds only the records the user named
 #
 # A missing `decisions:` field always reads as `[]` - no warning, no error,
 # no rewrite. Every assertion below either pins that or pins the one writer
@@ -111,6 +113,18 @@ extract_block_text() {
 extract_block_keys() {
   local file="$1" anchor="$2"
   extract_block_text "$file" "$anchor" | grep -oE '^[a-z_]+:' | sed 's/:$//'
+}
+
+# Prints the three lines after the bare closing code fence that follows a
+# prose writer's frontmatter sample (found by the same anchor locate_fence
+# takes). The writers' rule sentence must sit in this window, outside the fence.
+writer_rule_window() {
+  local file="$1" anchor="$2"
+  local range fence_end closer
+  range=$(locate_fence "$file" "$anchor")
+  fence_end=$(echo "$range" | cut -d' ' -f2)
+  closer=$(awk -v start="$fence_end" 'NR >= start && /^```$/ { print NR; exit }' "$file")
+  sed -n "$((closer + 1)),$((closer + 3))p" "$file"
 }
 
 TEMPLATES_DIR_LOCAL="$PLUGIN_ROOT/templates"
@@ -825,5 +839,40 @@ else
   echo "  FAIL: legacy fixture check failed (see above)"
   FAIL=$((FAIL + 1))
 fi
+
+# =====================================================================
+# The writers' rule: only the records the user named
+# =====================================================================
+
+assert_writer_rule() {
+  local window="$1"
+  assert_contains_literal "window holds 'never scan the store for candidates'" 'never scan the store for candidates' "$window"
+  assert_contains_literal "window holds the reader-side 'by tag, by topic, or by judged relevance'" 'by tag, by topic, or by judged relevance' "$window"
+  assert_contains_literal "window holds 'NOT LAW for this story - it is history'" 'NOT LAW for this story - it is history' "$window"
+}
+
+begin_test "craft-story-new.md Step 10: the writers' rule sits right after the frontmatter fence"
+assert_writer_rule "$(writer_rule_window "$STORY_NEW" "**Frontmatter (always required):**")"
+
+begin_test "story-from-planning.md Phase 5: the writers' rule sits right after the frontmatter fence"
+assert_writer_rule "$(writer_rule_window "$STORY_FROM_PLANNING" "### Frontmatter construction")"
+
+begin_test "default-mode.md Step 3e: the writers' rule sits right after the story fence, outside it"
+assert_writer_rule "$(writer_rule_window "$DEFAULT_MODE" "**3e. Save Story**")"
+
+begin_test "roadmap-mode.md step 3: the writers' rule sits right after the story fence, outside it"
+assert_writer_rule "$(writer_rule_window "$ROADMAP_MODE" 'Write to `.craft/cycles/[cycle-dir]/stories/[N]-[slug].md`:')"
+
+begin_test "each writer carries the writers' rule exactly once"
+for writer_file in "$STORY_NEW" "$STORY_FROM_PLANNING" "$DEFAULT_MODE" "$ROADMAP_MODE"; do
+  rule_count=$(grep -c -F "never scan the store for candidates" "$writer_file" || true)
+  if [ "$rule_count" = "1" ]; then
+    echo "  PASS: $(basename "$writer_file") carries the rule once"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $(basename "$writer_file") carries the rule $rule_count times"
+    FAIL=$((FAIL + 1))
+  fi
+done
 
 finish_tests
