@@ -41,6 +41,7 @@ NEVER relay a script's error line as the answer.
 NEVER render anything below the Shelf unasked.
 NEVER select with subcommand syntax - selection is the list filters.
 NEVER draw a card, take a quote or write an approval line for a retag.
+NEVER treat the desk as open once the card the user asked about is ruled or put away - a later ruling in conversation is just conversation until they type the command again or call it a decision.
 </HARD-GATE>
 ```
 
@@ -55,6 +56,7 @@ each, no sentence longer than its rule.
 - **bare** - the command invoked with no words after it.
 - **words** - anything the user typed, on the invocation or on a card, that is not a letter.
 - **a record** - words that name or filter decision records.
+- **a ruling in conversation** - the user calls it a decision ("save this as a decision", "make that a decision") or types the command again; "go with that" and "yes, do it" said in passing are just conversation.
 - **the archive** - words asking what was declined or retired.
 - **a retag** - words naming record(s) and a tag to move them to.
 - **declined / retired / both** - which room of the archive the words asked for; **both** is the same call twice, declined then retired.

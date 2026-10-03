@@ -306,12 +306,12 @@ if len(hard_gate_blocks) != 1:
 else:
     lines = [l for l in hard_gate_blocks[0].splitlines() if l.strip()]
     non_never = [l for l in lines if not l.strip().startswith("NEVER")]
-    if len(lines) != 8:
-        out("FAIL", "the hard gate holds exactly eight rules", "8", str(len(lines)))
+    if len(lines) != 9:
+        out("FAIL", "the hard gate holds exactly nine rules", "9", str(len(lines)))
     elif non_never:
         out("FAIL", "every hard gate rule begins with NEVER", "all begin NEVER", str(non_never))
     else:
-        out("PASS", "the hard gate holds exactly eight rules, each beginning NEVER")
+        out("PASS", "the hard gate holds exactly nine rules, each beginning NEVER")
 
 octagons = [n for n, s in shapes.items() if s == "octagon"]
 if len(octagons) != 1:
@@ -500,13 +500,29 @@ GATE = [
     "NEVER render anything below the Shelf unasked.",
     "NEVER select with subcommand syntax - selection is the list filters.",
     "NEVER draw a card, take a quote or write an approval line for a retag.",
+    "NEVER treat the desk as open once the card the user asked about is ruled or put away - a later ruling in conversation is just conversation until they type the command again or call it a decision.",
 ]
 gate_m = re.search(r"<HARD-GATE>\n(.*?)\n</HARD-GATE>", text, re.DOTALL)
 gate_lines = [l for l in gate_m.group(1).splitlines() if l.strip()] if gate_m else []
 if gate_lines == GATE:
-    out("PASS", "the hard gate is the pinned eight NEVER lines")
+    out("PASS", "the hard gate is the pinned nine NEVER lines")
 else:
-    out("FAIL", "the hard gate is the pinned eight NEVER lines", str(GATE), str(gate_lines))
+    out("FAIL", "the hard gate is the pinned nine NEVER lines", str(GATE), str(gate_lines))
+
+# --- 15b: the graph's second entry is defined narrowly --------------------
+# "Ruling in conversation" is an entry node into the desk. The command body
+# stays loaded for the rest of a session once typed, so without a narrow
+# definition a ruling said in passing could read as a way back in.
+RULING_DEF = '- **a ruling in conversation** - the user calls it a decision ("save this as a decision", "make that a decision") or types the command again; "go with that" and "yes, do it" said in passing are just conversation.'
+def_lines = def_section.splitlines()
+if RULING_DEF in def_lines and "a ruling in conversation" in defined_terms:
+    rec_idx = next((i for i, l in enumerate(def_lines) if l.startswith("- **a record** - ")), -1)
+    if rec_idx >= 0 and rec_idx + 1 < len(def_lines) and def_lines[rec_idx + 1] == RULING_DEF:
+        out("PASS", "the words list defines a ruling in conversation narrowly, directly after a record")
+    else:
+        out("FAIL", "the words list defines a ruling in conversation narrowly, directly after a record", "the line directly after - **a record**", "elsewhere in the list")
+else:
+    out("FAIL", "the words list defines a ruling in conversation narrowly, directly after a record", RULING_DEF, "absent")
 
 # --- 16: the two reading sentences ----------------------------------------
 flat = " ".join(text.split())
