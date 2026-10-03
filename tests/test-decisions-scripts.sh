@@ -1662,6 +1662,46 @@ set -e
 [ "$RC" -eq 0 ] && [ ! -s "$ROOT/l.err" ] && echo "$OUT" | grep -q "^TITLE=List flag$" && pass "list ignores an unknown flag, exits 0 and still lists" || fail "list ignores an unknown flag, exits 0 and still lists" "exit 0, silent, listed" "rc=$RC $(cat "$ROOT/l.err")"
 rm -rf "$ROOT"
 
+echo "=== a multi-line typed answer keeps the quote marker on every line ==="
+echo ""
+# The typed answer is the audit trail, and the view reads a quote as a run
+# of "> " lines. A line written without the marker falls out of the quote,
+# and the date with it.
+ML_TODAY=$(date +%Y-%m-%d)
+ML_WANT=$(printf '> "Yes, blue.\n> But a deep blue, not sky." - %s, session' "$ML_TODAY")
+
+echo "-- Test: accept --stdin with a two-line answer --"
+fresh_root
+write_record "root" "ml-accept" "2026-07-10" "Ml accept" "pending" "tag-a"
+printf 'Yes, blue.\nBut a deep blue, not sky.\n' | bash "$TRANSITION" 2026-07-10-ml-accept accept --stdin > /dev/null
+ML_GOT=$(tail -2 "$ROOT/.craft/decisions/approved/2026-07-10-ml-accept.md")
+[ "$ML_GOT" = "$ML_WANT" ] && pass "accept: both answer lines carry the marker, date on the last" || fail "accept: both answer lines carry the marker, date on the last" "$ML_WANT" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: capture --stdin with a two-line Approval section --"
+fresh_root
+ML_F=$(printf '# Ml capture\n\n## Context\nctx\n\n## Options considered\nopt\n\n## Decision\ndec\n\n## Consequences\ncons\n\n## Approval\nYes, blue.\nBut a deep blue, not sky.\n' | bash "$CAPTURE" --tag=ml --stdin | tail -1)
+ML_GOT=$(tail -2 "$ML_F")
+[ "$ML_GOT" = "$ML_WANT" ] && pass "capture: both answer lines carry the marker, date on the last" || fail "capture: both answer lines carry the marker, date on the last" "$ML_WANT" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: reopen with a two-line answer --"
+fresh_root
+write_record "approved" "ml-reopen" "2026-07-11" "Ml reopen" "accepted" "tag-a"
+ML_F=$(printf '## Context\nnew ctx\n\n## Approval\nYes, blue.\nBut a deep blue, not sky.\n' | bash "$CAPTURE" --reopen=2026-07-11-ml-reopen --stdin | tail -1)
+ML_WANT_REOPEN=$(printf '> Reopen: "Yes, blue.\n> But a deep blue, not sky." - %s, session' "$ML_TODAY")
+ML_GOT=$(tail -2 "$ML_F")
+[ "$ML_GOT" = "$ML_WANT_REOPEN" ] && pass "reopen: both answer lines carry the marker, date on the last" || fail "reopen: both answer lines carry the marker, date on the last" "$ML_WANT_REOPEN" "$ML_GOT"
+rm -rf "$ROOT"
+
+echo "-- Test: a one-line answer is written exactly as before --"
+fresh_root
+write_record "root" "ml-one" "2026-07-12" "Ml one" "pending" "tag-a"
+printf 'go\n' | bash "$TRANSITION" 2026-07-12-ml-one accept --stdin > /dev/null
+ML_GOT=$(tail -1 "$ROOT/.craft/decisions/approved/2026-07-12-ml-one.md")
+[ "$ML_GOT" = "> \"go\" - $ML_TODAY, session" ] && pass "one-line answer unchanged" || fail "one-line answer unchanged" "> \"go\" - $ML_TODAY, session" "$ML_GOT"
+rm -rf "$ROOT"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"

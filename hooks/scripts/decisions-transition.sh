@@ -461,6 +461,23 @@ import sys, re
 
 src, tmp, new_status, quote, date, source = sys.argv[1:7]
 
+
+def quote_lines(lead, quote, date, source):
+    # Every line of the typed answer carries the "> " marker, so the whole
+    # answer reads as one quote; the closing quote, date and source ride the
+    # last line. A blank line inside the answer is written as a bare ">".
+    lines = quote.split('\n')
+    out = []
+    for i, line in enumerate(lines):
+        text = line
+        if i == 0:
+            text = lead + '"' + text
+        if i == len(lines) - 1:
+            text = text + '" - {}, {}'.format(date, source)
+        out.append('> ' + text if text else '>')
+    return '\n'.join(out)
+
+
 with open(src, 'r') as f:
     content = f.read()
 
@@ -474,7 +491,7 @@ fm = re.sub(r'^status:.*$', 'status: ' + new_status, fm, count=1, flags=re.MULTI
 new_content = head + fm + fence_tail + body
 if not new_content.endswith('\n'):
     new_content += '\n'
-new_content += '> "{}" - {}, {}\n'.format(quote, date, source)
+new_content += quote_lines('', quote, date, source) + '\n'
 
 with open(tmp, 'w') as f:
     f.write(new_content)
