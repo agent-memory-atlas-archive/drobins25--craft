@@ -79,6 +79,11 @@ DATED_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}-.+\.md$'
 NAME="$(basename "$TARGET")"
 NAME="${NAME%.md}"
 SRC=""
+# An empty name would match every dated record in the fragment loop below.
+if [ -z "$NAME" ]; then
+  echo "missing target: a path, a dated slug, or a slug fragment" >&2
+  exit 2
+fi
 
 if [ -f "$TARGET" ]; then
   TARGET_DIR="$(cd "$(dirname "$TARGET")" && pwd -P)"
@@ -125,6 +130,12 @@ if [ -z "$SRC" ]; then
 fi
 
 SLUG="$(basename "$SRC" .md)"
+# Same record rule as bugs-list.sh, on every route: a dated basename here, and a
+# fenced `type: bug` checked in the python below. README.md and _TEMPLATE.md fail it.
+if ! [[ "$SLUG.md" =~ $DATED_RE ]]; then
+  echo "not a bug record: $SLUG" >&2
+  exit 2
+fi
 DEST="$CLOSED_DIR/$SLUG.md"
 if [ -e "$DEST" ]; then
   echo "already in closed/: $SLUG" >&2
@@ -153,6 +164,9 @@ if not m:
     sys.stderr.write('not a bug record: ' + slug + '\n')
     sys.exit(2)
 head, fm, fence_tail, body = m.groups()
+if not re.search(r'^type:[ \t]*bug[ \t]*$', fm, re.MULTILINE):
+    sys.stderr.write('not a bug record: ' + slug + '\n')
+    sys.exit(2)
 
 
 def one_line(text):

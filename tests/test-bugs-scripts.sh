@@ -543,6 +543,52 @@ assert_eq "missing target rc" "2" "$RC"
 assert_contains "missing target stderr" "missing target" "$ERR"
 assert_eq "nothing changed" "$SUM_BEFORE" "$(cksum "$B"/*.md "$B"/closed/*.md)"
 
+begin_test "close refuses a target that reduces to an empty name"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-09-02-only.md" "2026-09-02T10:00:00Z" "run" "The only open bug"
+SUM_BEFORE=$(cksum "$B"/*.md)
+for t in ".md" "/.md" "some/dir/.md"; do
+  run_close "$t" --status=fixed
+  assert_eq "rc for '$t'" "2" "$RC"
+  assert_contains "stderr for '$t'" "missing target" "$ERR"
+done
+assert_eq "open record untouched" "$SUM_BEFORE" "$(cksum "$B"/*.md)"
+assert_eq "closed/ still empty" "0" "$(find "$B/closed" -type f 2>/dev/null | wc -l | tr -d ' ')"
+
+begin_test "close refuses files that are not bug records, on every route"
+fresh_root
+B="$ROOT/.craft/bugs"
+write_record "$B/2026-09-02-real.md" "2026-09-02T10:00:00Z" "run" "A real bug"
+printf -- '---\ntype: bug\nstatus: open\n---\n\n<Symptom in one line>\n' > "$B/_TEMPLATE.md"
+printf '# Bugs\n\nPrototype readme.\n' > "$B/README.md"
+printf -- '---\ntype: note\nstatus: open\n---\n\nNot a bug.\n' > "$B/2026-09-03-notes.md"
+SUM_BEFORE=$(cksum "$B"/*.md)
+run_close _TEMPLATE --status=wont-fix
+assert_eq "template by name rc" "2" "$RC"
+assert_eq "template by name stderr" "not a bug record: _TEMPLATE" "$ERR"
+run_close "$B/_TEMPLATE.md" --status=wont-fix
+assert_eq "template by path rc" "2" "$RC"
+assert_eq "template by path stderr" "not a bug record: _TEMPLATE" "$ERR"
+run_close README --status=fixed
+assert_eq "readme rc" "2" "$RC"
+run_close 2026-09-03-notes --status=fixed
+assert_eq "dated non-bug rc" "2" "$RC"
+assert_eq "dated non-bug stderr" "not a bug record: 2026-09-03-notes" "$ERR"
+assert_eq "nothing changed" "$SUM_BEFORE" "$(cksum "$B"/*.md)"
+assert_eq "closed/ still empty" "0" "$(find "$B/closed" -type f 2>/dev/null | wc -l | tr -d ' ')"
+
+begin_test "concurrent same-symptom captures never overwrite each other"
+bare_root
+N=12
+BODY=$(body_with "Save does nothing")
+for i in $(seq 1 $N); do
+  printf '%s\n' "$BODY" | bash "$CAPTURE" --found-during="conversation" --stdin >/dev/null 2>&1 &
+done
+wait
+COUNT=$(find "$ROOT/.craft/bugs" -maxdepth 1 -name '*-save-does-nothing*.md' | wc -l | tr -d ' ')
+assert_eq "one file per capture" "$N" "$COUNT"
+
 begin_test "close refuses a destination that already exists"
 fresh_root
 B="$ROOT/.craft/bugs"

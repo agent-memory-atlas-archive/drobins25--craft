@@ -248,14 +248,18 @@ fi
 TARGET_DIR="$ROOT/.craft/bugs"
 mkdir -p "$TARGET_DIR"
 
+# Create the file with noclobber (an exclusive open), so two captures racing for
+# the same name never overwrite each other: the loser bumps the suffix and retries.
 TARGET_FILE="$TARGET_DIR/${DATE}-${SLUG}.md"
 COUNTER=2
-while [ -e "$TARGET_FILE" ]; do
+until ( set -C; cat "$WORK_DIR/record.md" > "$TARGET_FILE" ) 2>/dev/null; do
+  if [ ! -e "$TARGET_FILE" ]; then
+    echo "cannot write: $TARGET_FILE" >&2
+    exit 1
+  fi
   TARGET_FILE="$TARGET_DIR/${DATE}-${SLUG}-${COUNTER}.md"
   COUNTER=$((COUNTER + 1))
 done
-
-cat "$WORK_DIR/record.md" > "$TARGET_FILE"
 
 # Refresh the dashboard graph data. Silenced so callers still read this
 # script's own final line; guarded so a missing wrapper never fails a flow.
