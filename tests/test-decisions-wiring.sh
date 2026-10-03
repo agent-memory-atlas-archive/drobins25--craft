@@ -62,8 +62,8 @@ else
   RECORD=/dev/null
 fi
 
-RECORD_DESC="$(sed -n '/^  description: "The Shelf/,/into a cycle\."/p' "$RECORD")"
-CMD_DESC="$(sed -n '/^description: "The Shelf/,/into a cycle\."/p' "$CMD")"
+RECORD_DESC="$(sed -n '/^  description: "The Shelf/,/topic\."/p' "$RECORD")"
+CMD_DESC="$(sed -n '/^description: "The Shelf/,/topic\."/p' "$CMD")"
 if [ "$(norm "$RECORD_DESC")" = "$(norm "$CMD_DESC")" ]; then
   pass "description matches the frontmatter record (whitespace-normalized)"
 else

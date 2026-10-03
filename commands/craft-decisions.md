@@ -2,12 +2,13 @@
 name: decisions
 description: "The Shelf - what waits on you, what's
   ruled, what's claimed, what became real. Rule on a
-  card, or graduate a selection into a cycle."
+  card, reopen or retire one, or move one to another
+  topic."
 when_to_use: |
   The user says "decision" about a product ruling:
   "save this as a decision", "what decisions are
-  pending", "list decisions tagged X", "graduate the
-  guides decisions". Renders live from
+  pending", "list decisions tagged X", "move the
+  guides ones to wright". Renders live from
   .craft/decisions/, never from memory.
 
   Not for: facts, ideas, todos (notebook); code
