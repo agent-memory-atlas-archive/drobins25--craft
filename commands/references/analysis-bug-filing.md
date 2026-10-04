@@ -1,6 +1,6 @@
 # Filing analysis findings as bugs
 
-How the orchestrator turns a returned QA or walkthrough report into bug records. Read this inline and follow it. It is the one procedure for every caller, so two callers never file the same finding two ways.
+How the orchestrator turns a returned QA or walkthrough report into bug records. Read this inline and follow it. Read `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md` first and follow it. This file adds only what is specific to a QA or walkthrough report.
 
 ## Who files
 
@@ -8,7 +8,7 @@ The orchestrator files, from the report the analyzer returned. An analyzer never
 
 ## What files
 
-- **QA:** every finding, Needs Verification included. A finding the analyzer was unsure of is still a report worth keeping.
+- **QA:** findings file by the bug reference's rules.
 - **Walkthrough:** `blocks-ship` and `looks-wrong` findings file as bugs. `feels-off` and `nitpick` findings are taste, not defects, so they go to the UX queue (see UX queue entry below) and never to the bug pile.
 - **A report that says the run could not proceed** (the browser tool was unavailable, the dev server was down) files nothing. Say so in one line and stop.
 
@@ -44,26 +44,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bugs-capture.sh" --found-during="<foun
 BODY
 ```
 
-Pass `--requirement` only when Expected quotes a story acceptance criterion that the orchestrator itself put in the brief or the scope. Otherwise leave it out: an assumed requirement that reads as cited is worse than a blank one. Never pass `--layer`, `--verdict`, or `--tags`.
+Pass `--requirement` only when Expected quotes a story acceptance criterion that the orchestrator itself put in the brief or the scope. Otherwise leave it out: an assumed requirement that reads as cited is worse than a blank one.
 
 The script prints the record's absolute path as its last line. It exits 2 and writes nothing when a required field is missing. Fix the named field and run it again.
 
-## Field mapping
+## The body
 
-The body follows the template in `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md`. Each part comes from the finding like this:
-
-| Body part | Comes from |
-|---|---|
-| Symptom line (first line) | The finding title, rewritten to the symptom in the user's terms, never the cause |
-| `**Expected.**` | The finding's expected |
-| `**Actual.**` | The finding's actual |
-| `## Consequences` | Prose impact, then "QA priority: <P0 | P1 | P2 | P3, as the analyzer graded it>. Confidence: <Confirmed \| Likely \| Needs Verification>." for QA, or "Walkthrough severity: <blocks-ship \| looks-wrong>." for the walkthrough |
-| `## Blocks my next step` | `no - found by <qa \| walkthrough> analysis; nobody was mid-task on it.` Always `no` |
-| `## Reproduce` | `Starting state:` (the URL, the dev server command, or the code-review file), then the numbered steps |
-| `## References` | Console errors verbatim, network failures, and screenshot paths |
-| `## Notes` | The analyzer's suggested root cause or fix hint, labelled a hypothesis |
-
-Sections the finding cannot fill are omitted. A required field the finding cannot answer is written plainly ("unknown - not captured in the report"), never left as a placeholder.
+The body follows the template in `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md`. Expected, Actual, and Reproduce come from the finding's expected, actual, and steps. Consequences is the impact in the reader's terms; the analyzer's priority, confidence, and walkthrough grade stay in its report. `## Blocks my next step` starts `no - found by <qa | walkthrough> analysis; nobody was mid-task on it.` Console errors, network failures, and screenshot paths go in `## References`. The analyzer's suggested cause goes in `## Notes`, labelled a hypothesis.
 
 ## Worked example
 
@@ -82,11 +69,11 @@ Place Order does nothing when the cart holds a single item
 
 **Expected.** Clicking Place Order with one item in the cart submits the order and opens the confirmation page.
 
-**Actual.** The button highlights on click and nothing else happens. No request is sent and the page stays on the cart.
+**Actual.** The button highlights on click and nothing else happens. No request leaves the page and the cart stays on screen.
 
 ## Consequences
 
-A shopper with a one-item cart cannot buy it, which is the most common cart. QA priority: P1. Confidence: Confirmed.
+A shopper with a one-item cart cannot buy it, and one item is the most common cart.
 
 ## Blocks my next step
 
@@ -99,6 +86,14 @@ Starting state: dev server running on http://localhost:3000 with an empty cart.
 1. Open /products and add any one product to the cart.
 2. Open /checkout.
 3. Click Place Order.
+
+## Evidence
+
+Console after step 3: Uncaught TypeError: Cannot read properties of undefined (reading 'map') at CheckoutForm.tsx:58. Network panel: no request to /api/orders.
+
+## Done when
+
+Steps 1-3 with one item in the cart send a POST to /api/orders and open the confirmation page, and the console shows no TypeError.
 
 ## References
 
