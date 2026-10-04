@@ -182,7 +182,8 @@ begin_test "README, DESIGN, and the decision tree name /craft:bugs"
 assert_file_contains "README command table" '| `/craft:bugs` |' "$REPO/README.md"
 assert_file_contains "decision tree commands reference" '| `/craft:bugs` |' "$REPO/docs/decision-tree.md"
 assert_file_contains "DESIGN commands tree" 'craft-bugs.md' "$REPO/DESIGN.md"
-assert_file_contains "DESIGN says 35 commands" '35 commands' "$REPO/DESIGN.md"
+LIVE_CMDS="$(ls -1 "$REPO"/commands/craft*.md 2>/dev/null | wc -l | tr -d ' ')"
+assert_file_contains "DESIGN says $LIVE_CMDS commands (the live count)" "$LIVE_CMDS commands" "$REPO/DESIGN.md"
 
 begin_test "the doc drift check passes"
 (cd "$REPO" && bash scripts/check-doc-drift.sh >/dev/null 2>&1) && RC=0 || RC=$?

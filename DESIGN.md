@@ -37,7 +37,7 @@ plugins/craft/
 │   ├── ux-analyzer.md         ← Nielsen heuristics, accessibility
 │   ├── verifier.md            ← Adversarial claim checker (primary sources only)
 │   └── walkthrough-analyzer.md ← First-time user simulation (chrome-devtools MCP)
-├── commands/                  ← Slash command definitions (35 commands)
+├── commands/                  ← Slash command definitions (36 commands)
 │   ├── craft.md               ← Main entry point
 │   ├── craft-ask.md           ← Consult a workshop agent (intelligent routing)
 │   ├── craft-become.md        ← Agent crystallization (4-phase: research→checkpoint→crystallize→save)
@@ -46,6 +46,7 @@ plugins/craft/
 │   ├── craft-dashboard.md     ← Opens the project graph page - rebuilds first, offers a template pull when stale, then opens (distinct from craft-status.md's terminal snapshot)
 │   ├── craft-decisions.md     ← /craft:decisions - the Shelf: renders decisions live from decisions-view.sh, writes through decisions-capture.sh and decisions-transition.sh only
 │   ├── craft-guide.md         ← /craft:guide - read-only help on how craft works and what your `.craft/` state means
+│   ├── craft-annotate.md      ← /craft:annotate - point at anything in a live tab; pins return to the session on SEND (user-invoked only; the one flow that waits)
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done
@@ -75,6 +76,8 @@ plugins/craft/
 │   ├── craft-workflow-design.md   ← Definition lifecycle (create/edit/archive)
 │   └── references/
 │       ├── workflow-formats.md    ← Shared schema reference (frontmatter, stage-file format)
+│       ├── annotate-inline.md     ← The raw-tab annotate flow (arm or reuse, inject, background wait, read pins, teardown)
+│       ├── annotate-overlay.md    ← The comment-mode overlay source, canonical annotate clear, port stamp, channel protocol
 │       ├── dial-inject.md         ← Dial injection contract (handles, MEASURE/INJECT/TOGGLE/CLEAR, canonical clear)
 │       ├── dial-inline.md         ← The dial flow logic (single source of truth, read inline)
 │       ├── mockup-inline.md       ← The mockup funnel logic (single source of truth, read inline)
@@ -94,6 +97,8 @@ plugins/craft/
 ├── hooks/
 │   ├── hooks.json             ← Hook event definitions
 │   └── scripts/               ← 45+ bash/python hook scripts
+│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / status / wait / clear / announce / sweep / disarm)
+│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, replace-the-set / tombstone, CORS, SSE stream, client registry)
 ├── templates/                 ← File templates for craft init and scaffolding
 │   ├── craft/                 ← .craft/ directory templates
 │   │   ├── design/            ← tokens.yaml, components.md, locked.md
@@ -219,7 +224,7 @@ Write access restricted to `.craft/` and `.claude/`. Used for story creation, de
 
 **Included skills:** content-spark, creative-spark, design-vibe, lock-decision, plan-chunks, adhoc, approve, browser
 **Included agents:** plan-chunks-agent, project-scanner, muse, riff, alchemist, conductor, doc-writer, product-anthropologist, pr-reviewer-expert, maze-architect, researcher, research-synthesizer, verifier, practitioner-reviewer, playwright-browser, become-researcher, crystallizer, guide
-**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
+**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:annotate, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
 
 ### Implement Phase
 

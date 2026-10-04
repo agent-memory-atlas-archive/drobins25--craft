@@ -87,6 +87,8 @@ NOT_RECORDS = {
     "folder before 2026-08-21; the build writes .craft/graph/ now, but a "
     "leftover copy must still never be read as a record source "
     "(registry.py skip list)",
+    "annotations": "per-session annotation capture state (ports, pids, the "
+    "pin file) - runtime churn, not an authored record",
     "checkpoints": "state, not records - not nodes (alignment)",
     "requests": "queued user requests are not nodes in v1 (alignment)",
     "design": "visual DNA (tokens, locked patterns) - values, not records "

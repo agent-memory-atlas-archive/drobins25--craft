@@ -790,6 +790,7 @@ flowchart LR
 | `/craft:bugs` | File a bug without fixing it, from a person or an agent, and close it with a verdict. Opens with the live open pile |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration - 2-4 lettered candidates injected into the running app, chosen by eye against real data |
+| `/craft:annotate` | Point at anything in a live browser tab - comment-mode pins return to the session when you press SEND TO CLAUDE. User-invoked only |
 | `/craft:riff` | Two-player thinking game in the main loop - pass an idea in small beats until it's ready to build; bare invocation opens from the oldest open notebook idea |
 | `/craft:planning` | Feature roadmap and planning - initiatives, concepts, open questions |
 | `/craft:project` | Switch projects or cross-project dashboard |

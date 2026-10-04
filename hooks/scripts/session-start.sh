@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Resolve project root (handles monorepo with multiple .craft/ dirs)
 source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || exit 0
 
-# No .craft/ found anywhere — not a craft project
+# No .craft/ found anywhere - not a craft project
 if [ -z "$PROJECT_ROOT" ] || [ ! -d "${PROJECT_ROOT}.craft" ]; then
   exit 0
 fi
@@ -18,6 +18,8 @@ fi
 rm -f "${PROJECT_ROOT}.craft/.continuation"
 rm -f "${PROJECT_ROOT}.craft/.active-fix"
 rm -f "${PROJECT_ROOT}.craft/.commit-manifest"
+# Reap annotation listeners whose owning session has ended
+"$SCRIPT_DIR/annotate-run.sh" sweep 2>/dev/null || true
 
 # Clear stale CURRENT_WORKFLOW_SESSION if the session is no longer active
 if [ -f "${PROJECT_ROOT}.craft/.global-state" ]; then

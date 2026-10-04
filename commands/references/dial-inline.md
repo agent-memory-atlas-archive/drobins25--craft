@@ -78,13 +78,15 @@ The user clicks letters in their own browser and reacts in chat; the orchestrato
 
 - After every toggle, re-MEASURE before reporting any number - the readout is the receipt that the CSS landed, never the injected intent.
 - New-position requests ("try between A and B") are in-loop re-injections that EXTEND the letter set. Positions are never removed once injected; the letter set only grows.
+- **Comment mode, on request.** When the user asks to mark up the page (or says they want to point at something), arm the session listener lazily: with no session id held in this conversation run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" arm --root "<project root>"` (it prints `SESSION <id> PORT <port>`); with one held, read it back with `annotate-run.sh" status --session "<id>"` and run `arm --session "<id>"` if the listener is not answering. Then inject the sheet with two more `evaluate_script` steps, alongside the dial injection and not instead of it: the port stamp from the `annotate-stamp` fence of `${CLAUDE_PLUGIN_ROOT}/commands/references/annotate-overlay.md` (`window.__craftAnnotatePort = <port>;` - never stamp the baked flag), then the whole `overlay-source` fence unchanged. Stamp `window.__craftAnnotateContext = "<letter>"` - the bare candidate letter string, never an object - when the sheet goes on and at every candidate switch after it, so each pin records which candidate was on stage. A re-injection after a refresh repeats the stamps and the source. Arming is a substep, not a task.
+- **The read beat.** At the top of every beat in this loop - each user turn - read `cat ".craft/annotations/<id>/current.json"` and act when its `seq` is higher than the last one acted on. The flow never blocks on a wait: the user sends marks when they choose. A `cleared: true` payload means nothing to act on; otherwise quote each pin's `text` as the user's exact words, take its `candidate` as the letter it was about, and treat the marks as the user's reactions in the loop.
 - Reactions are conversational. When the user lands - "C", "keep it as it is", "B but on the cards too" - the loop ends and the exit routes.
 
 ## Step 8: Close and route the exit
 
 **First, read the session facts from the live page, not from memory.** Before CLEAR runs, one `evaluate_script` enumerates the letters keyed in `#craft-dial-style`'s rules (`offered` - the set is monotonic and complete) and reads `documentElement.dataset.craftDial` (`chose`); `passed` is offered minus chose. The DOM does not degrade under compaction; only the model's account of it does. The one conversational field is the verbatim reaction - it can live nowhere else.
 
-**Then teardown, on EVERY exit path including abandonment and error.** Run CLEAR, and say the confirmation:
+**Then teardown, on EVERY exit path including abandonment and error.** Run CLEAR - and, when comment mode was armed, the annotate clear (the `annotate-clear` fence of the overlay reference) followed by the tombstone, `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" clear --session "<id>"`; the listener lives until the session ends and teardown never shuts it down - and say the confirmation:
 
 > "Cleared - the page is showing real code again."
 
