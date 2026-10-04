@@ -8,7 +8,7 @@ The orchestrator files, from the report the analyzer returned. An analyzer never
 
 ## What files
 
-- **QA:** findings file by the bug reference's rules.
+- **QA:** A `Needs Verification` finding files nothing. The analyzer could not trace it, so it has no observed Actual, and a bug record's Actual is only what was observed. It is named in the report back instead. Every other QA finding files by the bug reference's rules.
 - **Walkthrough:** `blocks-ship` and `looks-wrong` findings file as bugs. `feels-off` and `nitpick` findings are taste, not defects, so they go to the UX queue (see UX queue entry below) and never to the bug pile.
 - **A report that says the run could not proceed** (the browser tool was unavailable, the dev server was down) files nothing. Say so in one line and stop.
 
@@ -46,11 +46,13 @@ BODY
 
 Pass `--requirement` only when Expected quotes a story acceptance criterion that the orchestrator itself put in the brief or the scope. Otherwise leave it out: an assumed requirement that reads as cited is worse than a blank one.
 
+Pass `--layer` only when the finding makes it plain by the bug reference's definitions of code, spec, and judgment. Leave it out when unsure. `--verdict` follows the bug reference: `unspecified` when no requirement covers the behavior, otherwise left out until triage.
+
 The script prints the record's absolute path as its last line. It exits 2 and writes nothing when a required field is missing. Fix the named field and run it again.
 
 ## The body
 
-The body follows the template in `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md`. Expected, Actual, and Reproduce come from the finding's expected, actual, and steps. Consequences is the impact in the reader's terms; the analyzer's priority, confidence, and walkthrough grade stay in its report. `## Blocks my next step` starts `no - found by <qa | walkthrough> analysis; nobody was mid-task on it.` Console errors, network failures, and screenshot paths go in `## References`. The analyzer's suggested cause goes in `## Notes`, labelled a hypothesis.
+The body follows the template in `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md`. Expected, Actual, and Reproduce come from the finding's expected, actual, and steps. Consequences is the impact in the reader's terms; the analyzer's priority, confidence, and walkthrough grade stay in its report. `## Blocks my next step` starts `no - found by <qa | walkthrough> analysis; nobody was mid-task on it.` Console errors and network failures go verbatim in `## Evidence`. Screenshot paths go in `## References`. `## Done when` is written by the orchestrator from Expected and the steps, as the check that proves it fixed. The analyzer's suggested cause goes in `## Notes`, labelled a hypothesis.
 
 ## Worked example
 
@@ -97,7 +99,6 @@ Steps 1-3 with one item in the cart send a POST to /api/orders and open the conf
 
 ## References
 
-- Console: Uncaught TypeError: Cannot read properties of undefined (reading 'map') at CheckoutForm.tsx:58
 - Screenshot: .craft/analysis/screenshots/qa-checkout-001.png
 
 ## Notes
@@ -128,6 +129,6 @@ Entry keys:
 
 Print one summary line, omitting any clause whose count is zero:
 
-`<N> bugs filed, <M> already open (hit again), <K> taste findings queued for UX review`
+`<N> bugs filed, <M> already open (hit again), <K> taste findings queued for UX review, <V> QA findings not filed (needs verification)`
 
-Then one line per record: its title and its path. When nothing was found, say so in one line.
+Then one line per record: its title and its path. Then one line per unfiled QA finding: its title, then `not filed, needs verification`. When nothing was found, say so in one line.

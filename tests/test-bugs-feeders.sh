@@ -55,9 +55,10 @@ if [ -f "$REF" ]; then
   assert_eq "BLOCKS reads back no" "BLOCKS=no" "$(printf '%s\n' "$LISTED" | grep '^BLOCKS=')"
   RECORD_TEXT="$(cat "$RECORD" 2>/dev/null)"
   assert_contains_literal "record holds a References section" "## References" "$RECORD_TEXT"
-  CONSOLE_LINE="$(printf '%s\n' "$BODY" | awk '/^## References/{p=1; next} p && /^## /{exit} p && /rror/{print; exit}')"
-  assert_not_eq "References holds a console error line to look for" "" "$CONSOLE_LINE"
-  assert_contains_literal "record carries the console line from References" "${CONSOLE_LINE#- }" "$RECORD_TEXT"
+  assert_contains_literal "record holds an Evidence section" "## Evidence" "$RECORD_TEXT"
+  CONSOLE_LINE="$(printf '%s\n' "$BODY" | awk '/^## Evidence/{p=1; next} p && /^## /{exit} p && /rror/{print; exit}')"
+  assert_not_eq "Evidence holds a console error line to look for" "" "$CONSOLE_LINE"
+  assert_contains_literal "record carries the console line from Evidence" "$CONSOLE_LINE" "$RECORD_TEXT"
 fi
 
 begin_test "worked example blocks are single and exact"
@@ -107,6 +108,21 @@ assert_not_contains "qa-analyzer output rules match the layer (files-too)" 'Need
 assert_not_contains "qa-analyzer output rules match the layer (every finding)" 'Every finding is filed as a bug record' "$QA_AGENT_TEXT"
 README_TEXT="$(cat "$REPO/README.md")"
 assert_not_contains "README no longer promises unverified findings file" 'Needs Verification included' "$README_TEXT"
+
+begin_test "a Needs Verification QA finding is named, never filed"
+assert_contains_literal "layer says an unverified finding files nothing" 'A `Needs Verification` finding files nothing' "$REF_TEXT"
+assert_contains_literal "report back names each unfiled finding" 'not filed, needs verification' "$REF_TEXT"
+assert_contains_literal "README says unverified findings are named, not filed" "A QA finding the analyzer couldn't verify is named in the report and not filed." "$README_TEXT"
+
+begin_test "the layer's flags and body sections match the bug reference"
+assert_contains_literal "layer says when --layer is passed" 'Pass `--layer` only when' "$REF_TEXT"
+assert_contains_literal "layer defers --verdict to the bug reference" '`--verdict` follows the bug reference' "$REF_TEXT"
+assert_contains_literal "console and network go to Evidence" 'Console errors and network failures go verbatim in `## Evidence`' "$REF_TEXT"
+assert_contains_literal "Done when has a named source" '`## Done when` is written by the orchestrator' "$REF_TEXT"
+REFS_CONSOLE="$(fenced_block bug-body "$REF" | awk '/^## References/{p=1; next} p && /^## /{exit} p && /rror/{print}')"
+assert_eq "worked example References carries no console line" "" "$REFS_CONSOLE"
+assert_not_contains "qa-analyzer is not sent to a file it never reads" "\`bugs-record.md\`'s rules" "$QA_AGENT_TEXT"
+assert_contains_literal "qa-analyzer Evidence rule matches the layer" "console errors and network failures become the record's Evidence" "$QA_AGENT_TEXT"
 
 ANALYZE="$REPO/commands/craft-analyze.md"
 QA_AGENT="$REPO/agents/qa-analyzer.md"

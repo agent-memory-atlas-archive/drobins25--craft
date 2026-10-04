@@ -277,7 +277,7 @@ For each QA pass, produce:
 [Detailed bug reports]
 
 ## Medium Priority Issues
-[Bug reports in the Bug Report Format above. Findings are filed as bug records by `bugs-record.md`'s rules, so each one needs its steps, expected, and actual.]
+[Bug reports in the Bug Report Format above. Each one is filed as a bug record, so each needs its steps, expected, and actual.]
 
 ## Low Priority Issues
 [Bug reports in the Bug Report Format above, kept short, but still with steps, expected, and actual.]
@@ -301,7 +301,7 @@ Each Bug Report you return is filed as one bug record by the orchestrator, so wr
 - **Steps to Reproduce** become the Reproduce section
 - **Expected** and **Actual** carry across as written
 - **Severity** and **Confidence** stay in the report; the record's Consequences is the impact in the reader's terms
-- **Evidence** (console errors, network failures, screenshot names) becomes the record's References
+- **Evidence**: console errors and network failures become the record's Evidence, verbatim, and screenshot names go in its References
 - **Suggested root cause**, if you offer one, is kept as a hypothesis
 
 One defect is one Bug Report. If two findings are the same defect seen two ways, merge them and give both repro paths.
