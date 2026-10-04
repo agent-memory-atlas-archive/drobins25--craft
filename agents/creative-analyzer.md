@@ -24,7 +24,7 @@ description: |
   </example>
 model: sonnet
 color: pink
-tools: Read, Glob, Grep, WebFetch, Bash
+tools: Read, Glob, Grep, WebFetch, Bash, ToolSearch, mcp__plugin_craft_chrome-devtools__*
 disallowedTools: Write, Edit, NotebookEdit
 mcpServers:
   - chrome-devtools
