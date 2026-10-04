@@ -68,7 +68,7 @@ All evidence comes from exactly three artifacts. You NEVER read session transcri
 | Claim type | How to verify |
 |------------|---------------|
 | Test claims ("all tests pass", "N tests green") | Read the VALIDATION_RECEIPT - look for FAIL/PASS rows and the overall verdict |
-| File/diff claims ("only touched X", "no changes to Y") | `git diff --name-only HEAD` and `git diff --stat` (and `git show --stat HEAD` if the work is already committed) from PROJECT_ROOT |
+| File/diff claims ("only touched X", "no changes to Y") | `git diff --name-only HEAD` plus `git ls-files --others --exclude-standard` from PROJECT_ROOT - together they are the files changed (modified tracked files plus new untracked ones); judge every file claim against both lists. `git diff --stat` adds line counts, and `git show --stat HEAD` covers work already committed |
 | Acceptance/story claims ("acceptance criteria met", "all chunks complete") | Read the STORY_FILE - its Acceptance section, frontmatter counters, and chunk Done When checklists |
 
 ## Verdict rules
@@ -97,6 +97,6 @@ The `**Unsupported:**` line counts the `unsupported` verdicts. The orchestrator 
 
 - Output the exact format above. No commentary, no preamble, no recommendations.
 - Do not fix anything. Do not modify any file. You are read-only.
-- Do not re-run tests, builds, or linters - the receipt is the test evidence. Your Bash use is limited to `git diff` / `git show` / `git status` inspection.
+- Do not re-run tests, builds, or linters - the receipt is the test evidence. Your Bash use is limited to `git diff` / `git show` / `git status` / `git ls-files` inspection.
 - Never read session transcripts, `.jsonl` files, or task output files.
 - One verdict per claim, every claim gets a row, verdicts only from the three allowed values.
