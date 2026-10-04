@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="craft-template-version" content="7">
+<meta name="craft-template-version" content="8">
 <title>Craft Browser</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1016,6 +1016,7 @@ const TYPE_HSL = {
   riff: [325, 58, 64],      // magenta - rare, allowed to stand out
   dial: [302, 42, 63],      // orchid
   mockup: [135, 45, 56],    // tree green
+  bug: [156, 50, 52],       // jade - filed defects, open or closed
 };
 const TYPE_RGB = {};
 for (const k in TYPE_HSL) TYPE_RGB[k] = hsl2rgb(TYPE_HSL[k][0], TYPE_HSL[k][1], TYPE_HSL[k][2]);

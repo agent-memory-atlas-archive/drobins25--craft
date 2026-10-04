@@ -261,15 +261,6 @@ Use `take_screenshot` with the `savePath` parameter when available, or note the 
 - **feels-off**: Works but the interaction is surprising or confusing. No toggle on re-press, no feedback on click, no way to reset, unexpected behavior.
 - **nitpick**: Polish item. Hover state missing, transition too jarring, minor spacing, could be smoother.
 
-### Complexity classification
-
-For each finding, classify the fix complexity:
-
-- **quick-fix**: Single file, 1-5 lines, obvious fix. CSS property, missing attribute, wrong value. No design decisions. Examples: padding, z-index, tabindex, overflow, border-radius, font-size, opacity.
-- **story-fix**: Multiple files or logic changes. Requires understanding component relationships or making design decisions. Examples: toggle behavior, state management, new UI elements, event handlers, responsive layout restructuring.
-
-For quick-fix findings, include a `fix_hint` - a brief description of what to change. Be specific: "add `padding-bottom: 1rem` to the recipe card container" not "fix the padding." The orchestrator uses this to make the edit directly without spawning an agent.
-
 ### Finding template
 
 For each finding:
@@ -277,14 +268,13 @@ For each finding:
 ```markdown
 ### [N]. [Short description]
 **Severity:** blocks-ship | looks-wrong | feels-off | nitpick
-**Complexity:** quick-fix | story-fix
 **Element:** [What I clicked/interacted with - description or text content]
 **Steps:**
 1. [What I did]
 2. [What I did next]
 **Expected:** [What a user would expect to happen]
 **Actual:** [What actually happened]
-**Fix hint:** [For quick-fix only: specific CSS/attribute change needed, e.g., "add overflow: hidden to .card-container"]
+**Fix hint:** [Optional, any severity: your hypothesis of what to change, e.g., "add overflow: hidden to .card-container". A hypothesis, not a verified cause]
 **Screenshots:** [before.png, after.png]
 **Console errors:** [if any, or "none"]
 ```
@@ -308,28 +298,6 @@ For each finding:
 
 ## Passed Interactions
 [List of things that worked correctly - what you clicked and what happened as expected]
-
-## Quick Fixes (complexity: quick-fix)
-[List each quick-fix finding with its fix_hint - the orchestrator applies these directly]
-
-### QF-1: [Short title]
-- **Fix hint:** [specific change, e.g., "add padding-bottom: 1rem to .recipe-card"]
-- **File (if visible):** [CSS class or element hint from DOM inspection]
-
-## Stories to Create (complexity: story-fix)
-[Only story-fix findings need full stories]
-
-### Story 1: [Short title]
-- **Type:** fix
-- **Priority:** [blocks-ship→high, looks-wrong→high, feels-off→medium, nitpick→low]
-- **Name:** fix-[kebab-slug]
-- **Title:** "Fix: [title]"
-- **Spark:** [1-2 sentence description of what's wrong and user impact]
-- **Acceptance:**
-  - [ ] [Specific testable criterion]
-  - [ ] [Specific testable criterion]
-- **Found at:** [URL]
-- **Screenshot:** [filename]
 ```
 
 ## Rules
@@ -341,3 +309,4 @@ For each finding:
 5. **Report what you see, not what you think the code does.** "The button did nothing when I clicked it" not "The event handler might not be attached."
 6. **Double-interact with everything.** The second click reveals toggle behavior, idempotency issues, and missing state management.
 7. **Quality over quantity.** 5 real "this doesn't work" findings are more valuable than 15 minor nitpicks. Lead with severity.
+8. **Findings are filed, never fixed.** `blocks-ship` and `looks-wrong` findings are filed as bugs. `feels-off` and `nitpick` findings go to the UX review queue. You never fix anything.

@@ -2,6 +2,21 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.8.0 - 2026-10-04
+
+Craft now keeps its bugs. A person mid-conversation or an agent mid-run walks through one door and a complete record lands on disk, without anyone being pulled out of what they were doing. Bug then adhoc is the fix path now.
+
+- Added `/craft:bugs`. Say "file a bug" and craft files it without stopping what you were doing. Run it bare to see the open pile, newest first, with the bugs that block someone's next step marked. Say a bug is fixed or won't be fixed and craft matches it, confirms once, and closes it with that verdict. Session start shows how many bugs are open, and stays quiet at zero.
+- Added a one-line offer to file when you defer a defect: "later" or "don't let me forget" attached to something broken, or a defect named mid-story. Nothing is filed until you say yes. `/craft:adhoc` and `/craft:notebook` point a defect you are not fixing now at `/craft:bugs`.
+- Changed `/craft:analyze`. Every defect QA and the walkthrough find lands in `.craft/bugs/`, with the open pile as the dedupe. A QA finding the analyzer couldn't verify is named in the report instead of filed, so the pile only holds what was seen. The QA and walkthrough queues and their create-a-story prompts are retired. UX, creative and style findings queue for review as before. When no cycle is active, the scope prompt offers the last completed cycle.
+- Changed cycle completion. The walkthrough files bugs and the cycle completes. The cycle-complete repair loop, which predates adhoc, is retired.
+- Added bugs to the dashboard. Open and closed bugs sit on the project graph in their own jade color, and a bug's card shows its status and its record.
+- Removed the hook that approved nearly every shell command on your behalf. It predates auto mode and overrode the permission mode you chose, in every project craft was installed in. Shell commands now go through your own permission flow: auto mode's review, your allow rules, or Manual-mode prompts.
+- Fixed the QA, UX, creative and style analyzers reading source instead of testing the running app. They can reach the browser again.
+- Fixed one oddly encoded file hiding everything after it. A notebook note, decision record or dial record that isn't valid UTF-8 now shows with a replacement character and the rest of the list stays intact.
+- Fixed story completion when a story deletes a file with `git rm`. The completion commit now goes through instead of aborting after the story was already marked complete.
+- Fixed choosing Ignore for a leftover file at story completion. The file is now actually gitignored.
+
 ## 2.7.2 - 2026-10-03
 
 - Changed plan approval to two forward choices: mark the story ready, or mark it ready and start implementing right away. The options that edited a finished plan after its checks had run, or reopened creative riffing on a technical story, are gone.

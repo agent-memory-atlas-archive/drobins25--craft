@@ -24,7 +24,7 @@ description: |
   </example>
 model: sonnet
 color: yellow
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, ToolSearch, mcp__plugin_craft_chrome-devtools__*
 disallowedTools: Write, Edit, NotebookEdit
 mcpServers:
   - chrome-devtools

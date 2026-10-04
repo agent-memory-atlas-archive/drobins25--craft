@@ -1,6 +1,8 @@
 #!/bin/bash
 # get-latest-cycle.sh — Get the highest-numbered cycle and its status
-# Usage: get-latest-cycle.sh [project-root]
+# Usage: get-latest-cycle.sh [project-root] [--status=<s>]
+#   --status=<s>  pick the highest-numbered cycle whose cycle.yaml status
+#                 equals <s> exactly (flag may come before or after the root)
 #
 # Output: key=value pairs for the most recent cycle
 #   LATEST_CYCLE=45-hero-card-share
@@ -11,11 +13,21 @@
 #   STORIES_COMPLETE=0
 #   STORIES_PLANNING=0
 #
-# If no cycles exist, outputs LATEST_CYCLE=""
+# If no cycles exist (or none match --status), outputs LATEST_CYCLE=""
 
 set -e
 
-PROJECT="${1:-.}"
+PROJECT="."
+WANT_STATUS=""
+HAS_FILTER=0
+for arg in "$@"; do
+  case "$arg" in
+    --status=*) WANT_STATUS="${arg#--status=}"; HAS_FILTER=1 ;;
+    *) PROJECT="$arg" ;;
+  esac
+done
+# An explicit empty root means the current directory, as ${1:-.} did before the flag.
+if [ -z "$PROJECT" ]; then PROJECT="."; fi
 CYCLES_DIR="$PROJECT/.craft/cycles"
 
 if [ ! -d "$CYCLES_DIR" ]; then
@@ -25,7 +37,24 @@ fi
 
 # Get the highest-numbered cycle directory
 # ls directories, sort by leading number, take the last one
-LATEST=$(ls -d "$CYCLES_DIR"/*/ 2>/dev/null | sed 's|.*/\([^/]*\)/$|\1|' | sort -t'-' -k1 -n | tail -1)
+SORTED=$(ls -d "$CYCLES_DIR"/*/ 2>/dev/null | sed 's|.*/\([^/]*\)/$|\1|' | sort -t'-' -k1 -n)
+
+if [ "$HAS_FILTER" -eq 1 ]; then
+  # Walk newest to oldest; a cycle.yaml without a status line is skipped
+  LATEST=""
+  while IFS= read -r folder; do
+    [ -z "$folder" ] && continue
+    yaml="$CYCLES_DIR/$folder/cycle.yaml"
+    [ -f "$yaml" ] || continue
+    folder_status=$(grep "^status:" "$yaml" | head -1 | awk '{print $2}' || true)
+    if [ "$folder_status" = "$WANT_STATUS" ]; then
+      LATEST="$folder"
+      break
+    fi
+  done <<< "$(echo "$SORTED" | sed '1!G;h;$!d')"
+else
+  LATEST=$(echo "$SORTED" | tail -1)
+fi
 
 if [ -z "$LATEST" ]; then
   echo 'LATEST_CYCLE=""'

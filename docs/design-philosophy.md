@@ -1,6 +1,6 @@
 # Craft Design Philosophy — Reference Material
 
-> **Note:** This is a historical record from February 2026. For the current active design specification, see `DESIGN.md`. For command and skill details, see `CLAUDE.md`.
+> **Note:** This is a historical record from February 2026. For the current active design specification, see `DESIGN.md`. For commands and skills, see `README.md`; for internals, see `DESIGN.md`.
 
 > This is reference material extracted from DESIGN.md. For active instructions, see CLAUDE.md.
 

@@ -471,5 +471,44 @@ rm -f "$ENV_FILE"
 cleanup_test_dir
 echo ""
 
+# Bugs segment: shown with the open count, absent at zero
+begin_test "session start shows Bugs: 2 open with two open records"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/bugs"
+for slug in first second; do
+  printf -- '---\ntype: bug\nfound_during: conversation\n---\n\nthe %s thing is broken\n' "$slug" \
+    > "$TEST_DIR/.craft/bugs/2026-10-03-$slug.md"
+done
+printf '# Bugs\n' > "$TEST_DIR/.craft/bugs/README.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_contains_literal "status line carries | Bugs: 2 open" "| Bugs: 2 open" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "session start shows no Bugs segment at zero"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/bugs/closed"
+printf -- '---\ntype: bug\n---\n\nalready closed\n' > "$TEST_DIR/.craft/bugs/closed/2026-10-03-done.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_not_contains "no Bugs segment when nothing is open" "Bugs:" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
 # --- Summary ---
 finish_tests

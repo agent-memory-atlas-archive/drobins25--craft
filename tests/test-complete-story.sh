@@ -253,6 +253,44 @@ assert_eq "a path git never recorded is not mistaken for a rename source" "0" "$
 cleanup_test_dir
 echo ""
 
+# Test 9c: A manifest entry already staged as a deletion (git rm) is skipped, not an abort
+begin_test "Manifest entry that git already recorded as a staged deletion is skipped - the deletion rides the commit"
+
+TEST_DIR=$(create_craft_with_story "test-cycle" "login-form" "Login Form" "3" "active")
+STORY_FILE="$TEST_DIR/.craft/cycles/1-test-cycle/stories/1-login-form.md"
+echo "retired" > "$TEST_DIR/gone.txt"
+echo "feature" > "$TEST_DIR/f1.txt"
+git_init_repo "$TEST_DIR"
+echo "changed" >> "$TEST_DIR/f1.txt"
+# An implementer that retires a tracked file with `git rm` leaves it in the
+# index as a staged deletion and out of the worktree - the manifest still
+# names it because the chunk spec listed it as a delete target.
+(cd "$TEST_DIR" && git rm -q gone.txt)
+printf 'story: 1-login-form\nf1.txt\ngone.txt\n' > "$TEST_DIR/.craft/.commit-manifest"
+
+set +e
+STDERR_OUT=$(cd "$TEST_DIR" && bash "$COMPLETE_STORY_SCRIPT" "$STORY_FILE" 2>&1 >/dev/null)
+EXIT_CODE=$?
+set -e
+
+assert_eq "exits 0 - a staged deletion is not a bad manifest line" "0" "$EXIT_CODE"
+if echo "$STDERR_OUT" | grep -q "failed to stage manifest entry"; then
+  echo "  FAIL: stderr reports a staging failure for the git-rm'd path"
+  FAIL=$((FAIL + 1))
+else
+  echo "  PASS: no staging failure reported for the git-rm'd path"
+  PASS=$((PASS + 1))
+fi
+COMMIT_COUNT=$(cd "$TEST_DIR" && git log --oneline | wc -l | tr -d ' ')
+assert_eq "the story commit was made" "2" "$COMMIT_COUNT"
+DELETION_IN_COMMIT=$(cd "$TEST_DIR" && git show --name-status --format= HEAD | grep -c $'^D\tgone.txt$' || true)
+assert_eq "the commit carries the deletion of gone.txt" "1" "$DELETION_IN_COMMIT"
+F1_IN_COMMIT=$(cd "$TEST_DIR" && git show --name-status --format= HEAD | grep -c $'^M\tf1.txt$' || true)
+assert_eq "the commit still carries the ordinary modified entry" "1" "$F1_IN_COMMIT"
+
+cleanup_test_dir
+echo ""
+
 # Test 10: Malformed manifest (comma body line) — treated as absent
 begin_test "Malformed manifest (unsplit comma line) — treated as absent"
 

@@ -84,6 +84,13 @@ def _notebook(fields, stripped):
     return None
 
 
+def _bug(fields, stripped):
+    return (
+        _from_section(stripped, "Consequences")
+        or _from_section(stripped, "What happened")
+    )
+
+
 def _after_h1(fields, stripped):
     match = _H1_RE.search(stripped)
     rest = stripped[match.end() :] if match else stripped
@@ -97,6 +104,7 @@ _HANDLERS = {
     "tweak": _tweak,
     "mockup": _mockup,
     "notebook": _notebook,
+    "bug": _bug,
     "dial": _after_h1,
     "riff": _after_h1,
     "planning": _after_h1,

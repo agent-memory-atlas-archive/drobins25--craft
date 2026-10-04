@@ -72,4 +72,68 @@ assert_eq \
 
 echo ""
 
+# --- Mechanism gate: the record quotes the line that stops the bug before the
+# certainty question is answered. Pinned by POSITION, not presence: a Mechanism
+# section moved below Confidence Check, or the gate sentences moved after the
+# 100% question, would leave a presence grep green while the gate is defeated.
+# Line numbers come from grep -n over the whole file so the order is explicit.
+
+MECH_HEADING='## Mechanism'
+MECH_BODY='[The changed line - added or removed - quoted verbatim with file:line, and one clause saying how that change stops the symptom.]'
+GATE_FIRST='Fill Mechanism first. If no line can be quoted, the answer to the question below is no.'
+GATE_DEFER='A quoted line that only points at another file is not the mechanism - quote the line it points at.'
+CERTAIN='**Am I 100% certain this solution resolves the root cause?**'
+
+# first line number of a literal, or 0 when absent
+ln_of() { local n; n="$(grep -n -F -- "$1" "$FIX_MD" | head -1 | cut -d: -f1 || true)"; echo "${n:-0}"; }
+
+STEP1="$(section "Step 1: Create the Fix File" "$FIX_MD")"
+STEP3="$(section "Step 3: Confidence Check" "$FIX_MD")"
+
+begin_test "Step 1 template carries the Mechanism section with its body"
+assert_contains_literal \
+  "Step 1 contains the Mechanism heading" \
+  "$MECH_HEADING" \
+  "$STEP1"
+assert_contains_literal \
+  "Step 1 contains the Mechanism body" \
+  "$MECH_BODY" \
+  "$STEP1"
+
+echo ""
+
+begin_test "Mechanism sits between Solution and Confidence Check in the template"
+L_SOLUTION="$(ln_of '## Solution')"
+L_MECH="$(ln_of "$MECH_HEADING")"
+L_CONF="$(ln_of '## Confidence Check')"
+assert_eq \
+  "Solution < Mechanism < Confidence Check by line number" \
+  "yes" \
+  "$( [ "$L_SOLUTION" -gt 0 ] && [ "$L_MECH" -gt "$L_SOLUTION" ] && [ "$L_CONF" -gt "$L_MECH" ] && echo yes || echo "no (solution=$L_SOLUTION mechanism=$L_MECH confidence=$L_CONF)")"
+
+echo ""
+
+begin_test "Step 3 carries both gate sentences verbatim"
+assert_contains_literal \
+  "Step 3 contains the fill-first sentence" \
+  "$GATE_FIRST" \
+  "$STEP3"
+assert_contains_literal \
+  "Step 3 contains the no-deference sentence" \
+  "$GATE_DEFER" \
+  "$STEP3"
+
+echo ""
+
+begin_test "both gate sentences come before the 100% certain question"
+L_FIRST="$(ln_of "$GATE_FIRST")"
+L_DEFER="$(ln_of "$GATE_DEFER")"
+L_CERTAIN="$(ln_of "$CERTAIN")"
+assert_eq \
+  "gate sentences < certainty question by line number" \
+  "yes" \
+  "$( [ "$L_FIRST" -gt 0 ] && [ "$L_DEFER" -gt 0 ] && [ "$L_CERTAIN" -gt "$L_FIRST" ] && [ "$L_CERTAIN" -gt "$L_DEFER" ] && echo yes || echo "no (first=$L_FIRST defer=$L_DEFER certain=$L_CERTAIN)")"
+
+echo ""
+
 finish_tests "test-adhoc-fix-validation.sh"

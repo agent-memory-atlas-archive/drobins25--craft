@@ -69,7 +69,7 @@ After the final chunk, verify the suite is green (`./tests/run-all.sh`), then au
 - Invoke the `craft:claims-auditor` agent (Task tool, haiku) with the claim list, the receipt path, and the story file path - never your narrative or reasoning
 - An unsupported claim means fix the underlying issue or correct the claim before completing; the audit itself never blocks completion
 
-The canonical flow with all result branches is `commands/craft-story-implement.md` Step 5.1b; the `/implement` command carries the same flow for this repo.
+The canonical flow with all result branches is `commands/craft-story-implement.md` Step 5.1b.
 
 ### 6. Complete the story
 

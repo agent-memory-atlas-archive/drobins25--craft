@@ -22,15 +22,15 @@ count_wired() {
   grep -F "$ANCHOR_STR" "$1" 2>/dev/null | grep -cF "$SILENCE_STR" || true
 }
 
-# All fifteen locked trigger scripts (move-story carries two invocations,
+# All seventeen locked trigger scripts (move-story carries two invocations,
 # one per destination branch).
-WIRED_ONCE="complete-chunk.sh complete-story.sh start-story.sh delete-story.sh start-cycle.sh complete-cycle.sh create-story.sh create-cycle.sh update-story-status.sh notebook-capture.sh notebook-graduate-mark.sh notebook-done.sh dials-capture.sh process-request.sh"
+WIRED_ONCE="complete-chunk.sh complete-story.sh start-story.sh delete-story.sh start-cycle.sh complete-cycle.sh create-story.sh create-cycle.sh update-story-status.sh notebook-capture.sh notebook-graduate-mark.sh notebook-done.sh dials-capture.sh process-request.sh bugs-capture.sh bugs-close.sh"
 
 echo "=== test-dashboard-triggers.sh ==="
 echo ""
 
 # --- Static wiring checks ---
-begin_test "all fifteen locked trigger scripts carry exactly one silenced, guarded invocation"
+begin_test "all seventeen locked trigger scripts carry exactly one silenced, guarded invocation"
 
 for script in $WIRED_ONCE; do
   count=$(count_wired "$HOOKS/$script")
@@ -44,7 +44,7 @@ echo ""
 begin_test "no other script in hooks/scripts invokes the wrapper"
 
 TOTAL_FILES=$(grep -rlF "$ANCHOR_STR" "$HOOKS" | wc -l | tr -d ' ')
-assert_eq "exactly the fifteen wired scripts reference the wrapper" "15" "$TOTAL_FILES"
+assert_eq "exactly the seventeen wired scripts reference the wrapper" "17" "$TOTAL_FILES"
 echo ""
 
 begin_test "complete-story.sh rebuilds before its deferred abort exit"

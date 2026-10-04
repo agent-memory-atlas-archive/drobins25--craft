@@ -421,6 +421,11 @@ class TestStatusProseDrift(unittest.TestCase):
             "commands/references/story-from-mockup.md",
             "writes graduated-story onto the mockup record",
         ),
+        ("hooks/scripts/bugs-capture.sh", "writes a new bug record's status"),
+        (
+            "commands/references/bugs-record.md",
+            "the bug record template and its status words",
+        ),
     )
 
     @classmethod

@@ -35,3 +35,5 @@ evals/
 # .craft/cycles/*/.failures
 # .craft/cycles/*/.craft/
 # .craft/browser/snapshots/
+# craft: ignored during 2-bugs-feeders
+.playwright-cli/

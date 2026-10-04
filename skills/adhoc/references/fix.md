@@ -42,6 +42,9 @@ satisfied_todo: [stamped by the todo-satisfaction beat - <todo-slug> or none-mat
 ## Solution
 [What to change, which files, and WHY this addresses the root cause]
 
+## Mechanism
+[The changed line - added or removed - quoted verbatim with file:line, and one clause saying how that change stops the symptom.]
+
 ## Confidence Check
 Am I 100% certain this solution resolves the root cause?
 [Answer here - see Step 3]
@@ -67,6 +70,9 @@ Update the Investigation section with what you checked.
 ## Step 3: Confidence Check
 
 After writing the Root Cause and Solution sections, pause and ask yourself:
+
+Fill Mechanism first. If no line can be quoted, the answer to the question below is no.
+A quoted line that only points at another file is not the mechanism - quote the line it points at.
 
 > **Am I 100% certain this solution resolves the root cause?**
 

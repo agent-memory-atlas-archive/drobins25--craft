@@ -916,9 +916,9 @@ After all chunks:
        description: "Keep it untracked, recorded in the ledger - never asked again"
    ```
 
-   - **Ignore:** append the path to `.gitignore` with a provenance comment, then record it:
+   - **Ignore:** append the path to `.gitignore` under a provenance comment, then record it. The comment goes on its own line: gitignore has no inline comments, so a `#` after the path would become part of the pattern and match nothing.
      ```bash
-     printf '%s  # craft: ignored during [story-name]\n' "[path]" >> .gitignore
+     printf '# craft: ignored during %s\n%s\n' "[story-name]" "[path]" >> .gitignore
      ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/triage-ledger.sh append [path] ignore [story-name]
      ```
    - **Claim:** check the shared deny-pattern list FIRST - this is a hard stop, not a warning:

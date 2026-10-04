@@ -242,6 +242,14 @@ if [ "$taste_enabled" != "false" ]; then
   fi
 fi
 
+# Open bugs: reuse the list script's own header so the wording never drifts. The
+# script never fails by design; the guard and the shape check keep the banner intact
+# even if it does. Absent at zero.
+bugs_header=$(CRAFT_PROJECT_ROOT="${PROJECT_ROOT%/}" "$SCRIPT_DIR/bugs-list.sh" --summary 2>/dev/null | head -1 || true)
+if printf '%s' "$bugs_header" | grep -qE '^Bugs: [1-9][0-9]* open$'; then
+  context="$context | ${bugs_header}"
+fi
+
 # Report orchestration index status (one-time, SessionStart only)
 ORCH_INDEX="$(dirname "$SCRIPT_DIR")/../reference/orchestration-index.min"
 if [ -f "$ORCH_INDEX" ]; then

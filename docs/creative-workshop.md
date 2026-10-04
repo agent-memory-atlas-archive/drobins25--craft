@@ -8,7 +8,7 @@ This is a how-to guide. You're in the middle of creating a story or working in t
 
 ## The Problem It Solves
 
-Standard creative-spark generates options by analyzing your story context and producing 2-3 approaches with trade-offs. That works well for most things.
+Standard creative-spark generates options by analyzing your story context and producing 3-5 approaches with trade-offs. That works well for most things.
 
 But some features need a different entry point. A stats summary screen is technically a data display problem. It's also a moment where someone finds out something about themselves. If you start from the data-display framing, you get good layouts. If you start from the identity-moment framing, you might get something users screenshot and share.
 
@@ -16,7 +16,7 @@ The Creative Driver step (Step 1.5 in creative-spark) offers a choice: generate 
 
 ---
 
-## The Three Driver Options
+## The Four Driver Options
 
 ### Standard (default)
 
@@ -104,7 +104,7 @@ Constraints for Option Generation:
 
 ## The Agents Are Interrogators, Not Generators
 
-This is important: muse and alchemist do NOT generate your creative options. Each returned briefing is quoted to you first - 2-3 verbatim lines ("Muse's take: ..." / "Alchemist's take: ...") - and then it enriches the brief that creative-spark uses to generate options. Creative-spark still produces the 2-3 options with trade-offs and visual direction.
+This is important: muse and alchemist do NOT generate your creative options. Each returned briefing is quoted to you first - 2-3 verbatim lines ("Muse's take: ..." / "Alchemist's take: ...") - and then it enriches the brief that creative-spark uses to generate options. Creative-spark still produces the 3-5 options with trade-offs and visual direction.
 
 The purpose of the interrogation is to catch the question you weren't asking. A muse briefing might reveal that users aren't asking for a dashboard - they're asking to feel in control. That reframe doesn't change the options list dramatically, but it changes which dimension each option optimizes for, and it changes how you evaluate which option to pick.
 

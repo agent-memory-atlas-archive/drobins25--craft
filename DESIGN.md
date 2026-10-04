@@ -1,6 +1,6 @@
 # Craft - Design Reference
 
-> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a creative-first development harness. CLAUDE.md is the rules file Claude auto-loads each session; this file holds the architectural detail CLAUDE.md summarizes.
+> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a development harness. README.md covers what craft is and how to use it, this file covers architecture and internals, and CLAUDE.md is the operating contract Claude works under in this repo.
 
 For definitions of cycle, story, chunk, and the workshop concepts, see README.md. This file assumes that vocabulary.
 
@@ -37,7 +37,7 @@ plugins/craft/
 │   ├── ux-analyzer.md         ← Nielsen heuristics, accessibility
 │   ├── verifier.md            ← Adversarial claim checker (primary sources only)
 │   └── walkthrough-analyzer.md ← First-time user simulation (chrome-devtools MCP)
-├── commands/                  ← Slash command definitions (34 commands)
+├── commands/                  ← Slash command definitions (35 commands)
 │   ├── craft.md               ← Main entry point
 │   ├── craft-ask.md           ← Consult a workshop agent (intelligent routing)
 │   ├── craft-become.md        ← Agent crystallization (4-phase: research→checkpoint→crystallize→save)
@@ -45,9 +45,11 @@ plugins/craft/
 │   ├── craft-init.md
 │   ├── craft-dashboard.md     ← Opens the project graph page - rebuilds first, offers a template pull when stale, then opens (distinct from craft-status.md's terminal snapshot)
 │   ├── craft-decisions.md     ← /craft:decisions - the Shelf: renders decisions live from decisions-view.sh, writes through decisions-capture.sh and decisions-transition.sh only
+│   ├── craft-guide.md         ← /craft:guide - read-only help on how craft works and what your `.craft/` state means
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done
+│   ├── craft-bugs.md          ← /craft:bugs - file a bug without fixing it; opens with the open pile via shell preprocessing (the one command with allowed-tools), reads commands/references/bugs-record.md
 │   ├── craft-riff.md          ← Riff: the game - two-player idea passing in the main loop; bare invocation seeds from the oldest open notebook idea
 │   ├── craft-planning.md
 │   ├── craft-status.md
@@ -148,7 +150,7 @@ The Living Map's structural generator lives in a dedicated top-level `scripts/ma
 | Status | Meaning |
 |--------|---------|
 | `draft` | Just an idea, not planned |
-| `planning` | In creative mode, locking decisions |
+| `planning` | Being designed, decisions captured |
 | `ready` | Story file complete, can implement |
 | `active` | Currently being implemented |
 | `blocked` | Waiting on dependency |
@@ -217,15 +219,15 @@ Write access restricted to `.craft/` and `.claude/`. Used for story creation, de
 
 **Included skills:** content-spark, creative-spark, design-vibe, lock-decision, plan-chunks, adhoc, approve, browser
 **Included agents:** plan-chunks-agent, project-scanner, muse, riff, alchemist, conductor, doc-writer, product-anthropologist, pr-reviewer-expert, maze-architect, researcher, research-synthesizer, verifier, practitioner-reviewer, playwright-browser, become-researcher, crystallizer, guide
-**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial
+**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
 
 ### Implement Phase
 
-Full write access, gated by `CRAFT_WRITE_ENABLED` in `.global-state`. Runs with `acceptEdits` permission mode.
+Full write access, gated by `CRAFT_WRITE_ENABLED` in `.global-state`.
 
 **Allowed tools:** Read, Write, Edit, Glob, Grep, Bash, Task
 **Included skills:** validate-chunk, refine-chunk, test-fix
-**Included agents:** implementer, tester, chunk-validator
+**Included agents:** implementer, tester, chunk-validator, claims-auditor
 **Included commands:** craft:story-implement, craft:story-implement-auto, craft:story-continue
 
 ### Analysis Phase
@@ -251,7 +253,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 - **`merge-tokens.py`** - Not a hook: a CLI invoked by craft-init's token phases. The sole writer for merges into an existing tokens.yaml - `report` mode emits a mechanical per-key CONFLICT/NEW/SAME diff for the token AUQs; `merge` mode does a line-surgical keyed union (snapshot, self-verify, restore-on-violation). Lives here beside the hook that enforces it.
 
 ### PreToolUse (Bash)
-- **`auto-approve-plugin-scripts.sh`** - Auto-approves bash invocations of plugin scripts to reduce permission prompts.
+- **`push-gate.sh`** - Denies a `git push` while custody signals are live (untriaged leftovers, secret-shaped paths in the outgoing range). Never grants approval: a clean push falls through to the user's own permission flow.
 
 ### PostToolUse (Write|Edit)
 - **`update-progress.py`** (async) - Tracks which files were modified, updates story progress counts
@@ -284,7 +286,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 | `start-workflow-session.sh` | Initialize a workflow session directory and state |
 | `complete-workflow-session.sh` | Mark a workflow session complete |
 | `complete-workflow-stage.sh` | Advance workflow to the next stage |
-| `get-latest-cycle.sh` | Resolve the most recent cycle directory path |
+| `get-latest-cycle.sh` | Resolve the most recent cycle directory path (`--status=` filters by cycle status) |
 | `update-global-state.sh` | Update .global-state key-value pairs |
 | `update-cycle-state.sh` | Update cycle .state file |
 | `update-story-status.sh` | Change story status in frontmatter |
@@ -329,7 +331,6 @@ project-root/
 │   │   └── tweak-name.md      ← surface, kind, attempts, verbatim reactions
 │   ├── analysis/              ← Persistent analysis findings
 │   │   ├── pending/           ← Findings queue (survives sessions)
-│   │   │   ├── qa.yaml
 │   │   │   ├── ux.yaml
 │   │   │   ├── creative.yaml
 │   │   │   └── style.yaml
@@ -347,6 +348,10 @@ project-root/
 │   │   │   └── done/          ← Archive for completed todos
 │   │   │       └── YYYY-MM-DD-slug.md
 │   │   └── notes/             ← Durable project facts; no lifecycle, recalled by facet
+│   │       └── YYYY-MM-DD-slug.md
+│   ├── bugs/                  ← Open bug records (created by /craft:bugs)
+│   │   ├── YYYY-MM-DD-slug.md
+│   │   └── closed/            ← Fixed or won't-fix bugs
 │   │       └── YYYY-MM-DD-slug.md
 │   ├── design/                ← Design system (enforced)
 │   │   ├── tokens.yaml        ← Design tokens
@@ -375,6 +380,10 @@ project-root/
 │   │       ├── assets/        ← Orchestrator-fetched fonts/icons (inlined into the page; travels with the folder)
 │   │       └── rounds/        ← Archived outgoing rounds (never rendered)
 │   ├── dials/                 ← Dial session records (created by /craft:dial, born closed - no lifecycle)
+│   ├── decisions/             ← Decision records (created by /craft:decisions)
+│   │   ├── YYYY-MM-DD-slug.md ← Pending: waiting on a ruling
+│   │   ├── approved/          ← Ruled decisions (law); claimed and shipped ones stay here
+│   │   └── archive/           ← Declined or retired decisions
 │   ├── project.md             ← Project DNA
 │   ├── quality.yaml           ← Quality gates
 │   ├── settings.yaml          ← Craft settings
@@ -453,6 +462,26 @@ The notebook (`/craft:notebook`, `.craft/notebook/`) is a capture surface for id
 - **Deferral markers** in conversation ("later", "side note", "don't forget", "for next time", etc.) trigger an inline mention of `/craft:notebook` as a closing line. On accept the orchestrator captures silently with session context. No subcommands.
 
 The lifecycle deliberately keeps every state fast: capture is one line, graduate is one prompt (for a todo, that one prompt also closes it), done is one AUQ, and a note is captured silently on an accepted inline offer. Power-user subcommand syntax is explicitly rejected in favor of conversational verbs. Claude offers notes proactively only above a high durability bar (no built-in/vague expiry), mirroring the high-bar-for-Claude / low-bar-for-user discipline of the deferral-marker offer.
+
+## Decision Records
+
+`/craft:decisions` keeps a product ruling in one place before it has a cycle, a story, or a name, so nothing gets decided twice. The command renders the Shelf live from `.craft/decisions/` through `decisions-list.sh` and `decisions-view.sh` and never from memory. Every write to a record goes through two scripts: `decisions-capture.sh` creates a record or reopens one, and `decisions-transition.sh` is the only way a record changes state. A record is never written by hand. The one other edit the command makes is after a retire: it removes the slug from the `decisions:` line of any claiming story still in planning or ready.
+
+Where a record sits is its state. A pending record is in the root of `.craft/decisions/`. Approving it moves it to `approved/` as `status: accepted`, and declining it moves it to `archive/` as `status: declined`. Retiring ruled law also lands in `archive/`, as `deprecated`. The room and the status are written in the same step so they cannot disagree. The ruling itself is the user's typed answer, kept verbatim under `## Approval`, and the answer is passed on stdin so the user's words never sit on a command line.
+
+The Shelf's `○` unclaimed and `●` claimed are not stored. `decisions-list.sh` derives them by scanning story files: a record is claimed while a story that is not complete carries its slug in the story's `decisions:` frontmatter. `✓` done is the one stored disposition: `crafted`, stamped by the `craft` transition when `complete-story.sh` finishes a story that carries the decision. Once crafted, a record is frozen: reopening or retiring it is refused, and the way to change your mind is a new decision. Reopening law requires a fresh approval line, reopening a pending record is a quiet reshape, and the archive is never reopened.
+
+A story carries only the decisions the user names for it. The planner and the alignment check read them as the frame the story fills in, so a question a ruling already answered is not asked again. Retagging moves records between topics without touching their room or status.
+
+## Bug Records
+
+`/craft:bugs` files a bug without fixing it, for a person mid-conversation or an agent mid-run. A bug found during a long test pass cannot be fixed on the spot because the run's own state depends on the code staying still, so the record has to hold enough to reproduce the bug from scratch. One file per bug lives in `.craft/bugs/` as `YYYY-MM-DD-slug.md`; the first line names the symptom in the user's terms, never a suspected cause, and the slug follows it. Seven fields are required at filing (symptom line, `found_during`, Expected, Actual, Consequences, Blocks my next step, Reproduce) and `bugs-capture.sh` refuses a record missing any of them. There is no severity field; the Consequences section is what a reader ranks the pile by.
+
+There are two rooms. The open folder holds what is still broken, and closing a bug (`bugs-close.sh`, after one confirmation) moves it to `closed/` with a stamped close time and a Log line, so "what is still open" never costs a read of every record that ever existed. Status is `fixed` or `wont-fix`; the verdict (`bug`, `unspecified`, `spec-gap`, `not-reproducible`) records whether it was ever a bug and stays blank until triaged. The command opens with the open pile through shell preprocessing (`bugs-list.sh --summary`), `session-start.sh` injects the same `Bugs: N open` header every session, and the dashboard reads both rooms as a `bug` type.
+
+Three trigger tiers decide how the command is reached, mirroring the notebook. Naming it ("file a bug", "log a bug", "bug ticket") is the invocation: it runs with what the session has, no offer and no question. A deferral word plus a defect ("don't let me forget, the save button is broken"), or a bare defect named while a story or chunk is in progress, earns one ignorable inline offer naming `/craft:bugs`, because dropping active work to chase a side sighting is what the feature exists to prevent; nothing is filed until the user says yes. A bare defect in an idle session routes to `/craft:adhoc` as before. Nothing guesses from vocabulary beyond those three signals.
+
+The analyzers feed the same pile. QA findings, and the walkthrough's blocks-ship and looks-wrong findings, file as bug records instead of queueing (UX, Creative, and Style still queue, and the walkthrough's feels-off and nitpick findings go to the UX queue), and a finding that repeats an open bug raises its `hits` count through `bugs-hit.sh` instead of filing a duplicate. The cycle-complete walkthrough files bugs and never fixes them; bug then `/craft:adhoc` is the fix path.
 
 ---
 

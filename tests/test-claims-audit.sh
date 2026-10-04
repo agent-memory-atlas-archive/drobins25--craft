@@ -50,6 +50,24 @@ assert_file_contains \
 
 echo ""
 
+# Test 1b: file claims are judged on the untracked listing too
+# story-implement defines files changed as the diff plus new untracked files;
+# a diff-only evidence row rules a true claim about a new file unsupported and
+# lets "only touched X" pass with an untracked Y sitting in the tree.
+begin_test "file-claim evidence includes untracked files"
+
+assert_file_contains \
+  "File/diff evidence row names the untracked listing" \
+  'git ls-files --others --exclude-standard' \
+  "$AGENT_FILE"
+
+assert_file_contains \
+  "story-implement's files-changed definition uses the same listing" \
+  'git ls-files --others --exclude-standard' \
+  "$IMPLEMENT_FILE"
+
+echo ""
+
 # Test 2: agent forbids session-transcript reads
 begin_test "agent forbids session-transcript reads"
 

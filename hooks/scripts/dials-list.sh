@@ -59,7 +59,7 @@ for file in $(ls "$DIALS_DIR"/*.md 2>/dev/null | sort); do
   parsed=$(python3 - "$file" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
-with open(path, 'r') as f:
+with open(path, 'r', encoding='utf-8', errors='replace') as f:
     content = f.read()
 
 m = re.match(r'^---\n(.*?)\n---\n?(.*)$', content, re.DOTALL)

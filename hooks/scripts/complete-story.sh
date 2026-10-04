@@ -167,13 +167,15 @@ ${CHUNK_BODY}"
           continue
         fi
         # An entry gone from the worktree is either a bad manifest line
-        # (abort, below) or the old name of a rename the implementer already
-        # staged with `git mv`. Git records the second case - the old path
-        # appears as the SOURCE of a staged rename - and only that case is
-        # safe to skip: the rename is already in the index and rides the
-        # commit. A path git has no record of still aborts.
+        # (abort, below) or a change the implementer already staged: the old
+        # name of a `git mv` rename, or a file removed with `git rm`. Git
+        # records both - the path appears as the SOURCE of a staged rename
+        # (R) or as a staged deletion (D) - and only those cases are safe to
+        # skip: the change is already in the index and rides the commit.
+        # `git add` cannot touch such a path (it is in neither the worktree
+        # nor the index). A path git has no record of still aborts.
         if [ ! -e "$entry" ] && git diff --cached --name-status -M 2>/dev/null \
-             | awk -F'\t' '$1 ~ /^R/ {print $2}' | grep -qxF -- "$entry"; then
+             | awk -F'\t' '$1 ~ /^[RD]/ {print $2}' | grep -qxF -- "$entry"; then
           continue
         fi
         if ! git add -- "$entry" 2>/dev/null; then

@@ -1,16 +1,12 @@
 # Craft
 
-Open-source Claude Code plugin: a creative-first development harness.
+Open-source Claude Code plugin: a development harness.
 
 - **README.md** - what craft is and how to use it
 - **DESIGN.md** - architecture, file layout, internals
 - **CONTRIBUTING.md** - contribution workflow for craft itself
 
 This file is the operating contract for Claude working in this repo. Routing and live state are injected on every prompt via the UserPromptSubmit hook (the `v1|craft-orchestration-index` block) - don't duplicate that here.
-
-## Safety rules
-
-- **Walkthrough quick-fixes are the only exception to "always invoke implementer via Task."** Findings with `complexity: quick-fix` and a `fix_hint` can be implemented directly by the orchestrator. Scope: trivial CSS or attribute edits, 1-5 lines, single file. Story-fix findings still go through the implementer agent.
 
 ## Conventions
 

@@ -33,7 +33,7 @@ project's live graph into 13 single edges once the parsers read this file
 instead of naming kinds themselves.
 """
 
-# The nine record types that become nodes, in registry.PARSERS's order.
+# The ten record types that become nodes, in registry.PARSERS's order.
 RECORD_TYPES = (
     "story",
     "cycle",
@@ -44,6 +44,7 @@ RECORD_TYPES = (
     "riff",
     "mockup",
     "dial",
+    "bug",
 )
 
 # The closed set of reasons a reference-shaped value can fail to become an
@@ -359,6 +360,8 @@ STATUSES = {
     "proposed": "Proposed",
     "graduated-story": "Graduated",
     "graduated-tweak": "Graduated",
+    "fixed": "Fixed",
+    "wont-fix": "Won't fix",
 }
 
 # Dial records carry no status by design - this is the status slot's other

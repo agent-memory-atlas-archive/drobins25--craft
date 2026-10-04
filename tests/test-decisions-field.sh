@@ -136,7 +136,6 @@ DEFAULT_MODE="$PLUGIN_ROOT/commands/references/cycle-design/default-mode.md"
 ROADMAP_MODE="$PLUGIN_ROOT/commands/references/cycle-design/roadmap-mode.md"
 STORY_FROM_PLANNING="$PLUGIN_ROOT/commands/references/story-from-planning.md"
 STORY_NEW="$PLUGIN_ROOT/commands/craft-story-new.md"
-CYCLE_COMPLETE="$PLUGIN_ROOT/commands/craft-cycle-complete.md"
 STORY_FROM_MOCKUP="$PLUGIN_ROOT/commands/references/story-from-mockup.md"
 CREATE_STORY_SH="$SCRIPTS_DIR/create-story.sh"
 FRONTMATTER_PY_DIR="$PLUGIN_ROOT/scripts/dashboard"
@@ -215,12 +214,6 @@ BLOCK=$(extract_block_text "$STORY_NEW" "**Frontmatter (always required):**")
 assert_contains_literal "Step 10 block: literal 'decisions: []' present" 'decisions: []' "$BLOCK"
 keys=($(extract_block_keys "$STORY_NEW" "**Frontmatter (always required):**"))
 assert_canonical_order "Step 10 block: header keys in canonical order" "${keys[@]}"
-
-begin_test "craft-cycle-complete.md Fix story block carries decisions: [] in canonical order"
-BLOCK=$(extract_block_text "$CYCLE_COMPLETE" 'Write to `$cycle_dir/stories/[N]-fix-[slug].md`:')
-assert_contains_literal "Fix story block: literal 'decisions: []' present" 'decisions: []' "$BLOCK"
-keys=($(extract_block_keys "$CYCLE_COMPLETE" 'Write to `$cycle_dir/stories/[N]-fix-[slug].md`:'))
-assert_canonical_order "Fix story block: header keys in canonical order" "${keys[@]}"
 
 # --- story-from-mockup delegates instead of duplicating ---
 begin_test "story-from-mockup delegates instead of duplicating"

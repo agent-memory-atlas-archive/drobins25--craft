@@ -846,11 +846,11 @@ else
   fail "notebook when_to_use ends with the ruled Not-for line, verbatim" "  Not for: product rulings (decisions) - those belong to /craft:decisions." "$LAST_LINE_OF_WTU"
 fi
 
-echo "-- Test: /craft:decisions is present in decision-tree, DESIGN.md and README.md; DESIGN.md says 34 commands --"
+echo "-- Test: /craft:decisions is present in decision-tree, DESIGN.md and README.md; DESIGN.md says 35 commands --"
 grep -q '/craft:decisions' "$REPO/docs/decision-tree.md" && pass "/craft:decisions in docs/decision-tree.md" || fail "/craft:decisions in docs/decision-tree.md"
 grep -q '/craft:decisions' "$REPO/DESIGN.md" && pass "/craft:decisions in DESIGN.md" || fail "/craft:decisions in DESIGN.md"
 grep -q '/craft:decisions' "$REPO/README.md" && pass "/craft:decisions in README.md" || fail "/craft:decisions in README.md"
-grep -q '34 commands' "$REPO/DESIGN.md" && pass "DESIGN.md says 34 commands" || fail "DESIGN.md says 34 commands"
+grep -q '35 commands' "$REPO/DESIGN.md" && pass "DESIGN.md says 35 commands" || fail "DESIGN.md says 35 commands"
 
 echo "-- Test: the alignment check's agent prompt cites no decision record by slug --"
 # A slug names a record in THIS repo's store. A user's project has none, and the

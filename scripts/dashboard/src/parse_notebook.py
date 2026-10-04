@@ -62,11 +62,23 @@ def parse(path, craft_rel, fields, body):
     return node, links, annotations
 
 
+def _short_title(text):
+    # Cut at the last whole word inside the limit and mark the cut, the same
+    # rule bug cards and summary.py use - never mid-word.
+    if len(text) <= _TITLE_LIMIT:
+        return text
+    cut = text[:_TITLE_LIMIT]
+    space = cut.rfind(" ")
+    if space > 0:
+        cut = cut[:space]
+    return cut.rstrip() + "\u2026"
+
+
 def _first_body_line(body):
     for line in body.split("\n"):
         line = line.strip()
         if line:
-            return line[:_TITLE_LIMIT]
+            return _short_title(line)
     return "(empty note)"
 
 

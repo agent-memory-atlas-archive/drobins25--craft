@@ -238,7 +238,7 @@ fi
 # =========================================================================
 # Tier C - DEFERRED (not v1). Intentionally not enforced yet:
 #   - analysis-type parity: assert pending/*.yaml types == the types named in
-#     the decision-tree directory block (walkthrough.yaml et al.)
+#     the decision-tree directory block (ux.yaml et al.)
 #   - state-key spot check: every Key Field in the State Files table appears as
 #     a real token somewhere in commands/skills/hooks (catches invented fields).
 # =========================================================================

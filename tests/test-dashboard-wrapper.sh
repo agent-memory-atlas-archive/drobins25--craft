@@ -235,6 +235,8 @@ if [ -d "$REPO_ROOT/.craft" ]; then
     -o -path "*/.craft/tweaks/*.md" \
     -o -path "*/.craft/mockups/*/record.md" \
     -o -path "*/.craft/dials/*.md" \
+    -o -path "*/.craft/bugs/*-*-*-*.md" \
+    -o -path "*/.craft/bugs/closed/*-*-*-*.md" \
     -o -path "*/.craft/notebook/ideas/*.md" \
     -o -path "*/.craft/notebook/todos/*.md" \
     -o -path "*/.craft/notebook/notes/*.md" \
