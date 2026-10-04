@@ -138,6 +138,21 @@ assert_eq "created then filename desc" "Bugs: 3 open
 - Beta
 - Alpha" "$OUT"
 
+begin_test "a long title is cut at a word boundary and marked with an ellipsis"
+fresh_root
+LONG="A monorepo opened at its top level files bugs and notebook entries into the top-level folder, where no project session ever lists them"
+write_record "$ROOT/.craft/bugs/2026-10-01-long.md" "2026-10-01T10:00:00Z" "run" "$LONG"
+write_record "$ROOT/.craft/bugs/2026-10-02-short.md" "2026-10-02T10:00:00Z" "run" "Short title stays whole"
+run_list --summary
+LINE=$(printf '%s\n' "$OUT" | grep '^- A monorepo')
+TITLE_SHOWN="${LINE#- }"; TITLE_SHOWN="${TITLE_SHOWN% - found during: run}"
+assert_eq "ends with an ellipsis" "yes" "$(case "$TITLE_SHOWN" in (*…) echo yes ;; (*) echo no ;; esac)"
+CUT="${TITLE_SHOWN%…}"
+assert_eq "cut is a whole-word prefix" "yes" "$(case "$LONG" in ("$CUT "*) echo yes ;; (*) echo no ;; esac)"
+assert_contains "short title untouched" "^- Short title stays whole - found during: run$" "$OUT"
+run_list
+assert_contains "block TITLE uses the same cut" "^TITLE=${CUT}…$" "$OUT"
+
 begin_test "found_by fallback and empty found-during omitted"
 fresh_root
 B="$ROOT/.craft/bugs"

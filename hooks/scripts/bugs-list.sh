@@ -83,6 +83,17 @@ def parse(path, room):
         return None
     fm, body = m.group(1), m.group(2)
 
+    def short_title(text, limit=120):
+        # Same rule as the dashboard's card summaries: cut at the last whole
+        # word inside the limit and mark the cut, never mid-word.
+        if len(text) <= limit:
+            return text
+        cut = text[:limit]
+        space = cut.rfind(' ')
+        if space > 0:
+            cut = cut[:space]
+        return cut.rstrip() + '\u2026'
+
     def get(field):
         mm = re.search(r'^' + re.escape(field) + r':[ \t]*(.*)$', fm, re.MULTILINE)
         return one_line(mm.group(1)) if mm else ''
@@ -93,7 +104,7 @@ def parse(path, room):
     lines = body.split('\n')
     for line in lines:
         if line.strip():
-            title = one_line(line)[:120]
+            title = short_title(one_line(line))
             break
     for i, line in enumerate(lines):
         if re.match(r'^##[ \t]+Blocks my next step[ \t]*$', line, re.IGNORECASE):

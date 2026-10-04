@@ -97,6 +97,21 @@ class TestParseBug(unittest.TestCase):
         self.assertIsNone(node["found_during"])
 
 
+    def test_long_title_cuts_at_a_word_with_an_ellipsis(self):
+        long_line = ("A monorepo opened at its top level files bugs and notebook entries "
+                     "into the top-level folder, where no project session ever lists them")
+        text = OPEN_TEXT.replace("The widget crashes on empty input", long_line)
+        node, _, _ = _parse(OPEN, text)
+        self.assertTrue(node["title"].endswith("\u2026"), node["title"])
+        self.assertTrue(long_line.startswith(node["title"][:-1]), node["title"])
+        self.assertTrue(long_line[len(node["title"]) - 1] == " ", node["title"])
+        self.assertLessEqual(len(node["title"]), 121)
+
+    def test_short_title_is_untouched(self):
+        node, _, _ = _parse(OPEN, OPEN_TEXT)
+        self.assertEqual(node["title"], "The widget crashes on empty input")
+
+
 class TestBugVocabulary(unittest.TestCase):
     def test_statuses_have_display_words(self):
         self.assertEqual(vocabulary.STATUSES["fixed"], "Fixed")
