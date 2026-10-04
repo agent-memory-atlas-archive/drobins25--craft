@@ -130,5 +130,30 @@ assert_eq "longer path returns its own decision" "pending" "$DECISION"
 rm -rf "$TEST_DIR"
 echo ""
 
+# Test 7: The Ignore recipe in craft-story-implement.md writes a line git honors
+# (gitignore has no inline comments - a `#` mid-line is part of the pattern).
+begin_test "Ignore recipe produces a .gitignore line that git actually matches"
+
+STORY_IMPLEMENT="$PLUGIN_ROOT/commands/craft-story-implement.md"
+RECIPE=$(grep -m1 "ignored during" "$STORY_IMPLEMENT" | sed 's/^[[:space:]]*//')
+assert_contains "the Ignore recipe is a printf into .gitignore" ">> .gitignore" "$RECIPE"
+
+TEST_DIR=$(mktemp -d)
+(
+  cd "$TEST_DIR" && git init -q . && touch scratch.log
+  # Fill the recipe's placeholders and run it exactly as the orchestrator would.
+  CMD=$(printf '%s' "$RECIPE" | sed 's/\[path\]/scratch.log/g; s/\[story-name\]/1-demo-story/g')
+  bash -c "$CMD"
+)
+IGNORED=$(cd "$TEST_DIR" && git check-ignore -q scratch.log && echo yes || echo no)
+assert_eq "git check-ignore matches the path after the recipe runs" "yes" "$IGNORED"
+PROVENANCE=$(grep -c "craft: ignored during 1-demo-story" "$TEST_DIR/.gitignore")
+assert_eq "the provenance comment is still written" "1" "$PROVENANCE"
+STILL_UNTRACKED=$(cd "$TEST_DIR" && git status --porcelain --untracked-files=all | grep -c "scratch.log" || true)
+assert_eq "git status no longer lists the path" "0" "$STILL_UNTRACKED"
+
+rm -rf "$TEST_DIR"
+echo ""
+
 # --- Summary ---
 finish_tests
