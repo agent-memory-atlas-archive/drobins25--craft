@@ -1,11 +1,11 @@
 #!/bin/bash
-# notebook-list-encoding.test.sh - A note that isn't valid UTF-8 never hides the pile
+# dials-list-encoding.test.sh - A dial record that isn't valid UTF-8 never hides the dials after it
 #
-# Usage: bash hooks/scripts/__tests__/notebook-list-encoding.test.sh
+# Usage: bash hooks/scripts/__tests__/dials-list-encoding.test.sh
 #
-# Runs the real notebook-list.sh against three open todos where the middle
-# one holds a Latin-1 byte, asserting every todo is still listed (the bad one
-# included, never skipped) and the script exits 0 as its header promises.
+# Runs the real dials-list.sh against three dial records where the middle
+# one holds a Latin-1 byte, asserting every dial is still listed (the bad one
+# included, never skipped) and the script exits 0.
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ TOTAL=0
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$(dirname "$TESTS_DIR")"
-LIST="$SCRIPTS_DIR/notebook-list.sh"
+LIST="$SCRIPTS_DIR/dials-list.sh"
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -44,25 +44,25 @@ assert_contains() {
   fi
 }
 
-write_todo() {
+write_dial() {
   local file="$1" date="$2" body="$3"
-  printf -- '---\ncreated: %s\nstatus: open\ntags: []\n---\n%b\n' "$date" "$body" > "$file"
+  printf -- '---\ncreated: %s\nsurface: probe-surface\nkind: color\nscope: approach\n---\n%b\n' "$date" "$body" > "$file"
 }
 
-# ── Test 1: A Latin-1 todo does not end the listing ──────────────
+# ── Test 1: A Latin-1 dial does not end the listing ─────────────
 
 echo ""
-echo "Test 1: A todo holding a Latin-1 byte is listed, and so is everything after it"
+echo "Test 1: A dial holding a Latin-1 byte is listed, and so is everything after it"
 
 ROOT=$(mktemp -d)
-TODOS="$ROOT/.craft/notebook/todos"
-mkdir -p "$TODOS"
-write_todo "$TODOS/2026-10-01-aaa.md" "2026-10-01" "aaa first todo"
-write_todo "$TODOS/2026-10-02-bbb.md" "2026-10-02" "bbb caf\xe9 todo"
-write_todo "$TODOS/2026-10-03-ccc.md" "2026-10-03" "ccc third todo"
+DIALS="$ROOT/.craft/dials"
+mkdir -p "$DIALS"
+write_dial "$DIALS/2026-10-01-aaa.md" "2026-10-01" "aaa first dial"
+write_dial "$DIALS/2026-10-02-bbb.md" "2026-10-02" "bbb caf\xe9 dial"
+write_dial "$DIALS/2026-10-03-ccc.md" "2026-10-03" "ccc third dial"
 
 set +e
-output=$(env -u PROJECT_ROOT CRAFT_PROJECT_ROOT="$ROOT" bash "$LIST" todos 2>&1)
+output=$(env -u PROJECT_ROOT CRAFT_PROJECT_ROOT="$ROOT" bash "$LIST" 2>&1)
 list_exit=$?
 set -e
 
@@ -71,10 +71,9 @@ if [ "$list_exit" -eq 0 ]; then
 else
   fail "List exits 0" "0" "$list_exit"
 fi
-assert_contains "$output" "SLUG=aaa" "Todo before the Latin-1 one is listed"
-assert_contains "$output" "SLUG=bbb" "The Latin-1 todo itself is listed, not skipped"
-assert_contains "$output" "SLUG=ccc" "Todo after the Latin-1 one is listed"
-assert_contains "$output" "N=3" "All three todos are numbered"
+assert_contains "$output" "SLUG=aaa" "Dial before the Latin-1 one is listed"
+assert_contains "$output" "SLUG=bbb" "The Latin-1 dial itself is listed, not skipped"
+assert_contains "$output" "SLUG=ccc" "Dial after the Latin-1 one is listed"
 
 rm -rf "$ROOT"
 

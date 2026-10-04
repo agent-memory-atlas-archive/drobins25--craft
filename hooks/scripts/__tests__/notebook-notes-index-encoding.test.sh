@@ -1,11 +1,11 @@
 #!/bin/bash
-# notebook-list-encoding.test.sh - A note that isn't valid UTF-8 never hides the pile
+# notebook-notes-index-encoding.test.sh - A note that isn't valid UTF-8 never blanks the notes index
 #
-# Usage: bash hooks/scripts/__tests__/notebook-list-encoding.test.sh
+# Usage: bash hooks/scripts/__tests__/notebook-notes-index-encoding.test.sh
 #
-# Runs the real notebook-list.sh against three open todos where the middle
-# one holds a Latin-1 byte, asserting every todo is still listed (the bad one
-# included, never skipped) and the script exits 0 as its header promises.
+# Runs the real notebook-notes-index.sh against three notes where the middle
+# one holds a Latin-1 byte. Session start shows this index in every session,
+# so one bad note must never empty it: every note is listed and the exit is 0.
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ TOTAL=0
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$(dirname "$TESTS_DIR")"
-LIST="$SCRIPTS_DIR/notebook-list.sh"
+LIST="$SCRIPTS_DIR/notebook-notes-index.sh"
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -44,37 +44,37 @@ assert_contains() {
   fi
 }
 
-write_todo() {
+write_note() {
   local file="$1" date="$2" body="$3"
-  printf -- '---\ncreated: %s\nstatus: open\ntags: []\n---\n%b\n' "$date" "$body" > "$file"
+  printf -- '---\ncreated: %s\ntags: []\n---\n%b\n' "$date" "$body" > "$file"
 }
 
-# ── Test 1: A Latin-1 todo does not end the listing ──────────────
+# ── Test 1: A Latin-1 note does not empty the index ─────────────
 
 echo ""
-echo "Test 1: A todo holding a Latin-1 byte is listed, and so is everything after it"
+echo "Test 1: A note holding a Latin-1 byte is indexed, and so is every other note"
 
 ROOT=$(mktemp -d)
-TODOS="$ROOT/.craft/notebook/todos"
-mkdir -p "$TODOS"
-write_todo "$TODOS/2026-10-01-aaa.md" "2026-10-01" "aaa first todo"
-write_todo "$TODOS/2026-10-02-bbb.md" "2026-10-02" "bbb caf\xe9 todo"
-write_todo "$TODOS/2026-10-03-ccc.md" "2026-10-03" "ccc third todo"
+NOTES="$ROOT/.craft/notebook/notes"
+mkdir -p "$NOTES"
+write_note "$NOTES/2026-10-01-aaa.md" "2026-10-01" "aaa first note"
+write_note "$NOTES/2026-10-02-bbb.md" "2026-10-02" "bbb caf\xe9 note"
+write_note "$NOTES/2026-10-03-ccc.md" "2026-10-03" "ccc third note"
 
 set +e
-output=$(env -u PROJECT_ROOT CRAFT_PROJECT_ROOT="$ROOT" bash "$LIST" todos 2>&1)
+output=$(env -u PROJECT_ROOT CRAFT_PROJECT_ROOT="$ROOT" bash "$LIST" 2>&1)
 list_exit=$?
 set -e
 
 if [ "$list_exit" -eq 0 ]; then
-  pass "List exits 0"
+  pass "Index exits 0"
 else
-  fail "List exits 0" "0" "$list_exit"
+  fail "Index exits 0" "0" "$list_exit"
 fi
-assert_contains "$output" "SLUG=aaa" "Todo before the Latin-1 one is listed"
-assert_contains "$output" "SLUG=bbb" "The Latin-1 todo itself is listed, not skipped"
-assert_contains "$output" "SLUG=ccc" "Todo after the Latin-1 one is listed"
-assert_contains "$output" "N=3" "All three todos are numbered"
+assert_contains "$output" "Notebook notes" "The index header is printed"
+assert_contains "$output" "aaa first note" "Note before the Latin-1 one is indexed"
+assert_contains "$output" "[bbb]" "The Latin-1 note itself is indexed, not skipped"
+assert_contains "$output" "ccc third note" "Note after the Latin-1 one is indexed"
 
 rm -rf "$ROOT"
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# decisions-list-encoding.test.sh — A record that isn't valid UTF-8 never hides the Shelf
+# decisions-list-encoding.test.sh - A record that isn't valid UTF-8 never hides the Shelf
 #
 # Usage: bash hooks/scripts/__tests__/decisions-list-encoding.test.sh
 #
