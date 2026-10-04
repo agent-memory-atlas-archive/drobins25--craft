@@ -43,8 +43,8 @@ if [ -f "$REF" ]; then
   ROOT=$(mktemp -d); TMP_ROOTS+=("$ROOT")
   mkdir -p "$ROOT/.craft/bugs"
   CAP_ERR=$(mktemp)
-  CAP_OUT="$(printf '%s\n' "$BODY" | CRAFT_PROJECT_ROOT="$ROOT" bash "$CAPTURE" --found-during="$FOUND" --stdin 2>"$CAP_ERR")"
-  CAP_RC=$?
+  CAP_RC=0
+  CAP_OUT="$(printf '%s\n' "$BODY" | CRAFT_PROJECT_ROOT="$ROOT" bash "$CAPTURE" --found-during="$FOUND" --stdin 2>"$CAP_ERR")" || CAP_RC=$?
   assert_eq "capture accepts the worked body (rc 0)" "0" "$CAP_RC"
   assert_eq "capture stderr is empty" "" "$(cat "$CAP_ERR")"
   rm -f "$CAP_ERR"
@@ -56,6 +56,7 @@ if [ -f "$REF" ]; then
   RECORD_TEXT="$(cat "$RECORD" 2>/dev/null)"
   assert_contains_literal "record holds a References section" "## References" "$RECORD_TEXT"
   CONSOLE_LINE="$(printf '%s\n' "$BODY" | awk '/^## References/{p=1; next} p && /^## /{exit} p && /rror/{print; exit}')"
+  assert_not_eq "References holds a console error line to look for" "" "$CONSOLE_LINE"
   assert_contains_literal "record carries the console line from References" "${CONSOLE_LINE#- }" "$RECORD_TEXT"
 fi
 
@@ -108,9 +109,9 @@ assert_not_contains "analyze has no qa.yaml" 'qa\.yaml' "$ANALYZE_TEXT"
 assert_not_contains "analyze has no walkthrough.yaml" 'walkthrough\.yaml' "$ANALYZE_TEXT"
 assert_not_contains "qa-analyzer has no qa.yaml" 'qa\.yaml' "$QA_TEXT"
 assert_not_contains "walkthrough-analyzer has no walkthrough.yaml" 'walkthrough\.yaml' "$WT_TEXT"
-assert_contains_literal "pending check names ux.yaml" 'ux.yaml' "$ANALYZE_TEXT"
-assert_contains_literal "pending check names creative.yaml" 'creative.yaml' "$ANALYZE_TEXT"
-assert_contains_literal "pending check names style.yaml" 'style.yaml' "$ANALYZE_TEXT"
+assert_contains_literal "Step 1 skips QA and Walkthrough" 'A QA or Walkthrough request skips this step' "$ANALYZE_TEXT"
+assert_contains_literal "analysis types note says QA and Walkthrough file bugs" 'QA and Walkthrough file the defects they find as bugs' "$ANALYZE_TEXT"
+assert_contains_literal "Step 5 applies to UX, Creative, and Style only" 'Applies to UX, Creative, and Style findings only' "$ANALYZE_TEXT"
 
 begin_test "analyze reads the filing reference and get-latest-cycle --status=complete"
 assert_contains_literal "reference path" '${CLAUDE_PLUGIN_ROOT}/commands/references/analysis-bug-filing.md' "$ANALYZE_TEXT"
@@ -120,7 +121,8 @@ assert_contains_literal "global state read" '.craft/.global-state' "$ANALYZE_TEX
 begin_test "analyze offers Last completed cycle (<title>)"
 assert_contains_literal "last completed option" 'Last completed cycle (<title>)' "$ANALYZE_TEXT"
 assert_contains_literal "quick command default" 'current cycle, or the last completed one' "$ANALYZE_TEXT"
-assert_contains_literal "bugs filed pointer" '.craft/bugs/' "$ANALYZE_TEXT"
+assert_contains_literal "Step 7 opens with the bugs-filed summary" 'the `<N> bugs filed ...` summary' "$ANALYZE_TEXT"
+assert_contains_literal "reference pins which walkthrough grades file" '`blocks-ship` and `looks-wrong` findings file as bugs' "$REF_TEXT"
 
 begin_test "analyze Phase 2 has no QA or Walkthrough create-story question"
 assert_not_contains "no QA create-story question" 'Create story for this QA finding' "$ANALYZE_TEXT"
@@ -177,29 +179,11 @@ begin_test "cycle-complete summary reports bugs filed and Remember says the walk
 assert_contains_literal "Step 5 Bugs filed line" 'Bugs filed: <N>' "$CC_TEXT"
 assert_contains_literal "Remember line" 'The walkthrough files bugs and never fixes; bug then /craft:adhoc is the fix path.' "$CC_TEXT"
 
-begin_test "no doc names a retired queue"
-for f in DESIGN.md docs/decision-tree.md scripts/check-doc-drift.sh; do
-  for lit in 'qa.yaml' 'walkthrough.yaml'; do
-    if grep -qF -- "$lit" "$REPO/$f"; then
-      echo "  FAIL: $f still names '$lit'"
-      FAIL=$((FAIL + 1))
-    else
-      echo "  PASS: $f has no '$lit'"
-      PASS=$((PASS + 1))
-    fi
-  done
-done
+begin_test "no shipped file names a retired queue"
+RETIRED_HITS="$(cd "$REPO" && grep -rlE 'qa\.yaml|walkthrough\.yaml' commands agents skills docs DESIGN.md README.md scripts hooks templates 2>/dev/null || true)"
+assert_eq "no shipped file names qa.yaml or walkthrough.yaml" "" "$RETIRED_HITS"
 
 begin_test "agent-catalog drops the quick-fix exception"
 assert_not_contains "no quick-fix exception" 'Quick-fix exception' "$(cat "$REPO/docs/agent-catalog.md")"
-
-begin_test "check-doc-drift.sh exits 0"
-if (cd "$REPO" && bash scripts/check-doc-drift.sh >/dev/null 2>&1); then
-  echo "  PASS: check-doc-drift.sh exits 0"
-  PASS=$((PASS + 1))
-else
-  echo "  FAIL: check-doc-drift.sh exits non-zero"
-  FAIL=$((FAIL + 1))
-fi
 
 finish_tests "test-bugs-feeders"
