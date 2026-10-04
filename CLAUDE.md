@@ -1,6 +1,6 @@
 # Craft
 
-Open-source Claude Code plugin: a creative-first development harness.
+Open-source Claude Code plugin: a development harness.
 
 - **README.md** - what craft is and how to use it
 - **DESIGN.md** - architecture, file layout, internals

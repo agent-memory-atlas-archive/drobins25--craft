@@ -318,7 +318,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:dashboard` | Opens the project graph page in your browser - cycles, stories, and every record, all connected |
 | `/craft:notebook` | Low-ceremony capture for ideas, todos, and notes (durable project facts). Graduate / mark done conversationally - no subcommands needed for lifecycle. |
 | `/craft:decisions` | The Shelf - what's waiting on you, what's ruled and ready, what a story is building, and what's done. Rule on a card, reopen or retire one, or move one to another topic. |
-| `/craft:bugs` | File a bug without fixing it - one door for a person mid-conversation or an agent mid-run. Opens with the open pile; closing a bug is a word and one confirmation. |
+| `/craft:bugs` | File a bug without fixing it - one door for a person mid-conversation or an agent mid-run. Opens with the open pile; closing a bug is a word and one confirmation. See [Bugs](#bugs). |
 | `/craft:riff` | Riff on an idea together - a two-player conversation in small beats, one concept at a time, until it's ready to build. Bare invocation opens from the oldest open notebook idea. |
 | `/craft:story-new` | Create story (lands in backlog) |
 | `/craft:story-implement` | Implement a story (interactive) |
@@ -489,6 +489,63 @@ When a story ships, every decision it carries turns `✓` on the Shelf. The Shel
 
 *What shipped in 2.7.0: [CHANGELOG](CHANGELOG.md#270---2026-10-03).*
 
+## Bugs
+
+A bug record is a report of something broken that you are not fixing right now. It is written so a session with none of today's context can reproduce it, fix it, and prove it fixed.
+
+```
+/craft:bugs                                      # bare → the open pile
+/craft:bugs save button does nothing on Safari   # file one
+```
+
+Bare `/craft:bugs` shows every open bug, newest first. A marker on a line means that bug blocks someone's next step. Add the words and craft files what you describe. (If the conversation already holds a defect, a bare call files that one instead of showing the pile.)
+
+It sits next to two neighbors. `/craft:adhoc` fixes something now. [`/craft:notebook`](#notebook) holds ideas and todos. A bug is the thing that's broken and has to wait.
+
+### Three ways a bug gets filed
+
+- **You.** Say "log a bug" or "file a bug" and craft files it from the conversation. If you use deferral language about something broken ("don't let me forget"), craft makes one ignorable offer first. Nothing is filed until you say yes. A bare defect named mid-story or mid-chunk gets the same offer, so a side sighting doesn't pull the work off course.
+- **An agent mid-run.** A test pass can't fix bugs as it finds them, because the run depends on the code staying still. An agent that meets a defect it won't fix now can file what it saw and carry on.
+- **The analyzers.** When `/craft:analyze` or the cycle-complete walkthrough hands back a QA or walkthrough report, craft files the findings as bug records itself - the analyzers only find and describe. Every QA finding files, Needs Verification included. Walkthrough findings split: `blocks-ship` and `looks-wrong` file as bugs, while `feels-off` and `nitpick` are taste, so they queue for UX review instead. A run that couldn't proceed (no browser tool, dev server down) files nothing.
+
+Filing never pulls you out of what you were doing and never summons you. The one question craft may ask: if you ask to file a bug and nothing in the conversation says what's broken, it asks "What's broken?" once. Craft says in one line what was filed and where, then goes back to work. A filed bug is read when you choose to read it.
+
+### What a record holds
+
+One file per bug. The first line is the symptom in your words, never the guessed cause, because a wrong guess would rename the file into a lie.
+
+- **Where it turned up** - the session, story, or test run that found it.
+- **Expected vs actual** - what should have happened, and only what was observed.
+- **Consequences** - what it breaks or costs. There is no severity field. This is what you rank the pile by.
+- **Blocks my next step** - `yes` or `no`, and why.
+- **Reproduce** - numbered steps from a named starting state.
+
+Those five and the symptom line are required: craft refuses to file a record missing one. A field the filer can't know is written plainly ("unknown - why"), never left as a placeholder.
+
+A record can also carry a **Done when** - the check that proves it fixed, written now, before the cause is known. It is optional, and bugs the analyzers file leave it out.
+
+### Repeats
+
+The same bug seen again is never filed twice. Craft names the open match and records a hit on it: the count goes up and the log gets a line saying where it recurred. A bug seen once is a report. A bug that keeps hitting is a pattern, and usually outranks the queue. A bug that was closed and has come back files new.
+
+### Closing a bug
+
+Say a bug is fixed, won't be fixed, or should close. Craft matches your words to one open bug (it asks which if several fit), confirms once, and moves it to `closed/`. A verdict is optional: a plain "won't fix" changes only the status, and a reason you give becomes the verdict: "that's intended" and "can't make it happen again" are both real outcomes worth keeping. Say no at the confirmation and nothing is written.
+
+Craft never argues with a close and never reopens. And a bug recorded as a judgment call (the code was right, but the model drew, chose, or phrased the wrong thing) is never closed as fixed on an agent's own word. Only a human eye on the redraw can close one.
+
+### Where they live
+
+`.craft/bugs/`, named `<date>-<slug>.md`, with `closed/` for the done ones. The folder is the truth for open versus closed. Bugs also show up on the `/craft:dashboard` graph.
+
+### What it looks like
+
+> "Place Order does nothing with one item in the cart - log a bug." *Mid-story. One line: filed, and where. The story carries on.*
+> A week later, `/craft:bugs` - *the pile, newest first, the blocker marked.*
+> "The checkout one is fixed." *Craft names it, you say yes, it moves to `closed/`.*
+
+<!-- TODO: add the CHANGELOG pointer once the release version is cut, e.g. *What shipped in X.Y.Z: [CHANGELOG](CHANGELOG.md#...).* -->
+
 ## Skills
 
 | Skill | Phase | Purpose |
@@ -583,7 +640,7 @@ Autonomous execution against a ready story. The implementer builds each chunk; c
 ### Analysis Phase
 *Tasting after service.*
 
-Post-cycle review triggered by `/craft:analyze`. Four analyzer agents (QA, UX, Creative, Style) scan what shipped to surface bugs, friction, missed opportunities, and design drift.
+Post-cycle review triggered by `/craft:analyze`. Five analyzer agents (QA, UX, Creative, Style, Walkthrough) scan what shipped to surface bugs, friction, missed opportunities, and design drift. QA findings and the walkthrough's `blocks-ship` and `looks-wrong` findings file as [bug records](#bugs); `feels-off` and `nitpick` findings queue for UX review.
 
 ## How `/craft` routes
 
@@ -638,6 +695,8 @@ After initialization, your project will have:
 ├── research/             # Ad-hoc research folders (created by /craft:research)
 ├── mockups/              # Mockup artifacts (created by /craft:mockup): [date]-[slug]/ with mockup.html + record.md
 ├── dials/                # Dial session records (created by /craft:dial, born closed - no lifecycle)
+├── notebook/             # Ideas, todos, and notes (created by /craft:notebook)
+├── decisions/            # Decision records (created by /craft:decisions)
 ├── project.md            # Project DNA
 ├── quality.yaml          # Quality gates
 ├── settings.yaml         # Craft settings
@@ -650,7 +709,7 @@ After initialization, your project will have:
 Craft uses 7 hook events to manage state, enforce permissions, and track progress:
 
 - **SessionStart** - Load context, set status line
-- **PreToolUse** - Gate write permissions by mode
+- **PreToolUse** - Gate writes by the write gate (`CRAFT_WRITE_ENABLED`; `.craft/`, `.claude/`, `dev_mode`, and active workflows pass), check vocabulary on writes, and run the push gate on Bash
 - **PostToolUse** - Track file changes, update progress
 - **PostToolUseFailure** - Log and recover from failures
 - **PreCompact** - Export progress before context compaction
@@ -671,7 +730,8 @@ Run by the `chunk-validator` agent after every chunk:
 4. **Build** - story-final only. The project's build script must succeed.
 5. **Tests + Coverage** - story-final only. Affected tests must pass.
 6. **Design Tokens** - hardcoded values in UI code that should reference `tokens.yaml` get flagged.
-7. **Citation Scan** - story-final only. Code comments citing craft planning artifacts ("Chunk 3", "Story 4", tokens.yaml key paths) get flagged - comments should say why, not which planning step wrote them.
+7. **Visual Binding Assignment** - when a chunk's contract names the token a visual element must use, the element must carry that token, not merely some valid one. Best-effort: a mismatch warns.
+8. **Citation Scan** - story-final only. Code comments citing craft planning artifacts ("Chunk 3", "Story 4", tokens.yaml key paths) get flagged - comments should say why, not which planning step wrote them.
 
 Failures route to `refine-chunk` (build/lint) or `test-fix` (tests). FAIL is FAIL - no override.
 

@@ -1,6 +1,6 @@
 # Craft - Design Reference
 
-> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a creative-first development harness. CLAUDE.md is the rules file Claude auto-loads each session; this file holds the architectural detail CLAUDE.md summarizes.
+> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a development harness. CLAUDE.md is the rules file Claude auto-loads each session; this file holds the architectural detail CLAUDE.md summarizes.
 
 For definitions of cycle, story, chunk, and the workshop concepts, see README.md. This file assumes that vocabulary.
 
@@ -45,6 +45,7 @@ plugins/craft/
 │   ├── craft-init.md
 │   ├── craft-dashboard.md     ← Opens the project graph page - rebuilds first, offers a template pull when stale, then opens (distinct from craft-status.md's terminal snapshot)
 │   ├── craft-decisions.md     ← /craft:decisions - the Shelf: renders decisions live from decisions-view.sh, writes through decisions-capture.sh and decisions-transition.sh only
+│   ├── craft-guide.md         ← /craft:guide - read-only help on how craft works and what your `.craft/` state means
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done
@@ -149,7 +150,7 @@ The Living Map's structural generator lives in a dedicated top-level `scripts/ma
 | Status | Meaning |
 |--------|---------|
 | `draft` | Just an idea, not planned |
-| `planning` | In creative mode, locking decisions |
+| `planning` | Being designed, decisions captured |
 | `ready` | Story file complete, can implement |
 | `active` | Currently being implemented |
 | `blocked` | Waiting on dependency |
@@ -218,15 +219,15 @@ Write access restricted to `.craft/` and `.claude/`. Used for story creation, de
 
 **Included skills:** content-spark, creative-spark, design-vibe, lock-decision, plan-chunks, adhoc, approve, browser
 **Included agents:** plan-chunks-agent, project-scanner, muse, riff, alchemist, conductor, doc-writer, product-anthropologist, pr-reviewer-expert, maze-architect, researcher, research-synthesizer, verifier, practitioner-reviewer, playwright-browser, become-researcher, crystallizer, guide
-**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial
+**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
 
 ### Implement Phase
 
-Full write access, gated by `CRAFT_WRITE_ENABLED` in `.global-state`. Runs with `acceptEdits` permission mode.
+Full write access, gated by `CRAFT_WRITE_ENABLED` in `.global-state`.
 
 **Allowed tools:** Read, Write, Edit, Glob, Grep, Bash, Task
 **Included skills:** validate-chunk, refine-chunk, test-fix
-**Included agents:** implementer, tester, chunk-validator
+**Included agents:** implementer, tester, chunk-validator, claims-auditor
 **Included commands:** craft:story-implement, craft:story-implement-auto, craft:story-continue
 
 ### Analysis Phase
@@ -379,6 +380,10 @@ project-root/
 │   │       ├── assets/        ← Orchestrator-fetched fonts/icons (inlined into the page; travels with the folder)
 │   │       └── rounds/        ← Archived outgoing rounds (never rendered)
 │   ├── dials/                 ← Dial session records (created by /craft:dial, born closed - no lifecycle)
+│   ├── decisions/             ← Decision records (created by /craft:decisions)
+│   │   ├── YYYY-MM-DD-slug.md ← Pending: waiting on a ruling
+│   │   ├── approved/          ← Ruled decisions (law); claimed and shipped ones stay here
+│   │   └── archive/           ← Declined or retired decisions
 │   ├── project.md             ← Project DNA
 │   ├── quality.yaml           ← Quality gates
 │   ├── settings.yaml          ← Craft settings
@@ -457,6 +462,16 @@ The notebook (`/craft:notebook`, `.craft/notebook/`) is a capture surface for id
 - **Deferral markers** in conversation ("later", "side note", "don't forget", "for next time", etc.) trigger an inline mention of `/craft:notebook` as a closing line. On accept the orchestrator captures silently with session context. No subcommands.
 
 The lifecycle deliberately keeps every state fast: capture is one line, graduate is one prompt (for a todo, that one prompt also closes it), done is one AUQ, and a note is captured silently on an accepted inline offer. Power-user subcommand syntax is explicitly rejected in favor of conversational verbs. Claude offers notes proactively only above a high durability bar (no built-in/vague expiry), mirroring the high-bar-for-Claude / low-bar-for-user discipline of the deferral-marker offer.
+
+## Decision Records
+
+`/craft:decisions` keeps a product ruling in one place before it has a cycle, a story, or a name, so nothing gets decided twice. The command renders the Shelf live from `.craft/decisions/` through `decisions-list.sh` and `decisions-view.sh` and never from memory. Every write to a record goes through two scripts: `decisions-capture.sh` creates a record or reopens one, and `decisions-transition.sh` is the only way a record changes state. A record is never written by hand. The one other edit the command makes is after a retire: it removes the slug from the `decisions:` line of any claiming story still in planning or ready.
+
+Where a record sits is its state. A pending record is in the root of `.craft/decisions/`. Approving it moves it to `approved/` as `status: accepted`, and declining it moves it to `archive/` as `status: declined`. Retiring ruled law also lands in `archive/`, as `deprecated`. The room and the status are written in the same step so they cannot disagree. The ruling itself is the user's typed answer, kept verbatim under `## Approval`, and the answer is passed on stdin so the user's words never sit on a command line.
+
+The Shelf's `○` unclaimed and `●` claimed are not stored. `decisions-list.sh` derives them by scanning story files: a record is claimed while a story that is not complete carries its slug in the story's `decisions:` frontmatter. `✓` done is the one stored disposition: `crafted`, stamped by the `craft` transition when `complete-story.sh` finishes a story that carries the decision. Once crafted, a record is frozen: reopening or retiring it is refused, and the way to change your mind is a new decision. Reopening law requires a fresh approval line, reopening a pending record is a quiet reshape, and the archive is never reopened.
+
+A story carries only the decisions the user names for it. The planner and the alignment check read them as the frame the story fills in, so a question a ruling already answered is not asked again. Retagging moves records between topics without touching their room or status.
 
 ## Bug Records
 

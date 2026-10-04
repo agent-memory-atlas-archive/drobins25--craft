@@ -166,7 +166,7 @@ flowchart TD
 
     CHECK_PARALLEL -->|No| START_IMPL
 
-    START_IMPL --> INIT_LEARNINGS["Initialize in-memory learnings:<br/>errors[], patterns[], corrections[]"]
+    START_IMPL --> INIT_LEARNINGS["Learnings go to .craft/.learnings.yaml<br/>after each chunk (never held in memory)"]
     INIT_LEARNINGS --> REVIEW["Review story<br/>Show chunks, decisions, criteria"]
 
     REVIEW --> LOOP["IMPLEMENTATION LOOP"]
@@ -175,7 +175,7 @@ flowchart TD
     CHECKPOINT --> DELEGATE["2. Spawn implementer agent<br/>Pass chunk details + context"]
     DELEGATE --> VALIDATE["3. Invoke chunk-validator agent via Task<br/>TypeScript, lint, tests"]
 
-    VALIDATE --> LOG_ERRORS["Log errors to in-memory learnings"]
+    VALIDATE --> LOG_ERRORS["Post-chunk learnings check:<br/>write any to .learnings.yaml now"]
     LOG_ERRORS --> PASS{"Validation passed?"}
 
     PASS -->|Yes| AUTO_NEXT["Auto-continue to next chunk"]
@@ -190,18 +190,36 @@ flowchart TD
 
     MORE_CHUNKS -->|Yes| RECHECK_PARALLEL["Re-check file conflicts"]
     RECHECK_PARALLEL --> LOOP
-    MORE_CHUNKS -->|No| COMPLETE["STORY COMPLETION"]
+    MORE_CHUNKS -->|No| COMPLETE["STORY COMPLETION (Step 5)"]
 
-    COMPLETE --> WRITE_LEARNINGS["Write in-memory learnings<br/>to .learnings.yaml"]
-    WRITE_LEARNINGS --> GATES["1. Run quality gates<br/>From quality.yaml"]
-    GATES --> CRITIQUE["2. Self-critique<br/>Compare to locked patterns"]
-    CRITIQUE --> OFFER_CAPTURE["3. Offer to capture corrections"]
+    COMPLETE --> GATES["1. Story-final quality gates<br/>chunk-validator, MODE story-final"]
+    GATES --> GATES_PASS{"Passed?"}
+    GATES_PASS -->|No| FIX_LOOP["Validate-fix loop<br/>Must pass before the story can complete"]
+    FIX_LOOP --> GATES
+    GATES_PASS -->|Yes| AUDIT["1b. Claims audit (once per story)<br/>Write validation receipt<br/>claims-auditor checks bare claims against artifacts"]
 
-    OFFER_CAPTURE --> MARK_DONE["4. Run complete-story.sh<br/>Mark story complete"]
+    AUDIT --> AUDIT_RESULT{"Unsupported claims?"}
+    AUDIT_RESULT -->|"None, or auditor failed to run"| CRITIQUE
+    AUDIT_RESULT -->|"Some (interactive)"| AUDIT_ASK["AskUserQuestion:<br/>• Fix the issue<br/>• Correct the claim<br/>• Proceed, acknowledging the flag"]
+    AUDIT_RESULT -->|"Some (autonomous)"| AUDIT_FLAG["Write ## Claims Audit into the story<br/>Flag and continue"]
+    AUDIT_ASK --> CRITIQUE
+    AUDIT_FLAG --> CRITIQUE
 
-    MARK_DONE --> CYCLE_DONE{"All stories done?"}
+    CRITIQUE["2. Self-critique<br/>Compare to locked patterns,<br/>tokens, acceptance criteria"]
+    CRITIQUE --> USAGE["3. Usage summary<br/>4. Present results"]
+    USAGE --> LEARN["5. Verify learnings written<br/>6. Story reflection<br/>(tally, append to .learnings.yaml)"]
+    LEARN --> SPARK["7. Spark verification<br/>Re-read The Pitch, confirm conditions cashed<br/>Gap found: stop and plan another chunk"]
+    SPARK --> MANIFEST["7b. Write .commit-manifest<br/>complete-story.sh stages only what it lists"]
+    MANIFEST --> MARK_DONE["8. Run complete-story.sh<br/>Mark story complete, commit the manifest"]
+    MARK_DONE --> LEFTOVER["8b. Leftover triage<br/>Ledger lookup first, never re-ask<br/>Interactive: Ignore / Claim / Leave per file<br/>Autonomous: leave and report"]
+
+    LEFTOVER --> CYCLE_DONE{"9. All stories done?"}
     CYCLE_DONE -->|Yes| ROUTE_COMPLETE["/craft:cycle-complete"]
-    CYCLE_DONE -->|No| NEXT_STORY["Continue to next story"]
+    CYCLE_DONE -->|No| NEXT_READY{"Ready story left?"}
+    NEXT_READY -->|Yes| NEXT_STORY["Chain carries straight on<br/>to the next story"]
+    NEXT_READY -->|"No, stories still in planning"| PLAN_NEXT["craft:plan-chunks for the next planning story"]
+    PLAN_NEXT -->|"Planning done: re-check"| NEXT_READY
+    NEXT_READY -->|"Chain pauses back to the user"| OBS_9A["9a. Surface unread observations<br/>(skipped when autonomous)"]
 ```
 
 ---
@@ -285,18 +303,33 @@ flowchart TD
 flowchart TD
     CYCLE_START["/craft:cycle-start"] --> SELECT{"Cycle specified?"}
 
-    SELECT -->|No| LIST_CYCLES["List available cycles"]
-    LIST_CYCLES --> ASK_CYCLE["AskUserQuestion:<br/>Which cycle?"]
+    SELECT -->|No| LIST_CYCLES["List planning and ready cycles"]
+    LIST_CYCLES --> ASK_CYCLE["AskUserQuestion:<br/>Which cycle? (lowest number recommended)"]
     ASK_CYCLE --> SHOW_OVERVIEW
-    SELECT -->|Yes| SHOW_OVERVIEW["Show cycle overview<br/>Goal, stories, chunks"]
+    SELECT -->|Yes| SHOW_OVERVIEW["Step 2: Show cycle overview<br/>Goal, stories, ready vs planning"]
 
-    SHOW_OVERVIEW --> ACTIVATE["Update .global-state:<br/>ACTIVE_CYCLE"]
+    SHOW_OVERVIEW --> UNPLANNED{"Step 2b: Any stories<br/>still in planning?"}
+    UNPLANNED -->|"No, all ready"| ACTIVATE
+    UNPLANNED -->|"All in planning"| PLAN_FIRST["AskUserQuestion:<br/>Which story to plan first? (or Cancel)"]
+    UNPLANNED -->|"Some in planning"| PLAN_ASK["AskUserQuestion, several unplanned:<br/>• Plan all (parallel batch)<br/>• Plan one at a time<br/>• Start with ready stories<br/>• Move unplanned to backlog<br/>Exactly one unplanned:<br/>• Plan it now<br/>• Start with ready stories<br/>• Move to backlog"]
 
-    ACTIVATE --> INIT_LEARNINGS["Initialize .learnings.yaml"]
-    INIT_LEARNINGS --> PICK_STORY{"Start with Story 1?"}
+    PLAN_FIRST --> PLAN_SKILL["craft:plan-chunks skill<br/>(never planned inline)"]
+    PLAN_ASK -->|Plan| PLAN_SKILL
+    PLAN_ASK -->|"Start with ready stories"| ACTIVATE
 
-    PICK_STORY -->|Yes| ROUTE_IMPL["/craft:story-implement"]
-    PICK_STORY -->|Pick different| ASK_STORY["AskUserQuestion:<br/>Which story?"]
+    PLAN_SKILL --> PLAN_DONE{"Planning ended with:"}
+    PLAN_DONE -->|"Implement now (story chosen)"| ACTIVATE
+    PLAN_DONE -->|"Planning finished"| SHOW_OVERVIEW
+
+    ACTIVATE["Step 3: start-cycle.sh<br/>ACTIVE_CYCLE set, PLANNING_CYCLE cleared"] --> CHOSEN{"Story already chosen?"}
+    CHOSEN -->|"Yes (implement now)"| ROUTE_IMPL["/craft:story-implement<br/>for that story, no re-ask"]
+    CHOSEN -->|No| PICK_STORY{"AskUserQuestion:<br/>Ready to start?"}
+
+    PICK_STORY -->|"Go - review first story"| START_Q{"Step 4: AskUserQuestion<br/>Ready to implement this story?"}
+    PICK_STORY -->|"Let me pick"| ASK_STORY["AskUserQuestion:<br/>Which story?"]
+    START_Q -->|"Yes, begin implementation"| ROUTE_IMPL
+    START_Q -->|"Review the full story first"| START_Q
+    START_Q -->|"Pick a different story"| ASK_STORY
     ASK_STORY --> ROUTE_IMPL
 ```
 
@@ -307,45 +340,37 @@ flowchart TD
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 flowchart TD
-    CYCLE_COMPLETE["/craft:cycle-complete"] --> CHECK_STORIES{"All stories complete?"}
+    CYCLE_COMPLETE["/craft:cycle-complete"] --> CHECK_STORIES{"Step 1: All stories complete?"}
 
     CHECK_STORIES -->|No| ASK_END["AskUserQuestion:<br/>• Complete cycle (archive incomplete)<br/>• Continue working"]
     ASK_END -->|Continue| EXIT["Exit"]
-    ASK_END -->|Complete| LOAD_LEARNINGS
+    ASK_END -->|Complete| COUNT
 
-    CHECK_STORIES -->|Yes| LOAD_LEARNINGS["Load .learnings.yaml"]
+    CHECK_STORIES -->|Yes| COUNT["Step 2: Count pending learnings<br/>and ungraduated fixes (FIX_COUNT)"]
 
-    LOAD_LEARNINGS --> FILTER["Filter actionable items:<br/>• errors with count >= 2<br/>• all corrections<br/>• patterns with count >= 2"]
+    COUNT --> THRESHOLD{"Pending learnings > 0 OR<br/>FIX_COUNT >= rule_pass_threshold<br/>(default 10)?"}
+    THRESHOLD -->|Yes| ASK_REFLECT["AskUserQuestion:<br/>Reflect before archiving?"]
+    THRESHOLD -->|No| WALK_CHECK
+    ASK_REFLECT -->|"Yes, reflect now"| REFLECT["/craft:reflect<br/>(learnings and rule pass live there;<br/>nothing is applied in cycle-complete)"]
+    ASK_REFLECT -->|"Skip reflection"| KEEP["Learnings stay pending<br/>Fix watermark untouched"]
+    REFLECT --> WALK_CHECK
+    KEEP --> WALK_CHECK
 
-    FILTER --> CHECK_FRESHNESS{"Harness checked recently?<br/>(within 14 days)"}
-    CHECK_FRESHNESS -->|Stale| ASK_UPDATE["AskUserQuestion:<br/>Check for Claude Code updates?"]
-    ASK_UPDATE -->|Yes| WEB_SEARCH["WebSearch: Claude Code changelog"]
-    WEB_SEARCH --> CATEGORIZE
-    ASK_UPDATE -->|No| CATEGORIZE
-    CHECK_FRESHNESS -->|Fresh| CATEGORIZE
+    WALK_CHECK{"Step 2b: Any type: ui stories?"}
+    WALK_CHECK -->|Yes| WALKTHROUGH["Assemble brief, run walkthrough-analyzer<br/>File findings as bug records<br/>(analysis-bug-filing.md)<br/>Never pauses, remember the count"]
+    WALK_CHECK -->|No| INCOMPLETE
+    WALKTHROUGH --> INCOMPLETE["Step 3: Move incomplete stories<br/>(ready or active) back to backlog"]
 
-    CATEGORIZE["Categorize learnings by target:<br/>• CLAUDE.md (conventions)<br/>• Rules (enforcement)<br/>• Hooks (automation)<br/>• Locked patterns (design)"]
+    INCOMPLETE --> OBS_MODE{"Step 3c: Autonomous run?"}
+    OBS_MODE -->|Yes| ARCHIVE
+    OBS_MODE -->|No| OBS_COUNT{"Unread observations?"}
+    OBS_COUNT -->|Yes| OBS_SURFACE["Surface observations<br/>(cluster, digest, route, mark surfaced)"]
+    OBS_COUNT -->|No| ARCHIVE
+    OBS_SURFACE --> ARCHIVE
 
-    CATEGORIZE --> PRESENT["Present summary:<br/>'Apply these harness updates?'"]
+    ARCHIVE["Step 4: Run complete-cycle.sh<br/>Cycle status complete<br/>Clear ACTIVE_CYCLE and CURRENT_STORY"]
 
-    PRESENT --> ASK_APPLY["AskUserQuestion:<br/>• Apply all<br/>• Review each<br/>• Skip harness updates"]
-
-    ASK_APPLY -->|Apply all| APPLY_ALL["Apply all updates"]
-    ASK_APPLY -->|Review| REVIEW_EACH["Review each update one by one"]
-    ASK_APPLY -->|Skip| ARCHIVE
-
-    APPLY_ALL --> UPDATE_CLAUDE["Update .claude/CLAUDE.md<br/>(create if missing)"]
-    REVIEW_EACH --> UPDATE_CLAUDE
-
-    UPDATE_CLAUDE --> CREATE_RULES["Create .claude/rules/*.md<br/>for error patterns"]
-    CREATE_RULES --> ADD_HOOKS["Update project settings<br/>for automations"]
-    ADD_HOOKS --> LOCK_PATTERNS["Append to .craft/design/locked.md"]
-
-    LOCK_PATTERNS --> ARCHIVE["Archive learnings<br/>Clear .learnings.yaml"]
-
-    ARCHIVE --> UPDATE_STATE["Update .global-state:<br/>Clear ACTIVE_CYCLE<br/>Set HARNESS_CHECKED"]
-
-    UPDATE_STATE --> SUMMARY["Cycle Complete Summary:<br/>• Stories completed<br/>• Harness updates applied"]
+    ARCHIVE --> SUMMARY["Step 5: Cycle Complete Summary<br/>Stories, Duration,<br/>Bugs filed (only when any)"]
 
     SUMMARY --> NEXT["AskUserQuestion:<br/>• Start new cycle<br/>• Review backlog<br/>• Take a break"]
 ```
@@ -634,7 +659,7 @@ stateDiagram-v2
     CYCLE_READY --> CYCLE_ACTIVE: /craft:cycle-start
 
     CYCLE_ACTIVE --> STORY_ACTIVE: Pick story to implement
-    CYCLE_ACTIVE --> CYCLE_ACTIVE: /craft:reflect (capture learnings)
+    CYCLE_ACTIVE --> CYCLE_ACTIVE: /craft:reflect (convert learnings to harness updates)
 
     STORY_ACTIVE --> STORY_ACTIVE: Chunk loop (learnings accumulate)
     STORY_ACTIVE --> STORY_COMPLETE: All chunks done
@@ -642,7 +667,7 @@ stateDiagram-v2
     STORY_COMPLETE --> CYCLE_ACTIVE: More stories
     STORY_COMPLETE --> CYCLE_COMPLETE: All stories done → /craft:cycle-complete
 
-    CYCLE_COMPLETE --> HARNESS_UPDATED: Process learnings → CLAUDE.md, rules, hooks, locks
+    CYCLE_COMPLETE --> HARNESS_UPDATED: Optional /craft:reflect converts learnings → CLAUDE.md, rules, hooks, skills, commands
     HARNESS_UPDATED --> ANALYZING: /craft:analyze
     HARNESS_UPDATED --> HAS_BACKLOG: Create stories from analysis
     HARNESS_UPDATED --> PLANNING_CYCLE: /craft:cycle-design
@@ -656,9 +681,9 @@ stateDiagram-v2
     note right of PLANNING_CYCLE: PLANNING_CYCLE set in .global-state
     note right of CYCLE_READY: Cycle files created, not active
     note right of CYCLE_ACTIVE: ACTIVE_CYCLE set, .learnings.yaml tracking
-    note right of STORY_ACTIVE: CURRENT_STORY set, in-memory learnings
-    note right of CYCLE_COMPLETE: All stories done, learnings ready
-    note right of HARNESS_UPDATED: Learnings → CLAUDE.md, rules, hooks, locks
+    note right of STORY_ACTIVE: CURRENT_STORY set, learnings written to .learnings.yaml after each chunk
+    note right of CYCLE_COMPLETE: All stories done, reflect offered when due, bugs filed if a UI walkthrough finds any
+    note right of HARNESS_UPDATED: Written by /craft:reflect (CLAUDE.md, rules, hooks, skills, commands), not cycle-complete
 ```
 
 ---
@@ -675,12 +700,16 @@ flowchart LR
     end
 
     subgraph Accumulate["Accumulation"]
-        MEMORY["In-memory during story"]
-        FILE[".learnings.yaml at story end"]
+        MEMORY["Post-chunk check"]
+        FILE[".craft/.learnings.yaml<br/>(written after each chunk)"]
     end
 
     subgraph Process["At Cycle-Complete"]
-        FILTER["Filter actionable items"]
+        COUNT["Count pending learnings<br/>and ungraduated fixes"]
+        OFFER["Offer /craft:reflect<br/>(learnings pending, or fixes at<br/>rule_pass_threshold)"]
+    end
+
+    subgraph Reflect["In /craft:reflect"]
         CATEGORIZE["Categorize by target"]
         APPLY["Apply harness updates"]
     end
@@ -689,7 +718,8 @@ flowchart LR
         CLAUDE[".claude/CLAUDE.md"]
         RULES[".claude/rules/*.md"]
         HOOKS["settings.local.json"]
-        LOCKED[".craft/design/locked.md"]
+        SKILLS[".claude/skills/*/SKILL.md"]
+        COMMANDS[".claude/commands/*.md"]
     end
 
     VALIDATE --> MEMORY
@@ -698,14 +728,16 @@ flowchart LR
 
     MEMORY --> FILE
 
-    FILE --> FILTER
-    FILTER --> CATEGORIZE
+    FILE --> COUNT
+    COUNT --> OFFER
+    OFFER -->|"Yes, reflect now"| CATEGORIZE
     CATEGORIZE --> APPLY
 
     APPLY --> CLAUDE
     APPLY --> RULES
     APPLY --> HOOKS
-    APPLY --> LOCKED
+    APPLY --> SKILLS
+    APPLY --> COMMANDS
 ```
 
 ---
@@ -727,8 +759,8 @@ flowchart LR
 | `/craft:cycle-design` | Create cycle with planned stories (95% alignment) |
 | `/craft:cycle-start` | Activate cycle and start implementation |
 | `/craft:cycle-assign` | Move story from backlog to cycle |
-| `/craft:cycle-complete` | Process learnings into harness updates |
-| `/craft:reflect` | Capture learnings anytime |
+| `/craft:cycle-complete` | Offer reflection, walk through UI work and file bugs, archive the cycle |
+| `/craft:reflect` | Convert captured learnings into harness updates anytime |
 | `/craft:analyze` | Post-cycle QA, UX, Creative, Style, Walkthrough analysis |
 | `/craft:review` | PR-style code review — branch, story, or project audit. `--maze` flag for perpendicular review |
 | `/craft:update-docs` | Re-scan project, update project.md and locked.md |
@@ -817,7 +849,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 
 | Agent | Purpose |
 |-------|---------|
-| `muse` | Emotional job translator — interrogator for creative-spark Step 1.5; authors the mockup funnel's vibe question via the muse path |
+| `muse` | Emotional job translator - interrogator for creative-spark Step 1.5; on the mockup funnel's muse path, authors 3 directions that build directly (no vibe widget) |
 | `riff` | Creative collaboration partner - a thinking companion, not an instructor |
 | `alchemist` | CSS interaction physicist — interrogator for creative-spark Step 1.5 |
 | `conductor` | AI orchestration architect |
@@ -839,7 +871,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | `.craft/.global-state` | Global state | ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY, RUN_MODE, HARNESS_CHECKED, CRAFT_WRITE_ENABLED |
 | `.craft/.continuation` | Breadcrumb for a nested skill invocation (30-min TTL, one-shot) | caller path |
 | `.craft/.active-fix` | Safety marker for in-progress adhoc work (session-start clears orphans) | timestamp |
-| `.craft/settings.yaml` | User preferences | default_mode, parallel planning |
+| `.craft/settings.yaml` | User preferences | rule_pass_threshold, taste_pass_enabled, taste_pass_threshold, map (enabled, token_budget), dev_mode (true lets writes past the write gate) |
 | `.craft/requests/*.md` | Pending requests surfaced at the `/craft` entry (Step 2.5) | request files |
 | `.craft/cycles/[N]-[name]/.state` | Cycle runtime state | CURRENT_STORY, CURRENT_CHUNK, TOTAL_CHUNKS |
 | `.craft/cycles/[N]-[name]/.learnings.yaml` | Accumulated learnings | errors, corrections, patterns, conventions, automations |
@@ -851,6 +883,9 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | `.craft/tweaks/tweak-[slug].md` | Tweak records, open until the user accepts | Created by /craft:adhoc (tweak path) |
 | `.craft/workflows/` | Workflow session state | per-session state dirs |
 | `.craft/notebook/` | Low-ceremony captured ideas and todos | idea / todo entries |
+| `.craft/bugs/` | Bug records from /craft:bugs, the QA analyzer, and the walkthrough. Closed ones move to `closed/` | status, verdict, hits |
+| `.craft/dials/` | Dial session records from /craft:dial (born closed) | record per session |
+| `.craft/decisions/` | Decision records from /craft:decisions: pending at the top, `approved/` for ruled, `archive/` for declined or retired | status, created, source, tags (the Shelf groups by tag) |
 | `.craft/research/` | Research and become branch files | `{slug}/_plan.md`, `NN-branch.md` |
 | `.craft/mockups/[date]-[slug]/record.md` | Mockup records - status is the ledger, open until graduated/abandoned | status, agent_session, muse_session, solidify_outcome, graduated_to |
 
@@ -859,7 +894,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 ```
 .craft/                          ← EXISTS? → If no, route to /craft:init
 ├── .global-state                ← READ for ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY, HARNESS_CHECKED
-├── settings.yaml                ← READ for default_mode, parallel planning
+├── settings.yaml                ← READ for rule_pass_threshold, taste_pass_*, map, dev_mode
 ├── backlog/                     ← COUNT stories here
 │   └── *.md                     ← Each is a ready story
 ├── cycles/                      ← LIST available cycles
@@ -873,6 +908,9 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 ├── tweaks/                      ← Tweak records (permanent log, open until user accepts)
 ├── requests/                    ← Pending requests checked at /craft entry (Step 2.5)
 ├── notebook/                    ← Low-ceremony idea/todo capture
+├── bugs/                        ← Bug records (closed/ holds fixed and won't-fix)
+├── dials/                       ← Dial session records
+├── decisions/                   ← Decision records (approved/, archive/)
 ├── research/                    ← Research + become branch files
 ├── mockups/                     ← Mockup artifacts: [date]-[slug]/ (mockup.html, record.md, rounds/)
 ├── workflows/                   ← Workflow session state
@@ -896,10 +934,10 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | Pending findings check | **Include as AskUserQuestion option** — shown when pending > 0 |
 | State corruption recovery | **Hybrid reconstruct + ask** — scan files, rebuild, ask if ambiguous |
 | Parallel stories | **Bulletproof file conflict detection** — extract files from chunks, block overlaps |
-| Reflect vs cycle-complete | **Reflect captures, cycle-complete processes** — separation of concerns |
+| Reflect vs cycle-complete | **Reflect owns learnings and harness updates, cycle-complete only offers it** - separation of concerns |
 | Learnings ownership | **validate-chunk logs errors, AskUserQuestion for corrections** |
 | 95% alignment check | **Codebase investigation loop before plan-chunks.** Orchestrator spawns Explore agent, surfaces product questions (conflicts, adjacencies, assumptions), loops via SendMessage until zero unasked questions remain. Gate measures user intent capture, not solution confidence. `alignment` frontmatter field (`pending`/`complete`) ensures no story skips the check. See `commands/references/alignment-check.md`. |
 | Design decisions | **Typed keys (layout/component/density/visibility)** — structured for Tokens Studio |
-| Harness freshness | **Check at cycle-complete if > 14 days** — optional WebSearch for updates |
-| Harness updates | **Applied at cycle-complete, not reflect** — CLAUDE.md, rules, hooks, locks |
+| Harness freshness | **Superseded** - cycle-complete no longer checks for Claude Code updates or applies harness changes |
+| Harness updates | **Applied by reflect** - cycle-complete counts learnings and fixes, offers /craft:reflect, and applies nothing itself |
 | Context safety | **Save stories immediately when confirmed** — survives context compaction mid-planning |

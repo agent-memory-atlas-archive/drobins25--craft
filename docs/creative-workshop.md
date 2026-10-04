@@ -16,7 +16,7 @@ The Creative Driver step (Step 1.5 in creative-spark) offers a choice: generate 
 
 ---
 
-## The Three Driver Options
+## The Four Driver Options
 
 ### Standard (default)
 
