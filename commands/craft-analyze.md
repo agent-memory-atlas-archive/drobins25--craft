@@ -17,11 +17,13 @@ Run comprehensive analysis on what you've built. Findings persist between sessio
 | **Style** | style-analyzer | Token violations, pattern drift |
 | **Walkthrough** | walkthrough-analyzer | "Does it actually work for a human?" - clicks everything, checks every state |
 
+QA and Walkthrough file the defects they find as bugs in `.craft/bugs/`. UX, Creative, and Style queue their findings for review.
+
 ## Flow
 
 ### Step 1: Check Pending Findings
 
-Before any new analysis, check for existing pending findings of the requested type.
+Before any new analysis, check for existing pending findings of the requested type. Only UX, Creative, and Style keep a pending queue (`.craft/analysis/pending/ux.yaml`, `creative.yaml`, `style.yaml`). A QA or Walkthrough request skips this step and goes to Step 2, since their defects are filed as bugs and nothing queues.
 
 **If pending findings exist:**
 
@@ -79,6 +81,14 @@ options:
 
 ### Step 3: Select Scope
 
+**Resolve the cycle first.** Read `ACTIVE_CYCLE` from `$PROJECT/.craft/.global-state` and take the title from that cycle's `cycle.yaml`. When `ACTIVE_CYCLE` is empty (a cycle just closed), look up the last completed cycle:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/get-latest-cycle.sh" "$PROJECT" --status=complete
+```
+
+Its `CYCLE_TITLE` is the title. When that comes back empty too, there is no cycle.
+
 > "What should I analyze?"
 
 Use **AskUserQuestion**:
@@ -87,7 +97,7 @@ question: "What should I analyze?"
 header: "Scope"
 options:
   - label: "Current cycle"
-    description: "All stories in active cycle"
+    description: "All stories in <title>"
   - label: "Specific story"
     description: "Pick one story from the cycle"
   - label: "Specific pages"
@@ -95,6 +105,12 @@ options:
   - label: "Whole application"
     description: "Full app analysis"
 ```
+
+The first option reads `Current cycle` when a cycle is active, `Last completed cycle (<title>)` when only a completed one exists, and is omitted when neither exists. "Specific story" picks from that same resolved cycle.
+
+The confirmed scope yields two values the later steps use:
+- **SCOPE** - the user's words for pages or areas, a story title, `the whole application`, or `all stories in <Cycle N>` for the cycle option (`<Cycle N>` is the title's text before its first colon when it starts with "Cycle ", else the full title)
+- **CYCLE_RELATION** - `active` when the scope is tied to the active cycle, `after` when it is tied to the last completed cycle, `none` otherwise
 
 **If user provides custom text:** Ask a clarifying AskUserQuestion to confirm the scope.
 
@@ -157,21 +173,22 @@ Pass the confirmed scope and any relevant context to the agent.
 1. Read `project.md` for dev server command and port
 2. For each `type: ui` story in scope, extract: feature name, trigger, expected behavior
 3. Pass the brief with dev server command, URL, test plan, and story context
-4. The agent returns findings - you write them to `.craft/analysis/pending/walkthrough.yaml`
+4. The agent returns its report as text
 
-**After the agent completes, YOU (the orchestrator) must write findings to disk.**
-The analyzer agents have Write/Edit disabled — they return findings in their output text only.
+**After the agent completes, YOU (the orchestrator) handle what it returned.** The analyzer agents have Write/Edit disabled - they return findings in their output text only.
 
-**Write findings to** `.craft/analysis/pending/[type].yaml`:
+**QA and Walkthrough: file the defects as bugs.** Build `found_during` from SCOPE and CYCLE_RELATION (`active` gives the mid-cycle form, `after` the after-close form, `none` the no-cycle form, and the cycle option the whole-cycle form), then follow `${CLAUDE_PLUGIN_ROOT}/commands/references/analysis-bug-filing.md` inline. It covers which findings file, the open-pile check, the capture call, and the report-back lines. Nothing is written to `.craft/analysis/pending/` for these two types, except the walkthrough's feels-off and nitpick findings, which the reference sends to the UX queue.
+
+**UX, Creative, and Style: write findings to** `.craft/analysis/pending/[type].yaml`:
 1. Create `.craft/analysis/pending/` directory if it doesn't exist: `mkdir -p .craft/analysis/pending`
 2. Read the existing pending file (if any) to preserve prior findings
-3. Parse the agent's output for findings (bugs, issues, opportunities)
+3. Parse the agent's output for findings (issues, opportunities)
 4. Append new findings to the YAML file using the template format from `${CLAUDE_PLUGIN_ROOT}/templates/analysis/pending/[type].yaml`
 5. Set `updated:` to current date and `scope:` to what was analyzed
 
-**This is critical.** If you don't write findings to disk, they exist only in conversation context and will be lost on compaction.
+**This is critical.** If you don't file or write findings to disk, they exist only in conversation context and will be lost on compaction.
 
-User can **stop at any time** — write all findings discovered so far before stopping.
+User can **stop at any time** - file or write all findings discovered so far before stopping.
 
 **During analysis, Claude should:**
 - Narrate what it's checking
@@ -179,6 +196,8 @@ User can **stop at any time** — write all findings discovered so far before st
 - Confirm before testing destructive/stateful actions
 
 ### Step 5: Review Findings (Two-Phase Triage)
+
+Applies to UX, Creative, and Style findings only. QA and Walkthrough defects were filed in Step 4, so skip to Step 7 when no UX, Creative, or Style finding is pending.
 
 Use a funnel approach: batch filter first, then detailed review only for selected items.
 
@@ -235,29 +254,6 @@ Now go through only the selected findings one-by-one for actual decisions.
 
 > "**5 findings selected for detailed review.**"
 
-**For QA findings:**
-> "[1/5] QA Finding: Form accepts invalid email
->
-> **Priority:** High
-> **Found at:** /login
-> **Repro:** Enter 'test' → click submit → form submits
-> **Expected:** Validation error
->
-> Create story for this?"
-
-Use **AskUserQuestion**:
-```
-question: "Create story for this QA finding?"
-header: "QA"
-options:
-  - label: "Yes, create story"
-    description: "Add to backlog for fixing"
-  - label: "Skip (keep for later)"
-    description: "Stay in pending queue"
-```
-
-**If user provides custom text:** Ask a clarifying AskUserQuestion to understand their intent.
-
 **For UX findings:**
 > "[2/5] UX Finding: No loading state on checkout
 >
@@ -288,6 +284,19 @@ options:
 ```
 
 **If user provides custom text:** Ask a clarifying AskUserQuestion to understand their preferred approach.
+
+**A UX entry with `source: walkthrough`** (a feels-off or nitpick finding queued by a walkthrough) shows Problem and Recommendation only:
+
+Use **AskUserQuestion**:
+```
+question: "What should happen with this walkthrough finding?"
+header: "UX"
+options:
+  - label: "Use recommendation (Recommended)"
+    description: "Apply the recommended change"
+  - label: "Skip (keep for later)"
+    description: "Stay in pending queue"
+```
 
 **For Creative findings:**
 > "[3/5] Creative Opportunity: First task completion feels flat
@@ -344,33 +353,6 @@ options:
 
 **If user provides custom text:** Ask a clarifying AskUserQuestion to understand their preferred fix approach.
 
-**For Walkthrough findings:**
-> "[5/5] Walkthrough: No toggle on command re-press
->
-> **Severity:** feels-off
-> **Element:** Command 1 button
-> **Steps:** Click Command 1 → card appears. Click Command 1 again → nothing happens.
-> **Expected:** Card toggles off or button shows active state
-> **Actual:** No visible response on second press
-> **Screenshots:** [before, after, re-press]
->
-> Create story?"
-
-Use **AskUserQuestion**:
-```
-question: "Create story for this walkthrough finding?"
-header: "Walkthrough"
-options:
-  - label: "Yes, create story"
-    description: "Add to backlog for fixing"
-  - label: "Skip (keep for later)"
-    description: "Stay in pending queue"
-  - label: "Dismiss"
-    description: "Not worth fixing"
-```
-
-**If user provides custom text:** Ask a clarifying AskUserQuestion to understand their intent.
-
 ---
 
 **Result:** 12 findings → 5 detailed reviews → stories created for chosen ones.
@@ -424,11 +406,9 @@ ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/create-story.sh "[name]" "[title]"
 ```
 
 **Naming convention:**
-- QA findings: `fix-[kebab-slug]` / `Fix: [title]`
 - UX findings: `improve-[kebab-slug]` / `Improve: [title]`
 - Creative findings: `enhance-[kebab-slug]` / `Enhance: [title]`
 - Style findings: `fix-[kebab-slug]` / `Fix: [title]`
-- Walkthrough findings: `fix-[kebab-slug]` / `Fix: [title]`
 
 **After creation, append to the story file:**
 - Frontmatter additions: `source: analysis/[type]`, `finding_id: [ID]`, `priority: [mapped]`
@@ -449,6 +429,8 @@ Update each finding's status in the pending YAML file:
 Remove completed/dismissed findings from pending file (or archive them).
 
 ### Step 7: Summary
+
+When QA or Walkthrough ran, open with the report-back lines from the filing reference (the `<N> bugs filed ...` summary and one line per record).
 
 > "Analysis session complete:
 >
@@ -479,6 +461,8 @@ options:
     description: "End the analysis run"
 ```
 
+Include "Review remaining pending" only when a UX, Creative, or Style finding is pending. Omit the stories-created lines when no story was made.
+
 **If user provides custom text:** Ask a clarifying AskUserQuestion to understand their intent.
 
 ## Pending Findings Storage
@@ -488,15 +472,15 @@ Findings persist in `.craft/analysis/pending/`:
 ```
 .craft/analysis/
 ├── pending/
-│   ├── qa.yaml           ← Bugs with repro steps
 │   ├── ux.yaml           ← Suggestions + recommendations
 │   ├── creative.yaml     ← Ideas with options
-│   ├── style.yaml        ← Violations with fix options
-│   └── walkthrough.yaml  ← Interactive usability findings with screenshots
+│   └── style.yaml        ← Violations with fix options
 ├── screenshots/
 │   └── walkthrough/      ← Before/after screenshots from walkthrough
 └── reports/              ← Completed analysis reports (optional)
 ```
+
+QA and Walkthrough defects are filed in `.craft/bugs/`, not queued here.
 
 See templates in `${CLAUDE_PLUGIN_ROOT}/templates/analysis/` for file formats.
 
@@ -505,13 +489,13 @@ See templates in `${CLAUDE_PLUGIN_ROOT}/templates/analysis/` for file formats.
 Fast analysis with defaults:
 
 ```bash
-/craft:analyze qa           # QA on current cycle
-/craft:analyze ux           # UX on current cycle
-/craft:analyze creative     # Creative on current cycle
-/craft:analyze style        # Style on current cycle
+/craft:analyze qa           # QA on the current cycle, or the last completed one
+/craft:analyze ux           # UX on the current cycle, or the last completed one
+/craft:analyze creative     # Creative on the current cycle, or the last completed one
+/craft:analyze style        # Style on the current cycle, or the last completed one
 /craft:analyze walkthrough  # Interactive walkthrough of live app
-/craft:analyze full         # All types on current cycle
-/craft:analyze pending      # Jump straight to pending review
+/craft:analyze full         # All types on the current cycle, or the last completed one
+/craft:analyze pending      # Review pending UX, Creative, and Style findings
 ```
 
 ## MCP Browser Access

@@ -285,7 +285,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 | `start-workflow-session.sh` | Initialize a workflow session directory and state |
 | `complete-workflow-session.sh` | Mark a workflow session complete |
 | `complete-workflow-stage.sh` | Advance workflow to the next stage |
-| `get-latest-cycle.sh` | Resolve the most recent cycle directory path |
+| `get-latest-cycle.sh` | Resolve the most recent cycle directory path (`--status=` filters by cycle status) |
 | `update-global-state.sh` | Update .global-state key-value pairs |
 | `update-cycle-state.sh` | Update cycle .state file |
 | `update-story-status.sh` | Change story status in frontmatter |
@@ -330,7 +330,6 @@ project-root/
 │   │   └── tweak-name.md      ← surface, kind, attempts, verbatim reactions
 │   ├── analysis/              ← Persistent analysis findings
 │   │   ├── pending/           ← Findings queue (survives sessions)
-│   │   │   ├── qa.yaml
 │   │   │   ├── ux.yaml
 │   │   │   ├── creative.yaml
 │   │   │   └── style.yaml
@@ -466,6 +465,8 @@ The lifecycle deliberately keeps every state fast: capture is one line, graduate
 There are two rooms. The open folder holds what is still broken, and closing a bug (`bugs-close.sh`, after one confirmation) moves it to `closed/` with a stamped close time and a Log line, so "what is still open" never costs a read of every record that ever existed. Status is `fixed` or `wont-fix`; the verdict (`bug`, `unspecified`, `spec-gap`, `not-reproducible`) records whether it was ever a bug and stays blank until triaged. The command opens with the open pile through shell preprocessing (`bugs-list.sh --summary`), `session-start.sh` injects the same `Bugs: N open` header every session, and the dashboard reads both rooms as a `bug` type.
 
 Three trigger tiers decide how the command is reached, mirroring the notebook. Naming it ("file a bug", "log a bug", "bug ticket") is the invocation: it runs with what the session has, no offer and no question. A deferral word plus a defect ("don't let me forget, the save button is broken"), or a bare defect named while a story or chunk is in progress, earns one ignorable inline offer naming `/craft:bugs`, because dropping active work to chase a side sighting is what the feature exists to prevent; nothing is filed until the user says yes. A bare defect in an idle session routes to `/craft:adhoc` as before. Nothing guesses from vocabulary beyond those three signals.
+
+The analyzers feed the same pile. QA and walkthrough analysis file their findings as bug records instead of queueing them (UX, Creative, and Style still queue), and a finding that repeats an open bug raises its `hits` count through `bugs-hit.sh` instead of filing a duplicate. The cycle-complete walkthrough files bugs and never fixes them; bug then `/craft:adhoc` is the fix path.
 
 ---
 

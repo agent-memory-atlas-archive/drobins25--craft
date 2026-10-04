@@ -146,6 +146,11 @@ assert_not_contains "close never passes a bare slug" 'bugs-close.sh" <slug>' "$R
 HIT_LINE="$(printf '%s\n' "$REFTEXT" | grep 'hit again' | head -1)"
 assert_contains_literal "hit-again names where the path comes from" 'FILE=' "$HIT_LINE"
 
+begin_test "hit-again line names bugs-hit.sh on the FILE path"
+assert_contains_literal "hit-again runs bugs-hit.sh on the record path" 'bugs-hit.sh" "<FILE>"' "$HIT_LINE"
+assert_not_contains "hit-again no longer hand-edits" "with Edit" "$HIT_LINE"
+assert_contains_literal "command lists bugs-hit.sh among its scripts" '`bugs-hit.sh` records a repeat on an open bug' "$(cat "$CMD")"
+
 begin_test "command wording agrees with the reference on the no-defect case"
 assert_not_contains "naming line no longer promises no question" "No offer, no question" "$WTU"
 assert_contains_literal "naming line asks only when nothing identifies a defect" \

@@ -416,7 +416,7 @@ flowchart TD
     CHECK_MCP -->|No| SETUP_MCP["Offer to setup MCP<br/>Create .mcp.json"]
     SETUP_MCP --> RESTART["User must restart Claude"]
 
-    CHECK_MCP -->|Yes| RUN["Step 4: Run analysis<br/>Findings save to pending/*.yaml"]
+    CHECK_MCP -->|Yes| RUN["Step 4: Run analysis<br/>QA and walkthrough file bugs to .craft/bugs/<br/>UX, Creative, Style save to pending/*.yaml"]
 
     RUN --> JUMP_REVIEW["Step 5: Review findings"]
 
@@ -846,7 +846,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | `.craft/cycles/[N]-[name]/cycle.yaml` | Cycle metadata | status, goals, target, focus (no stories array) |
 | `.craft/cycles/[N]-[name]/stories/[N]-[name].md` | Story details | status, chunks, decisions (typed), acceptance |
 | `.craft/backlog/[name].md` | Backlog stories | status: ready, priority |
-| `.craft/analysis/pending/*.yaml` | Pending findings | QA, UX, Creative, Style, Walkthrough queues |
+| `.craft/analysis/pending/*.yaml` | Pending findings | UX, Creative, and Style queues (QA and walkthrough file bugs to `.craft/bugs/`) |
 | `.craft/fixes/[name].md` | Adhoc fix records | Created by /craft:adhoc (bug path) |
 | `.craft/tweaks/tweak-[slug].md` | Tweak records, open until the user accepts | Created by /craft:adhoc (tweak path) |
 | `.craft/workflows/` | Workflow session state | per-session state dirs |
@@ -878,11 +878,9 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 ├── workflows/                   ← Workflow session state
 ├── analysis/
 │   └── pending/
-│       ├── qa.yaml              ← CHECK for pending findings
-│       ├── ux.yaml
+│       ├── ux.yaml              ← CHECK for pending findings
 │       ├── creative.yaml
-│       ├── style.yaml
-│       └── walkthrough.yaml
+│       └── style.yaml
 └── design/
     └── locked.md                ← READ locked patterns for validation
 ```

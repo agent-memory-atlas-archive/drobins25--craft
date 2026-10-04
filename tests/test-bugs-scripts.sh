@@ -11,6 +11,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/test_helper.sh"
 LIST="$SCRIPTS_DIR/bugs-list.sh"
 CAPTURE="$SCRIPTS_DIR/bugs-capture.sh"
 CLOSE="$SCRIPTS_DIR/bugs-close.sh"
+HIT="$SCRIPTS_DIR/bugs-hit.sh"
 TODAY=$(date +%Y-%m-%d)
 TMP_ROOTS=()
 
@@ -669,5 +670,119 @@ print(len(nodes), sorted((n["status"], bool(n["found_during"])) for n in nodes))
 PY
 )
 assert_eq "two bug nodes" "2 [('fixed', True), ('open', True)]" "$RESULT"
+
+# ── hit ─────────────────────────────────────────────────────────────
+
+# run_hit <args...> - sets OUT, ERR, RC
+run_hit() {
+  local errf
+  errf=$(mktemp)
+  OUT=$(bash "$HIT" "$@" 2>"$errf") && RC=0 || RC=$?
+  ERR=$(cat "$errf")
+  rm -f "$errf"
+}
+
+# fence_of <file> - the lines between the first two --- fences
+fence_of() { awk '/^---$/{c++; next} c==1{print}' "$1"; }
+
+begin_test "hit: bumps hits and appends the Log line"
+fresh_root
+file_bug "Hit me"; F="$OUT"
+assert_contains "filed with hits: 1" "^hits: 1$" "$(fence_of "$F")"
+run_hit "$F" --where="X"
+assert_eq "rc" "0" "$RC"
+assert_contains "fence hits: 2" "^hits: 2$" "$(fence_of "$F")"
+assert_eq "one hits line in the fence" "1" "$(fence_of "$F" | grep -c '^hits:')"
+LOG_LAST=$(awk '/^## Log$/{f=1; next} /^## /{f=0} f && NF{l=$0} END{print l}' "$F")
+assert_eq "last Log line" "- $TODAY hit again: X" "$LOG_LAST"
+assert_eq "title, hits, then path on stdout" "TITLE=Hit me
+HITS=2
+$F" "$OUT"
+assert_eq "no tmp left behind" "0" "$(ls "$ROOT/.craft/bugs" | grep -c '\.tmp' || true)"
+
+begin_test "hit: twice gives hits: 3 and two hit lines in order"
+fresh_root
+file_bug "Twice"; F="$OUT"
+run_hit "$F" --where="first place"
+run_hit "$F" --where="second place"
+assert_contains "fence hits: 3" "^hits: 3$" "$(fence_of "$F")"
+assert_contains "HITS=3 on stdout" "^HITS=3$" "$OUT"
+HIT_LINES=$(grep 'hit again:' "$F")
+assert_eq "two hit lines in order" "- $TODAY hit again: first place
+- $TODAY hit again: second place" "$HIT_LINES"
+
+begin_test "hit: where is collapsed to one line"
+fresh_root
+file_bug "Collapse"; F="$OUT"
+run_hit "$F" --where="  multi
+  line   where  "
+assert_eq "rc" "0" "$RC"
+assert_contains_literal "one-line entry" "- $TODAY hit again: multi line where" "$(cat "$F")"
+
+begin_test "hit: body hits line untouched"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\ncreated: 2026-09-12\nhits: 1\n---\n\nBody guard\n\nhits: prose stays\n\n## Notes\n\nn\n' > "$B/2026-09-12-body-guard.md"
+cp "$B/2026-09-12-body-guard.md" "$ROOT/before.md"
+run_hit "$B/2026-09-12-body-guard.md" --where="X"
+assert_eq "rc" "0" "$RC"
+assert_contains "fence bumped" "^hits: 2$" "$(fence_of "$B/2026-09-12-body-guard.md")"
+assert_eq "body hits line byte-identical" "$(grep -n 'hits: prose stays' "$ROOT/before.md" | od -c)" "$(grep -n 'hits: prose stays' "$B/2026-09-12-body-guard.md" | od -c)"
+assert_eq "exactly one body hits line" "1" "$(awk '/^---$/{c++; next} c>=2{print}' "$B/2026-09-12-body-guard.md" | grep -c '^hits:')"
+
+begin_test "hit: old record without hits or Log"
+fresh_root
+B="$ROOT/.craft/bugs"
+printf -- '---\ntype: bug\ncreated: 2026-09-12\nstatus: open\n---\n\nNo notes old\n' > "$B/2026-09-12-no-notes.md"
+run_hit "$B/2026-09-12-no-notes.md" --where="Y"
+assert_eq "rc" "0" "$RC"
+assert_contains "fence gains hits: 2" "^hits: 2$" "$(fence_of "$B/2026-09-12-no-notes.md")"
+assert_eq "last fence line is hits" "hits: 2" "$(fence_of "$B/2026-09-12-no-notes.md" | tail -1)"
+assert_eq "Log created at the end" "## Log
+
+- $TODAY hit again: Y" "$(awk '/^## Log$/{f=1} f' "$B/2026-09-12-no-notes.md")"
+printf -- '---\ntype: bug\ncreated: 2026-09-12\nhits: lots\n---\n\nWith notes\n\n## Notes\n\nkept note\n' > "$B/2026-09-12-with-notes.md"
+run_hit "$B/2026-09-12-with-notes.md" --where="Z"
+assert_contains "non-integer hits counts as 1" "^hits: 2$" "$(fence_of "$B/2026-09-12-with-notes.md")"
+assert_eq "Log sits before Notes" "## Log
+- $TODAY hit again: Z
+## Notes" "$(grep -v '^$' "$B/2026-09-12-with-notes.md" | grep -A2 '^## Log')"
+assert_contains "note kept" "^kept note$" "$(cat "$B/2026-09-12-with-notes.md")"
+
+begin_test "hit refuses closed, non-record, missing target, empty --where, unknown flag"
+fresh_root
+B="$ROOT/.craft/bugs"
+file_bug "Open one"; F="$OUT"
+write_record "$B/closed/2026-09-01-done.md" "2026-09-01T10:00:00Z" "run" "Done" "" "fixed"
+printf '# Bugs\n\nreadme\n' > "$B/README.md"
+printf -- '---\ntype: bug\n---\n\nundated\n' > "$B/notes.md"
+printf -- '---\ntype: note\n---\n\nwrong type\n' > "$B/2026-09-03-wrong-type.md"
+printf 'no fence\n' > "$B/2026-09-04-plain.md"
+SUM_BEFORE=$(cksum "$B"/*.md "$B"/closed/*.md)
+run_hit "$B/closed/2026-09-01-done.md" --where="X"
+assert_eq "closed rc" "2" "$RC"
+assert_eq "closed stderr" "already closed: 2026-09-01-done" "$ERR"
+for bad in README notes 2026-09-03-wrong-type 2026-09-04-plain; do
+  run_hit "$B/$bad.md" --where="X"
+  assert_eq "$bad rc" "2" "$RC"
+  assert_eq "$bad stderr" "not an open bug record: $bad" "$ERR"
+done
+run_hit "$B/2026-01-01-missing.md" --where="X"
+assert_eq "missing rc" "2" "$RC"
+run_hit --where="X"
+assert_eq "no target rc" "2" "$RC"
+run_hit "$F" --where=""
+assert_eq "empty where rc" "2" "$RC"
+run_hit "$F" --where="   "
+assert_eq "blank where rc" "2" "$RC"
+run_hit "$F"
+assert_eq "absent where rc" "2" "$RC"
+run_hit "$F" --where="X" --bogus
+assert_eq "unknown flag rc" "2" "$RC"
+assert_eq "unknown flag stderr" "unknown flag: --bogus" "$ERR"
+run_hit "$ROOT/elsewhere.md" --where="X"
+assert_eq "outside the bugs dir rc" "2" "$RC"
+assert_eq "nothing written" "$SUM_BEFORE" "$(cksum "$B"/*.md "$B"/closed/*.md)"
+assert_contains "open record still hits: 1" "^hits: 1$" "$(fence_of "$F")"
 
 finish_tests test-bugs-scripts

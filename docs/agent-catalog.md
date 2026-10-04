@@ -39,8 +39,6 @@ Post-cycle agents that inspect the live app. Invoked by `/craft:analyze` and aut
 
 **Walkthrough vs QA analyzer distinction:** `walkthrough-analyzer` acts as a naive user and never reads source code. `qa-analyzer` uses browser inspection but can correlate findings with code patterns. Use walkthrough for user-experience issues; use QA for functional correctness.
 
-**Quick-fix exception:** Walkthrough findings with `complexity: quick-fix` and a `fix_hint` may be applied directly by the orchestrator without spawning an implementer agent. This is the only exception to the "always use implementer" rule.
-
 ---
 
 ## Review and Research Agents

@@ -1,7 +1,7 @@
 ---
 name: qa-analyzer
 description: |
-  Use this agent after cycle completion or when the user requests bug hunting and QA analysis. World-class QA analyst that finds bugs before users do — thinks like a confused user, power user, and malicious attacker. Documents issues precisely for quick fixes.
+  Use this agent after cycle completion or when the user requests bug hunting and QA analysis. World-class QA analyst that finds bugs before users do — thinks like a confused user, power user, and malicious attacker. Documents each issue precisely so it can be filed as a bug.
 
   <example>
   Context: User just completed a cycle and wants to review quality.
@@ -293,46 +293,17 @@ For each QA pass, produce:
 - Accessibility: ✓ / ✗
 ```
 
-## Story Candidates (for Feedback Loop)
+## How Your Findings Are Filed
 
-**IMPORTANT:** After your analysis, format each finding as a potential backlog story. This enables the feedback loop where analysis findings become actionable work.
+Each Bug Report you return is filed as one bug record by the orchestrator, so write every report to stand on its own. The record is built from these fields:
 
-```markdown
-## Stories to Create
+- **Title** becomes the symptom line, in the user's terms rather than the cause
+- **Steps to Reproduce** become the Reproduce section
+- **Expected** and **Actual** carry across as written
+- **Severity** and **Confidence** are stated in the record's Consequences (Needs Verification findings are filed too)
+- **Evidence** (console errors, network failures, screenshot names) becomes the record's References
+- **Suggested root cause**, if you offer one, is kept as a hypothesis
 
-### Story 1: [Short title]
-- **Type:** fix
-- **Priority:** critical | high | medium | low
-- **Name:** fix-[kebab-case-slug]
-- **Title:** Fix: [Human readable title]
-- **Spark:** [1-2 sentence description of what's wrong and impact]
-- **Acceptance:**
-  - [ ] [Specific testable criterion]
-  - [ ] [Specific testable criterion]
-- **Found at:** [URL or component]
-- **Screenshot:** [filename if captured]
+One defect is one Bug Report. If two findings are the same defect seen two ways, merge them and give both repro paths.
 
-### Story 2: [Short title]
-...
-```
-
-**Example:**
-```markdown
-### Story 1: Email validation missing
-- **Type:** fix
-- **Priority:** high
-- **Name:** fix-email-validation
-- **Title:** Fix: Login form accepts invalid email format
-- **Spark:** Users can submit the login form with "test" as email. No validation prevents malformed emails, leading to failed magic link sends and confused users.
-- **Acceptance:**
-  - [ ] Email field shows error for missing @
-  - [ ] Email field shows error for missing domain
-  - [ ] Submit button disabled until valid email
-  - [ ] Error clears when user fixes input
-- **Found at:** /login
-- **Screenshot:** qa-email-validation-001.png
-```
-
-This format allows the orchestrator to automatically create backlog stories from your findings.
-
-Remember: **Your job is to find problems and document them as actionable stories. Don't fix bugs yourself — the implementer agent handles fixes.**
+Remember: **Your job is to find problems and document them precisely. Defects are filed as bugs, never fixed by you.**

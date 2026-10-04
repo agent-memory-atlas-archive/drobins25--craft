@@ -37,4 +37,4 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md` and follow it in
 | A defect, in `$ARGUMENTS` or in the session | Follow the reference's filing rules. |
 | An open bug said to be fixed, won't be fixed, or should close | Follow the reference's closing rules. |
 
-Every script runs as `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<name>.sh"`: `bugs-capture.sh` files a record, `bugs-close.sh` closes one, and `bugs-list.sh` lists the pile (`--status=open` for the full blocks). Nothing here summons the user. A filed bug is read when they choose to read it.
+Every script runs as `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<name>.sh"`: `bugs-capture.sh` files a record, `bugs-close.sh` closes one, `bugs-hit.sh` records a repeat on an open bug, and `bugs-list.sh` lists the pile (`--status=open` for the full blocks). Nothing here summons the user. A filed bug is read when they choose to read it.

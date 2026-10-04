@@ -127,7 +127,7 @@ Verdict is whether it was ever a bug: bug | unspecified | spec-gap | not-reprodu
 ## Filing rules
 
 - Nothing summons the user, ever. A `yes` on the blocks line is mentioned at the next natural pause, never as an interrupt.
-- Look at the injected pile first. If an identical bug is already open, never file it twice: name the match, raise `hits:` by one in its frontmatter only, and append `- <date> hit again: <where>` to its `## Log`, both with Edit on the record at the `FILE=` line `bugs-list.sh --status=open` prints for it. Note where it recurred. A bug seen once is a report; the same bug seen again and again is a pattern and usually outranks the queue.
+- Look at the injected pile first. If an identical bug is already open, never file it twice: name the match and record the repeat on its `FILE=` path (the line `bugs-list.sh --status=open` prints for it) with `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bugs-hit.sh" "<FILE>" --where="<where>"`, which raises `hits:` by one and appends `- <date> hit again: <where>` to the record's `## Log`. Say where it recurred in `<where>`. A bug seen once is a report; the same bug seen again and again is a pattern and usually outranks the queue.
 - When neither the typed text nor the session identifies a defect, ask exactly one question and nothing more:
 
 ```yaml
