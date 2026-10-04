@@ -94,7 +94,7 @@ flowchart TD
     CONTENT_CREATIVE --> CREATIVE["PATH A: With Creative-Spark"]
     CONTENT_SMART --> SMART["PATH B: Skip Creative-Spark"]
 
-    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool — chain break)<br/>Generate 2-3 options + visual direction"]
+    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool - chain break)<br/>Generate 3-5 options + visual direction"]
     SPARK --> USER_PICK["Step 5: User picks option<br/>Visual direction comes from option<br/>(no separate design-vibe per-story)"]
 
     USER_PICK --> DESIGN_DECISIONS["Step 6: Capture typed design decisions<br/>AskUserQuestion: layout / component /<br/>density / visibility"]
@@ -379,29 +379,40 @@ flowchart TD
 
 ## Reflect Flow: `/craft:reflect`
 
+Reflect does the work itself. Cycle-complete only offers it.
+
 ```mermaid
 %%{init: {'theme': 'dark'}}%%
 flowchart TD
-    REFLECT["/craft:reflect"] --> CONTEXT{"What triggered reflect?"}
+    REFLECT["/craft:reflect"] --> LOAD["Step 1: Load pending learnings,<br/>failure patterns from the active cycle,<br/>and ungraduated fix records"]
 
-    CONTEXT -->|User correction| CAPTURE_CORRECTION["'Got it — use X instead of Y.<br/>Should I capture this?'"]
-    CONTEXT -->|Pattern observed| CAPTURE_PATTERN["'I've used [pattern] in N places.<br/>Worth locking?'"]
-    CONTEXT -->|Manual invoke| GATHER["Gather recent insights"]
+    LOAD --> ACTIONABLE{"Anything actionable?<br/>(fix queue counts only when<br/>FIX_COUNT >= rule_pass_threshold, default 10)"}
 
-    CAPTURE_CORRECTION --> ASK_CAPTURE["AskUserQuestion:<br/>• Yes, remember this<br/>• No, one-time thing"]
-    CAPTURE_PATTERN --> ASK_CAPTURE
+    ACTIONABLE -->|No| NOTHING["'No pending learnings to process.<br/>Harness is up to date.'"]
+    ACTIONABLE -->|Yes| FIXQ{"Step 1b: Fix queue actionable?"}
 
-    ASK_CAPTURE -->|Yes| WRITE_LEARNING["Append to .learnings.yaml"]
-    ASK_CAPTURE -->|No| EXIT["Continue working"]
+    FIXQ -->|No| PENDING
+    FIXQ -->|Yes| RULEASK["AskUserQuestion:<br/>• Run the rule pass<br/>• Not now"]
 
-    GATHER --> PRESENT["Present learnings so far:<br/>• Errors: N<br/>• Corrections: N<br/>• Patterns: N"]
+    RULEASK -->|Run the rule pass| RULEPASS["Follow rule-pass.md<br/>(review-gated, nothing written<br/>without approval)"]
+    RULEASK -->|Not now| SKIPRULE["Watermark untouched,<br/>offer returns next reflect"]
 
-    PRESENT --> ASK_ACTION["AskUserQuestion:<br/>• Process now (→ cycle-complete)<br/>• Keep accumulating"]
+    RULEPASS --> PENDING{"Pending learnings or<br/>failure patterns?"}
+    SKIPRULE --> PENDING
 
-    ASK_ACTION -->|Process| ROUTE_COMPLETE["/craft:cycle-complete"]
-    ASK_ACTION -->|Keep| EXIT
+    PENDING -->|No| DONE["'Nothing else to reflect on.'"]
+    PENDING -->|Yes| SUMMARY["Step 2: Present summary by type and target"]
 
-    WRITE_LEARNING --> CONFIRM["Learning captured.<br/>Will apply at cycle-complete."]
+    SUMMARY --> ASK_APPLY["AskUserQuestion:<br/>• Apply all<br/>• Review each<br/>• Skip for now"]
+
+    ASK_APPLY -->|Skip for now| KEEP["Learnings stay pending"]
+    ASK_APPLY -->|Apply all or Review each| WRITE["Step 3: Write to harness"]
+
+    WRITE --> TARGETS["CLAUDE.md: conventions, behaviors<br/>.claude/rules/: enforcements, tool failure patterns<br/>.claude/settings.local.json: automation hooks<br/>.claude/skills/: skills<br/>.claude/commands/: workflows"]
+
+    TARGETS --> MARK["Step 4: Mark each learning<br/>status: written"]
+
+    MARK --> CONFIRM["Step 5: Confirm what was added"]
 ```
 
 ---
@@ -868,7 +879,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 
 | File | Purpose | Key Fields |
 |------|---------|------------|
-| `.craft/.global-state` | Global state | ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY, RUN_MODE, HARNESS_CHECKED, CRAFT_WRITE_ENABLED |
+| `.craft/.global-state` | Global state | ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY, RUN_MODE, CRAFT_WRITE_ENABLED |
 | `.craft/.continuation` | Breadcrumb for a nested skill invocation (30-min TTL, one-shot) | caller path |
 | `.craft/.active-fix` | Safety marker for in-progress adhoc work (session-start clears orphans) | timestamp |
 | `.craft/settings.yaml` | User preferences | rule_pass_threshold, taste_pass_enabled, taste_pass_threshold, map (enabled, token_budget), dev_mode (true lets writes past the write gate) |
@@ -893,7 +904,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 
 ```
 .craft/                          ← EXISTS? → If no, route to /craft:init
-├── .global-state                ← READ for ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY, HARNESS_CHECKED
+├── .global-state                ← READ for ACTIVE_CYCLE, PLANNING_CYCLE, CURRENT_STORY
 ├── settings.yaml                ← READ for rule_pass_threshold, taste_pass_*, map, dev_mode
 ├── backlog/                     ← COUNT stories here
 │   └── *.md                     ← Each is a ready story

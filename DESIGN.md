@@ -1,6 +1,6 @@
 # Craft - Design Reference
 
-> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a development harness. CLAUDE.md is the rules file Claude auto-loads each session; this file holds the architectural detail CLAUDE.md summarizes.
+> Architecture reference for `craft`, a Claude Code plugin that turns the CLI into a development harness. README.md covers what craft is and how to use it, this file covers architecture and internals, and CLAUDE.md is the operating contract Claude works under in this repo.
 
 For definitions of cycle, story, chunk, and the workshop concepts, see README.md. This file assumes that vocabulary.
 

@@ -342,7 +342,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:workflow-design` | Author workflow definitions - create new, edit existing, archive unused |
 | `/craft:research` | Ad-hoc research - discover, elaborate, synthesize with ranked branches |
 | `/craft:research-verify` | Verify existing research findings against independent primary sources |
-| `/craft:adhoc` | Adhoc fix or tweak without story ceremony. Bugs record to `.craft/fixes/`, tweaks to `.craft/tweaks/` |
+| `/craft:adhoc` | Adhoc fix or tweak without story ceremony. Bugs record to `.craft/fixes/`, tweaks to `.craft/tweaks/`. See [Adhoc](#adhoc). |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration in the running app - 2-4 lettered candidates injected on the real page, chosen by eye, nothing written to source |
 | `/craft:project` | Switch projects or cross-project dashboard |
@@ -545,6 +545,69 @@ Craft never argues with a close and never reopens. And a bug recorded as a judgm
 > "The checkout one is fixed." *Craft names it, you say yes, it moves to `closed/`.*
 
 <!-- TODO: add the CHANGELOG pointer once the release version is cut, e.g. *What shipped in X.Y.Z: [CHANGELOG](CHANGELOG.md#...).* -->
+
+## Adhoc
+
+Adhoc is a small change to something that already exists, made now, without the story ceremony. A button that doesn't respond, an icon you'd rather swap, a heading that's too loud.
+
+```
+/craft:adhoc the settings button does nothing on Safari
+/craft:adhoc swap the settings icon for something more like a hammer
+```
+
+It isn't for new features, and it isn't for choosing between creative directions. Adding something that wasn't there before is a story. If you're mid-story, craft warns you first and asks you to apply the change within that story's scope or to complete or pause the story.
+
+### Fix or tweak
+
+Craft sorts every request into one of two flavors:
+
+- **A fix.** Something is broken: there's a symptom and a root cause. "The button doesn't respond."
+- **A tweak.** It works as built, but you want it different. Nothing is broken; your taste or intent changed. "That heading is too loud."
+
+When your words could mean either ("the icon looks wrong"), craft looks at the thing first. Clipped, overflowing, or misaligned reads as a fix. Renders as built but displeasing reads as a tweak. It asks only if what it sees doesn't settle it.
+
+### The fix path
+
+Craft investigates, writes down the root cause, and then asks itself one question before it edits anything: am I 100% certain this solution resolves that root cause? If the answer hedges, or its understanding shifted a lot while it dug, it stops without editing code and offers to make it a story.
+
+If it's certain, it applies the fix and checks that the original symptom is gone. "The build passes" isn't the test. For anything you can see, craft looks at the page. Then it asks whether the fix taught a workflow lesson. If you say yes, the lesson goes on the record.
+
+The record is a file in `.craft/fixes/`.
+
+### The tweak path
+
+A tweak's gate is fit, not certainty. Before editing, craft looks at what sits next to the element, matches its visual family, and checks your design tokens and locked decisions. A real design question (several plausible directions, no clear fit) isn't edited. Craft says so and suggests a mockup first.
+
+Then comes the attempt loop. Craft makes a change, validates it, and asks how it looks. Your answer is recorded word for word. "Not quite" or a typed criticism is the brief for the next attempt. An accepting answer closes the record.
+
+The record stays open until you say it's accepted. Passing tests never close a tweak. Only your reaction does. If you drop it, it closes as abandoned. Tweak records live in `.craft/tweaks/`.
+
+### Why the records matter
+
+Both kinds leave a permanent record. Fix records are what `/craft:reflect`'s rule pass reads, mining them for rules worth keeping. Tweaks you loved are counted, and enough of them lets craft offer a taste pass: it points at other surfaces where that taste could spread, with one seed move for each, and hands the making to `/craft:mockup`. Your reactions are kept word for word for a later pass that groups tweaks into project-level taste.
+
+### Todos it closes
+
+If the change does what an open notebook todo asked for, craft names the todo and asks before closing it. A fix asks once it has found the match. A tweak adds it to the "How does it look?" question, so accepting closes both. Nothing is closed silently, and declining leaves the todo open.
+
+### Staying small
+
+If a change reaches about five files, craft stops and asks whether you want to keep going or make it a story.
+
+Each validated fix, and each tweak attempt, is committed with only the files the change touched. The message starts with `fix:` or `tweak:`.
+
+### Neighbors
+
+- [`/craft:bugs`](#bugs) records something broken to fix later.
+- A story is for new or bigger work.
+
+### What it looks like
+
+> "The settings button does nothing on Safari." *Craft finds the root cause, says it's certain, fixes it, and confirms the click works. One commit.*
+>
+> "Swap the settings icon for a hammer." *The first try is committed. You say "the stroke's too thin." The second try lands.*
+>
+> "That's it." *The record closes as accepted, with both reactions in your words.*
 
 ## Skills
 
