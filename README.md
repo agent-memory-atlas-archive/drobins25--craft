@@ -768,7 +768,9 @@ A small targeted change to shipped work, without story ceremony - via `/craft:ad
 ## Quick fixes
 
 **Too many permission prompts?**
-Add `{"permissions": {"allow": ["Bash(*)"]}}` to `.claude/settings.local.json`, or run `/fewer-permission-prompts`.
+Switch the session to auto mode (Shift+Tab until the status line says auto). Claude Code reviews each action for you, and craft's script calls run without a prompt. On Claude Code 2.1.283 or later, auto mode is already the default, so most sessions start there.
+
+Prefer to stay in Manual mode? Run `/fewer-permission-prompts` - it builds an allowlist from the commands you actually run instead of approving everything.
 
 ## Contributing
 
