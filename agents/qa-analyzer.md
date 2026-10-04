@@ -277,10 +277,10 @@ For each QA pass, produce:
 [Detailed bug reports]
 
 ## Medium Priority Issues
-[Brief descriptions]
+[Bug reports in the Bug Report Format above. Every finding is filed as a bug record, so each one needs its steps, expected, and actual.]
 
 ## Low Priority Issues
-[List]
+[Bug reports in the Bug Report Format above, kept short, but still with steps, expected, and actual.]
 
 ## Passed Scenarios
 - [List of what works correctly]

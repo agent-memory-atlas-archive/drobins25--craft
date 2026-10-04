@@ -466,7 +466,7 @@ There are two rooms. The open folder holds what is still broken, and closing a b
 
 Three trigger tiers decide how the command is reached, mirroring the notebook. Naming it ("file a bug", "log a bug", "bug ticket") is the invocation: it runs with what the session has, no offer and no question. A deferral word plus a defect ("don't let me forget, the save button is broken"), or a bare defect named while a story or chunk is in progress, earns one ignorable inline offer naming `/craft:bugs`, because dropping active work to chase a side sighting is what the feature exists to prevent; nothing is filed until the user says yes. A bare defect in an idle session routes to `/craft:adhoc` as before. Nothing guesses from vocabulary beyond those three signals.
 
-The analyzers feed the same pile. QA and walkthrough analysis file their findings as bug records instead of queueing them (UX, Creative, and Style still queue), and a finding that repeats an open bug raises its `hits` count through `bugs-hit.sh` instead of filing a duplicate. The cycle-complete walkthrough files bugs and never fixes them; bug then `/craft:adhoc` is the fix path.
+The analyzers feed the same pile. QA findings, and the walkthrough's blocks-ship and looks-wrong findings, file as bug records instead of queueing (UX, Creative, and Style still queue, and the walkthrough's feels-off and nitpick findings go to the UX queue), and a finding that repeats an open bug raises its `hits` count through `bugs-hit.sh` instead of filing a duplicate. The cycle-complete walkthrough files bugs and never fixes them; bug then `/craft:adhoc` is the fix path.
 
 ---
 

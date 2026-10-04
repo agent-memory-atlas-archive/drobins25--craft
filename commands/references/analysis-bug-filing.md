@@ -57,7 +57,7 @@ The body follows the template in `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs
 | Symptom line (first line) | The finding title, rewritten to the symptom in the user's terms, never the cause |
 | `**Expected.**` | The finding's expected |
 | `**Actual.**` | The finding's actual |
-| `## Consequences` | Prose impact, then "QA priority: <level>. Confidence: <Confirmed \| Likely \| Needs Verification>." for QA, or "Walkthrough severity: <blocks-ship \| looks-wrong>." for the walkthrough |
+| `## Consequences` | Prose impact, then "QA priority: <P0 | P1 | P2 | P3, as the analyzer graded it>. Confidence: <Confirmed \| Likely \| Needs Verification>." for QA, or "Walkthrough severity: <blocks-ship \| looks-wrong>." for the walkthrough |
 | `## Blocks my next step` | `no - found by <qa \| walkthrough> analysis; nobody was mid-task on it.` Always `no` |
 | `## Reproduce` | `Starting state:` (the URL, the dev server command, or the code-review file), then the numbered steps |
 | `## References` | Console errors verbatim, network failures, and screenshot paths |
@@ -86,7 +86,7 @@ Place Order does nothing when the cart holds a single item
 
 ## Consequences
 
-A shopper with a one-item cart cannot buy it, which is the most common cart. QA priority: High. Confidence: Confirmed.
+A shopper with a one-item cart cannot buy it, which is the most common cart. QA priority: P1. Confidence: Confirmed.
 
 ## Blocks my next step
 

@@ -184,7 +184,7 @@ Pass the confirmed scope and any relevant context to the agent.
 2. Read the existing pending file (if any) to preserve prior findings
 3. Parse the agent's output for findings (issues, opportunities)
 4. Append new findings to the YAML file using the template format from `${CLAUDE_PLUGIN_ROOT}/templates/analysis/pending/[type].yaml`
-5. Set `updated:` to current date and `scope:` to what was analyzed
+5. Set `updated:` to the current timestamp and `scope:` to what was analyzed
 
 **This is critical.** If you don't file or write findings to disk, they exist only in conversation context and will be lost on compaction.
 
