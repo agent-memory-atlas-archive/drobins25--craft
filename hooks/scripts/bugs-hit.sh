@@ -65,6 +65,11 @@ if [ ! -f "$TARGET" ]; then
   echo "not found: $NAME" >&2
   exit 2
 fi
+# A symlink is never a record: -f follows links, so refuse it before any read.
+if [ -L "$TARGET" ]; then
+  echo "not an open bug record: $NAME" >&2
+  exit 2
+fi
 
 TARGET_DIR="$(cd "$(dirname "$TARGET")" && pwd -P)"
 if [ "$TARGET_DIR" = "$(cd "$CLOSED_DIR" 2>/dev/null && pwd -P)" ]; then

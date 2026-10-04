@@ -26,6 +26,8 @@ for arg in "$@"; do
     *) PROJECT="$arg" ;;
   esac
 done
+# An explicit empty root means the current directory, as ${1:-.} did before the flag.
+if [ -z "$PROJECT" ]; then PROJECT="."; fi
 CYCLES_DIR="$PROJECT/.craft/cycles"
 
 if [ ! -d "$CYCLES_DIR" ]; then

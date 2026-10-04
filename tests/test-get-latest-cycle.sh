@@ -47,6 +47,13 @@ STORIES_COMPLETE="0"
 STORIES_PLANNING="0"'
 assert_eq "full block for highest-numbered cycle" "$EXPECTED" "$OUT"
 
+begin_test "an empty-string root means the current directory, as before the flag"
+fresh_root
+OUT=$(cd "$ROOT" && bash "$SCRIPT" "")
+assert_eq "empty root resolves to cwd" "$EXPECTED" "$OUT"
+OUT=$(cd "$ROOT" && bash "$SCRIPT" "" --status=complete)
+assert_contains "empty root with the filter still finds the cycle" '^LATEST_CYCLE="2-b"$' "$OUT"
+
 begin_test "--status=complete picks 2-b, flag before or after the root"
 fresh_root
 AFTER=$(bash "$SCRIPT" "$ROOT" --status=complete)

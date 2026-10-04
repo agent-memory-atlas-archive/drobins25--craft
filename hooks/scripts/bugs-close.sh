@@ -86,6 +86,11 @@ if [ -z "$NAME" ]; then
 fi
 
 if [ -f "$TARGET" ]; then
+  # A symlink is never a record: -f follows links, so refuse it before any move.
+  if [ -L "$TARGET" ]; then
+    echo "not a bug record: $NAME" >&2
+    exit 2
+  fi
   TARGET_DIR="$(cd "$(dirname "$TARGET")" && pwd -P)"
   if [ "$TARGET_DIR" = "$(cd "$CLOSED_DIR" 2>/dev/null && pwd -P)" ]; then
     echo "already closed: $NAME" >&2
