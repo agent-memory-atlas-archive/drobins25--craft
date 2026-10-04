@@ -37,6 +37,15 @@ class TestParseNotebook(unittest.TestCase):
         )
         self.assertLessEqual(len(node["title"]), 120)
 
+    def test_long_title_cuts_at_a_word_with_an_ellipsis(self):
+        long_line = ("What if every notebook card on the dashboard kept its title readable "
+                     "by stopping at a whole word instead of slicing a word in half")
+        text = "---\ncreated: 2026-01-18\ntags: []\n---\n" + long_line + "\n"
+        node, _, _ = registry.parse_file("notebook", IDEA, text)
+        self.assertTrue(node["title"].endswith("\u2026"), node["title"])
+        self.assertTrue(long_line.startswith(node["title"][:-1]), node["title"])
+        self.assertEqual(long_line[len(node["title"]) - 1], " ", node["title"])
+
     def test_tags_parse_from_inline_list(self):
         node, _, _ = _parse(IDEA)
         self.assertEqual(node["tags"], ["widgets", "sample"])
