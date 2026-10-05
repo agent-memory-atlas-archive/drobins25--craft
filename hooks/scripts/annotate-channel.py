@@ -142,6 +142,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
         self.send_header("Access-Control-Allow-Headers", ALLOW_HEADERS)
         self.send_header("Access-Control-Allow-Methods", ALLOW_METHODS)
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Content-Length", "0")
         self.end_headers()
 

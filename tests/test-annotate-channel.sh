@@ -120,6 +120,7 @@ for P in /pins /clear /events; do
   assert_contains "preflight $P allow-origin" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Oo]rigin: \*' "$RESP"
   assert_contains "preflight $P allow-headers" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Hh]eaders: Content-Type' "$RESP"
   assert_contains "preflight $P allow-methods" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Mm]ethods: POST, OPTIONS' "$RESP"
+  assert_contains "preflight $P allow-private-network" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Pp]rivate-[Nn]etwork: true' "$RESP"
 done
 
 begin_test "POST /pins from Origin null returns 200 and the allow-origin header"
