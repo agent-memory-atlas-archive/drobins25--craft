@@ -6,7 +6,7 @@ The full raw-tab session: arm through teardown. The overlay source, the port sta
 
 This flow runs in the orchestrator, not a subagent: it needs the browser connection and the session's own wake-up.
 
-**How a snippet reaches the page.** `evaluate_script` takes a function and calls it. Every snippet this flow sends to the page - the clears, the port stamp, the overlay source when pasted, the line `sheet` prints - goes in as the body of `() => { <snippet> }`, with the snippet's text unchanged inside. The one exception is the line `loader` prints: it is already an `async () =>` function and goes in verbatim, because evaluate_script awaits a function's return value and the line returns its status. Pasted bare, a snippet that ends in `;` is refused with `Unexpected token ';'` and nothing runs, and the printed `sheet` line runs but the tool reports `fn is not a function`, which reads as a failure when the change has landed.
+**How a snippet reaches the page.** `evaluate_script` takes a function and calls it. Every snippet this flow sends to the page - the clears, the port stamp, the overlay source when pasted - goes in as the body of `() => { <snippet> }`, with the snippet's text unchanged inside. The two exceptions are the line `loader` prints and the line `sheet` prints: both the line `loader` prints and the line `sheet` prints are already functions, so each goes in verbatim, because evaluate_script calls the function it is given and returns what it returns - the loader line returns `LOADED` or `SCRIPT-BLOCKED`, the sheet line returns `APPLIED`. Pasted bare, a snippet that ends in `;` is refused with `Unexpected token ';'` and nothing runs.
 
 ## Step 1: Connection check
 
@@ -99,7 +99,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" ensure --session "<id
 ```
 
 - `OK PORT <port>`: the listener is healthy; go on.
-- `REARMED PORT <port> STREAK <k>`: the listener was dead or hung and is running again on a new port. Re-inject per Navigation below (the loader line re-stamps the port; on an external page whose pasted overlay is still there, only the port stamp line), apply the sheet print, then restart the wait with the last acted seq. At `STREAK 1` do all of it silently - say nothing. At `STREAK 2` or more, say exactly one line and carry on:
+- `REARMED PORT <port> STREAK <k>`: the listener was dead or hung and is running again on a new port. Re-inject per Navigation below (the loader line re-stamps the port; on an external page whose pasted overlay is still there, only the port stamp line), apply the sheet line `sheet --session "<id>"` prints, then restart the wait with the last acted seq. At `STREAK 1` do all of it silently - say nothing. At `STREAK 2` or more, say exactly one line and carry on:
 
   > "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page."
 
@@ -165,7 +165,7 @@ There is exactly one road onto the page, and it runs through the sheet. For ever
    ```
 
    The same key replaces that pin's block in place, so an edited pin updates its rule instead of stacking a second one. CSS carrying a block header of its own is refused.
-2. The command prints ONE line: a statement that makes the page's session style equal the whole `session.css`. Pass that line to `evaluate_script` as `() => { <printed line> }`, the line verbatim inside - never edit it, never rebuild it, never paste a different one.
+2. The command prints ONE line: a statement that makes the page's session style equal the whole `session.css`. Pass that line to `evaluate_script` verbatim - it is already a function, and it returns `APPLIED` once the page's style holds the sheet. Never edit it, never rebuild it, never wrap it, never paste a different one.
 3. Read the live value back from the page (`getComputedStyle` on the element, through `evaluate_script`) and report what you measured, never what you intended.
 
 The sheet is the only road: never write CSS into the page any other way. The sheet is the single source of truth for what the page shows, so a reload, an undo and the record all read the same bytes.
@@ -176,7 +176,7 @@ The sheet is the only road: never write CSS into the page any other way. The she
 
 ## Navigation and re-injection
 
-The overlay and the changes live in the page, so they die on reload and on any navigation that replaces the document. When the user says the page reloaded, or a snapshot shows the controls are gone, re-inject through the Step 4 path: run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" loader --session "<id>" --page "<tab url>"` and pass its line to `evaluate_script` (or, on `EXTERNAL` and `SCRIPT-BLOCKED`, the port stamp and then the overlay source as the fallback there says), and only then the sheet, second: print it with `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" sheet --session "<id>"` (no `--add`, no `--drop`) and pass the printed line to `evaluate_script` as `() => { <printed line> }`, the line verbatim inside. That restores every earlier change exactly as the file holds it - never re-derive a rule from memory. An empty sheet is applied too: one path, no branch, and it does no harm. If the session's listener was restarted, take the port from `arm --session "<id>"` first; the loader reads the current port every time. A redundant re-inject is harmless - the overlay's install guard makes a second copy a no-op, and applying the sheet again changes nothing - so when unsure, re-inject. Pins the user had not sent come back with the page, because the overlay keeps them in the page's local storage.
+The overlay and the changes live in the page, so they die on reload and on any navigation that replaces the document. When the user says the page reloaded, or a snapshot shows the controls are gone, re-inject through the Step 4 path: run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" loader --session "<id>" --page "<tab url>"` and pass its line to `evaluate_script` (or, on `EXTERNAL` and `SCRIPT-BLOCKED`, the port stamp and then the overlay source as the fallback there says), and only then the sheet, second: print it with `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" sheet --session "<id>"` (no `--add`, no `--drop`) and pass the printed line to `evaluate_script` verbatim, as Step 6 does. That restores every earlier change exactly as the file holds it - never re-derive a rule from memory. An empty sheet is applied too: one path, no branch, and it does no harm. If the session's listener was restarted, take the port from `arm --session "<id>"` first; the loader reads the current port every time. A redundant re-inject is harmless - the overlay's install guard makes a second copy a no-op, and applying the sheet again changes nothing - so when unsure, re-inject. Pins the user had not sent come back with the page, because the overlay keeps them in the page's local storage.
 
 ## Teardown, then file, on EVERY exit path
 

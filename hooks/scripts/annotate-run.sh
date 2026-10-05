@@ -27,7 +27,8 @@
 #
 # begin prints "RUN <start_seq>" (the highest seq on disk), writes run.json and
 # empties session.css. sheet keeps session.css as keyed blocks and prints ONE
-# line, the statement that makes the page equal the whole file; with neither
+# line, a function that makes the page equal the whole file and returns
+# APPLIED, pasted to evaluate_script verbatim; with neither
 # --add nor --drop it only prints. send is for a page that blocks SEND: the
 # session posts the pins it read from local storage itself.
 #
@@ -420,8 +421,8 @@ PYEOF
 
 # The sheet is a run of keyed blocks: a header line "/* annotate-key KEY */"
 # then that key's CSS. The page only ever receives the whole file, as one
-# statement that replaces the session style's text, so page == sheet after
-# every apply.
+# function that replaces the session style's text and returns APPLIED, so
+# page == sheet after every apply.
 cmd_sheet() {
   local dir mode="print"
   dir="$(session_dir)"
@@ -501,10 +502,10 @@ else:
 
 literal = json.dumps(text)
 sys.stdout.write(
-    "(() => { let s = document.getElementById('ca-session-css'); "
+    "() => { let s = document.getElementById('ca-session-css'); "
     "if (!s) { s = document.createElement('style'); s.id = 'ca-session-css'; "
     "s.setAttribute('data-craft-annotate-injected', ''); } "
-    "s.textContent = %s; document.head.appendChild(s); })()\n" % literal
+    "s.textContent = %s; document.head.appendChild(s); return 'APPLIED'; }\n" % literal
 )
 PYEOF
   python3 -c "$source" "$dir/session.css" "$mode" "$KEY"

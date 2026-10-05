@@ -631,6 +631,18 @@ RC=$?
 set -e
 assert_exit_code "begin on an unknown session exits 1" "1" "$RC"
 
+# lacks_literal <desc> <needle> <text> - literal absence assertion
+lacks_literal() {
+  if printf '%s\n' "$3" | grep -qF -- "$2"; then
+    echo "  FAIL: $1"
+    echo "    should NOT contain (literal): '$2'"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $1"
+    PASS=$((PASS + 1))
+  fi
+}
+
 # sheet_literal <apply-statement> - the decoded JSON string literal
 sheet_literal() {
   python3 -c '
@@ -648,11 +660,12 @@ arm_session "$ROOT" --session sh1
 D="$ROOT/.craft/annotations/sh1"
 OUT="$(printf '.a{content:"\\201C;caf\xc3\xa9 \\\\ \x27q\x27";}\n/* semi; colon */\n' | run_in "$ROOT" sheet --session sh1 --add --key 101)"
 assert_eq "one line printed" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
-assert_contains_literal "IIFE form" '(() => { ' "$OUT"
-assert_eq "starts as an IIFE" "(() =>" "${OUT:0:6}"
+assert_eq "starts as a function" "() => {" "${OUT:0:7}"
 assert_contains "finds or creates the session style" 'ca-session-css' "$OUT"
 assert_contains "marks the style as injected" 'data-craft-annotate-injected' "$OUT"
-assert_eq "ends as an IIFE" "})()" "${OUT: -4}"
+assert_contains_literal "returns a status" "return 'APPLIED';" "$OUT"
+assert_eq "ends as a function body, never invoked in place" "; }" "${OUT: -3}"
+lacks_literal "never self-invoking" "})()" "$OUT"
 sheet_literal "$OUT" > "$ROOT/decoded.css"
 cmp -s "$ROOT/decoded.css" "$D/session.css" && echo "  PASS: literal equals the file" && PASS=$((PASS + 1)) || { echo "  FAIL: literal differs from the file"; FAIL=$((FAIL + 1)); }
 assert_eq "literal is ASCII-escaped" "0" "$(printf '%s' "$OUT" | LC_ALL=C grep -c '[^ -~]' || true)"
@@ -734,18 +747,6 @@ assert_eq "the dead live folder is reaped" "MISSING" "$(rd "$ROOT/.craft/annotat
 # The served overlay, the loader line, and project vs external pages.
 
 OVERLAY_REF="$REPO/commands/references/annotate-overlay.md"
-
-# lacks_literal <desc> <needle> <text> - literal absence assertion
-lacks_literal() {
-  if printf '%s\n' "$3" | grep -qF -- "$2"; then
-    echo "  FAIL: $1"
-    echo "    should NOT contain (literal): '$2'"
-    FAIL=$((FAIL + 1))
-  else
-    echo "  PASS: $1"
-    PASS=$((PASS + 1))
-  fi
-}
 
 # fence_of_ref <ref-file> - the overlay-source fence body, by an independent awk
 fence_of_ref() {
