@@ -176,6 +176,36 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     return p.join(' > ');
   };
 
+  // Nearest framework component name over the target and its ancestors, else null. Never throws.
+  const componentOf = el => {
+    try {
+      for (let hops = 0; el && hops < 12; hops++, el = el.parentElement) {
+        const fk = Object.keys(el).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+        if (fk) {
+          for (let f = el[fk], d = 0; f && d < 40; f = f.return, d++) {
+            const t = f.type;
+            if (typeof t === 'function') return t.displayName || t.name || null;
+          }
+        }
+        const v3 = el.__vueParentComponent;
+        if (v3 && v3.type) return v3.type.name || v3.type.__name || null;
+        const v2 = el.__vue__;
+        if (v2 && v2.$options && v2.$options.name) return v2.$options.name;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const boxOf = el => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.round(r.left + window.scrollX),
+      y: Math.round(r.top + window.scrollY),
+      width: Math.round(r.width),
+      height: Math.round(r.height)
+    };
+  };
+
   const makeData = (n, text, x, y, target) => {
     const d = {
       n: n,
@@ -184,7 +214,10 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
       y: y,
       selector: cssPath(target),
       nearText: (target.textContent || '').trim().slice(0, 60),
-      ts: Date.now()
+      ts: Date.now(),
+      page: location.href.split(/[?#]/)[0],
+      box: boxOf(target),
+      component: componentOf(target)
     };
     if (window.__craftAnnotateContext != null) d.candidate = window.__craftAnnotateContext;
     return d;
@@ -504,7 +537,7 @@ The channel is a per-session listener on `127.0.0.1`. Pages reach it from any or
 | `GET /events` | hold a stream open; the listener pushes `event: reload` with `data: reload` when a new round is written | none | `text/event-stream` |
 | `GET /health` | liveness and connection count | none | `{ok, port, clients}` |
 
-A pin object is `{n, text, x, y, selector, nearText, ts}` plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses only the first three requests; `GET /health` exists for the flows, which check it before opening a browser.
+A pin object is `{n, text, x, y, selector, nearText, ts, page, box, component}` (`page` is the address without query or hash, `box` the target's rounded rect in document coordinates, `component` the nearest framework component name or null) plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses only the first three requests; `GET /health` exists for the flows, which check it before opening a browser.
 
 ## Reading pins back
 

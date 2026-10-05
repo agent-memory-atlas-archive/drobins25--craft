@@ -8,15 +8,30 @@
 #   annotate-run.sh clear   [--root R] --session ID
 #   annotate-run.sh announce [--root R] --session ID
 #   annotate-run.sh sweep   [--root R]
+#   annotate-run.sh begin   [--root R] --session ID [--subject TEXT]   (annotate only: marks the run's start seq)
+#   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
+#   annotate-run.sh send    [--root R] --session ID   (POSTs the JSON pin array on stdin to the listener)
 #   annotate-run.sh disarm  [--root R] --session ID
 #
 # announce pushes a reload event to every page holding the session's stream and
 # prints the listener's reply ({"ok": true, "delivered": N}). A flow calls it
 # after writing a round, never when the user sends pins.
 #
+# A run that never reached an exit is filed by begin (the next run on the same
+# session) and by sweep (before reaping) as outcome error, status open.
+#
+# begin prints "RUN <start_seq>" (the highest seq on disk), writes run.json and
+# empties session.css. sheet keeps session.css as keyed blocks and prints ONE
+# line, the statement that makes the page equal the whole file; with neither
+# --add nor --drop it only prints. send is for a page that blocks SEND: the
+# session posts the pins it read from local storage itself.
+#
 # Each armed session owns one listener (annotate-channel.py) on an OS-assigned
 # port, with its state under <root>/.craft/annotations/<session-id>/:
-#   port, listener.pid, owner.pid, listener.log, current.json
+#   port, listener.pid, owner.pid, listener.log, current.json, history.jsonl,
+#   run.json, session.css
+# Any directory holding record.md is a filed record, not a live session: status
+# --all and sweep never list or touch it.
 #
 # arm prints "SESSION <id> PORT <port>". The listener is started detached and
 # lives until its owning session process dies; sweep (run at session start)
@@ -89,6 +104,68 @@ try:
 except Exception as error:
     sys.stderr.write("request failed: %s\n" % error)
     sys.exit(1)
+PYEOF
+}
+
+# http_post_body <port> <path> - POSTs stdin as the body; prints the reply, non-zero when unreachable or refused
+http_post_body() {
+  local source
+  # The script rides in -c so stdin stays free for the body.
+  read -r -d '' source <<'PYEOF' || true
+import sys
+import urllib.error
+import urllib.request
+
+port, path = sys.argv[1:3]
+request = urllib.request.Request(
+    "http://127.0.0.1:%s%s" % (port, path),
+    data=sys.stdin.buffer.read(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(request, timeout=5) as response:
+        sys.stdout.write(response.read().decode("utf-8"))
+except urllib.error.HTTPError as error:
+    sys.stderr.write("listener refused the set (%s)\n" % error.code)
+    sys.exit(1)
+except Exception as error:
+    sys.stderr.write("request failed: %s\n" % error)
+    sys.exit(1)
+PYEOF
+  python3 -c "$source" "$1" "$2"
+}
+
+# last_seq_on_disk <session-dir> - the max seq across current.json and history.jsonl, 0 when neither reads
+last_seq_on_disk() {
+  python3 - "$1" <<'PYEOF'
+import json
+import os
+import sys
+
+dir_path = sys.argv[1]
+best = 0
+
+
+def as_seq(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+try:
+    with open(os.path.join(dir_path, "current.json"), "r", encoding="utf-8") as handle:
+        best = as_seq(json.load(handle).get("seq", 0))
+except Exception:
+    pass
+try:
+    with open(os.path.join(dir_path, "history.jsonl"), "r", encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                best = max(best, as_seq(json.loads(line).get("seq", 0)))
+            except Exception:
+                continue
+except Exception:
+    pass
+print(best)
 PYEOF
 }
 
@@ -209,6 +286,7 @@ cmd_status() {
     [ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
     for dir in "$ROOT"/.craft/annotations/*/; do
       [ -d "$dir" ] || continue
+      [ -f "$dir/record.md" ] && continue
       id="$(basename "$dir")"
       owner="$(read_file "$dir/owner.pid")"
       if ! is_number "$owner"; then
@@ -278,6 +356,142 @@ cmd_announce() {
   http_call POST "$port" /announce || die "listener for $SESSION is not answering"
 }
 
+# file_orphan <session-dir> - a run that never reached an exit (closed terminal,
+# forgotten exit) is filed as outcome error before anything is overwritten or
+# reaped. A filing failure never stops the caller.
+file_orphan() {
+  local dir="$1"
+  [ -f "$dir/run.json" ] || return 0
+  bash "$SCRIPT_DIR/annotate-record.sh" file --root "$ROOT" --session "$(basename "$dir")" --outcome error >/dev/null 2>&1 || true
+  return 0
+}
+
+cmd_begin() {
+  local dir start
+  dir="$(session_dir)"
+  file_orphan "$dir"
+  start="$(last_seq_on_disk "$dir")"
+  python3 - "$dir" "$start" "$SUBJECT" <<'PYEOF'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+dir_path, start, subject = sys.argv[1:4]
+run = {
+    "start_seq": int(start),
+    "subject": subject,
+    "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+}
+for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", "")):
+    tmp_path = os.path.join(dir_path, name + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    os.replace(tmp_path, os.path.join(dir_path, name))
+PYEOF
+  echo "RUN $start"
+}
+
+# The sheet is a run of keyed blocks: a header line "/* annotate-key KEY */"
+# then that key's CSS. The page only ever receives the whole file, as one
+# statement that replaces the session style's text, so page == sheet after
+# every apply.
+cmd_sheet() {
+  local dir mode="print"
+  dir="$(session_dir)"
+  if [ "$SHEET_ADD" = "1" ] && [ -n "$SHEET_DROP" ]; then
+    die "sheet takes --add or --drop, not both"
+  fi
+  if [ "$SHEET_ADD" = "1" ]; then
+    mode="add"
+    valid_session_id "$KEY" || die "--add needs --key KEY (letters, digits, dash, underscore)"
+  elif [ -n "$SHEET_DROP" ]; then
+    mode="drop"
+    KEY="$SHEET_DROP"
+    valid_session_id "$KEY" || die "--drop needs a KEY (letters, digits, dash, underscore)"
+  fi
+  local source
+  # The script rides in -c so stdin stays free for the CSS.
+  read -r -d '' source <<'PYEOF' || true
+import json
+import os
+import re
+import sys
+
+path, mode, key = sys.argv[1:4]
+HEADER = re.compile(r"^/\* annotate-key ([A-Za-z0-9_-]+) \*/$")
+MARKER = "/* annotate-key "
+
+
+def parse(text):
+    """Ordered [key, css] blocks. A header must open its own line."""
+    blocks = []
+    for line in text.splitlines(keepends=True):
+        found = HEADER.match(line.rstrip("\n"))
+        if found:
+            blocks.append([found.group(1), ""])
+        elif blocks:
+            blocks[-1][1] += line
+    return blocks
+
+
+def render(blocks):
+    out = ""
+    for block_key, css in blocks:
+        if css and not css.endswith("\n"):
+            css += "\n"
+        out += "%s%s */\n%s" % (MARKER, block_key, css)
+    return out
+
+
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        current = handle.read()
+except OSError:
+    current = ""
+
+if mode == "print":
+    text = current
+else:
+    blocks = parse(current)
+    if mode == "add":
+        css = sys.stdin.read()
+        if MARKER in css:
+            sys.stderr.write("annotate-run: CSS must not carry an annotate-key header\n")
+            sys.exit(1)
+        for block in blocks:
+            if block[0] == key:
+                block[1] = css
+                break
+        else:
+            blocks.append([key, css])
+    else:
+        blocks = [block for block in blocks if block[0] != key]
+    text = render(blocks)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(tmp_path, path)
+
+literal = json.dumps(text)
+sys.stdout.write(
+    "(() => { let s = document.getElementById('ca-session-css'); "
+    "if (!s) { s = document.createElement('style'); s.id = 'ca-session-css'; "
+    "s.setAttribute('data-craft-annotate-injected', ''); } "
+    "s.textContent = %s; document.head.appendChild(s); })()\n" % literal
+)
+PYEOF
+  python3 -c "$source" "$dir/session.css" "$mode" "$KEY"
+}
+
+cmd_send() {
+  local dir port
+  dir="$(session_dir)"
+  port="$(read_file "$dir/port")"
+  is_number "$port" || die "session $SESSION has no port"
+  http_post_body "$port" /pins || die "listener for $SESSION is not answering"
+}
+
 cmd_disarm() {
   local dir pid
   dir="$(session_dir)"
@@ -295,9 +509,11 @@ sweep_all() {
   [ -n "$ROOT" ] || return 0
   for dir in "$ROOT"/.craft/annotations/*/; do
     [ -d "$dir" ] || continue
+    [ -f "$dir/record.md" ] && continue
     owner="$(read_file "$dir/owner.pid")"
     is_number "$owner" || continue
     pid_alive "$owner" && continue
+    file_orphan "$dir"
     listener="$(read_file "$dir/listener.pid")"
     # Kill only a process that is still a listener: the recorded pid may have been
     # reused by an unrelated process after a listener died on its own.
@@ -310,7 +526,7 @@ sweep_all() {
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|send|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -319,6 +535,10 @@ OWNER_PID=""
 TIMEOUT=""
 SINCE=""
 ALL=0
+SUBJECT=""
+KEY=""
+SHEET_ADD=0
+SHEET_DROP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root)      [ $# -ge 2 ] || die "--root needs a value"; ROOT_ARG="$2"; shift 2 ;;
@@ -327,6 +547,10 @@ while [ $# -gt 0 ]; do
     --timeout)   [ $# -ge 2 ] || die "--timeout needs a value"; TIMEOUT="$2"; shift 2 ;;
     --since)     [ $# -ge 2 ] || die "--since needs a value"; SINCE="$2"; shift 2 ;;
     --all)       ALL=1; shift ;;
+    --subject)   [ $# -ge 2 ] || die "--subject needs a value"; SUBJECT="$2"; shift 2 ;;
+    --key)       [ $# -ge 2 ] || die "--key needs a value"; KEY="$2"; shift 2 ;;
+    --add)       SHEET_ADD=1; shift ;;
+    --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; shift 2 ;;
     *)           die "unknown argument: $1" ;;
   esac
 done
@@ -345,6 +569,9 @@ case "$VERB" in
   wait)   cmd_wait ;;
   clear)  cmd_clear ;;
   announce) cmd_announce ;;
+  begin)  cmd_begin ;;
+  sheet)  cmd_sheet ;;
+  send)   cmd_send ;;
   disarm) cmd_disarm ;;
   *)      die "unknown verb: $VERB" ;;
 esac

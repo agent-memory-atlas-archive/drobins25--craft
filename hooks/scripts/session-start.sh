@@ -227,6 +227,23 @@ if [ -d "${PROJECT_ROOT}.craft/mockups" ]; then
   fi
 fi
 
+# Check for open annotate records (a finished annotate run awaiting a destination); absent entirely at zero
+if [ -d "${PROJECT_ROOT}.craft/annotations" ]; then
+  annotation_count=0
+  annotation_names=""
+  for rec in "${PROJECT_ROOT}.craft/annotations"/*/record.md; do
+    [ -f "$rec" ] || continue
+    rec_status=$(awk '/^status:/{print $2; exit}' "$rec" 2>/dev/null)
+    if [ "$rec_status" = "open" ]; then
+      annotation_count=$((annotation_count + 1))
+      annotation_names="${annotation_names}$(basename "$(dirname "$rec")"), "
+    fi
+  done
+  if [ "$annotation_count" -gt 0 ]; then
+    context="$context | Annotations: ${annotation_count} awaiting destination (${annotation_names%, })"
+  fi
+fi
+
 # Taste pass: surface when loved tweaks have accrued past the effective threshold.
 # Passive line only (a hook cannot run an AUQ) - the orchestrator turns it into the
 # one-line offer next turn. Both calls are guarded (2>/dev/null || echo <default>) so

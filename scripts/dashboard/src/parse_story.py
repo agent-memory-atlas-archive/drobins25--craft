@@ -48,7 +48,7 @@ def parse(path, craft_rel, fields, body):
     elif fields.get("cycle"):
         links.append(resolve.raw_link(nid, "story", "cycle", fields["cycle"]))
 
-    for field in ("mockup", "grew_from"):
+    for field in ("mockup", "annotate", "grew_from"):
         value = fields.get(field)
         if value:
             links.append(resolve.raw_link(nid, "story", field, value))

@@ -345,6 +345,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:adhoc` | Adhoc fix or tweak without story ceremony. Bugs record to `.craft/fixes/`, tweaks to `.craft/tweaks/`. See [Adhoc](#adhoc). |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration in the running app - 2-4 lettered candidates injected on the real page, chosen by eye, nothing written to source |
+| `/craft:annotate` | Point at anything on a live tab - each pin you send lands as a live change on the page, the run is kept as a record, and it leaves as a tweak, story or todo |
 | `/craft:project` | Switch projects or cross-project dashboard |
 | `/craft:init` | One-time project setup |
 

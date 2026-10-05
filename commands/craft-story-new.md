@@ -63,7 +63,7 @@ options:
 
 ### Step 2.5: Story Source Detection
 
-Before asking "How deep do you want to go?" (Step 3), check whether this project has planning docs OR converged mockups that the story could be built from.
+Before asking "How deep do you want to go?" (Step 3), check whether this project has planning docs OR converged mockups OR open annotate records that the story could be built from.
 
 **Detection logic:**
 
@@ -76,20 +76,24 @@ find "$CRAFT_PROJECT_ROOT/.craft/planning" -maxdepth 3 -type f -name "*.md" 2>/d
   | head -20
 # Non-abandoned mockup records
 grep -L "^status: abandoned" "$CRAFT_PROJECT_ROOT"/.craft/mockups/*/record.md 2>/dev/null | head -20
+# Open annotate records
+grep -l "^status: open" "$CRAFT_PROJECT_ROOT"/.craft/annotations/*/record.md 2>/dev/null | head -20
 ```
 
-**If both come back empty:** skip this step entirely and continue to Step 3. No AskUserQuestion shown. Users who have never used craft planning or mockups see zero behavior change.
+**If all come back empty:** skip this step entirely and continue to Step 3. No AskUserQuestion shown. Users who have never used craft planning, mockups or annotate see zero behavior change.
 
-**If either has matches:** present the choice via **AskUserQuestion** - include ONLY the source options whose scan found something, plus Freeform:
+**If any has matches:** present the choice via **AskUserQuestion** - include ONLY the source options whose scan found something, plus Freeform:
 
 ```
-question: "Where does this story come from? (I see [N] concepts in .craft/planning/ / [M] mockups in .craft/mockups/.)"
+question: "Where does this story come from? (I see [N] concepts in .craft/planning/ / [M] mockups in .craft/mockups/ / [K] annotations in .craft/annotations/.)"
 header: "Source"
 options:
   - label: "From planning"   (only if concepts matched)
     description: "Build this story from existing planning docs. I'll walk the concept(s) and produce a thorough story with Reference Materials."
   - label: "From mockup"   (only if mockup records matched)
     description: "Build this story from a converged mockup. Spark, Visual Direction, and binding table pre-fill from the record; the mockup's CSS is normative."
+  - label: "From annotate"   (only if annotate records matched)
+    description: "Build this story from an annotate run. The pins become the Spark; the page changes the user approved become the binding table, with session.css normative."
   - label: "Freeform"
     description: "Build a fresh story without planning context. Continue with the standard flow."
 ```
@@ -117,6 +121,17 @@ Execute its phases against the chosen mockup record.
 ```
 
 The reference owns the mockup-to-story transformation: record selection (when several are open), the parked-mockup surface re-check, and the pre-filled story write (Spark, Visual Direction, Element Binding Table with mockup anchors, Reference Materials, frontmatter `mockup:`). When it completes, the parent flow is DONE - do not continue to Step 3.
+
+**If "From annotate":**
+
+⛔ **Same chain-break rule - never via the Skill tool.** Read and execute inline:
+
+```
+Read "${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-annotate.md"
+Execute its phases against the chosen annotate record.
+```
+
+The reference owns the annotate-to-story transformation: record selection (when several are open), the stale-record surface re-check, and the pre-filled story write (Spark from the pins, Element Binding Table whose source is the rule in `session.css`, Reference Materials, frontmatter `annotate:`), then graduating the record. When it completes, the parent flow is DONE - do not continue to Step 3.
 
 **If "Freeform":** continue to Step 3 (Choose Your Path) unchanged.
 

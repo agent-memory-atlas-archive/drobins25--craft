@@ -510,5 +510,42 @@ rm -f "$ENV_FILE"
 cleanup_test_dir
 echo ""
 
+begin_test "session start shows Annotations: 1 awaiting destination with one open record"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-a" "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/live-1"
+printf -- '---\nsource: annotate\nstatus: open\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-a/record.md"
+printf -- '---\nsource: annotate\nstatus: graduated\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+echo '{}' > "$TEST_DIR/.craft/annotations/live-1/current.json"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_contains_literal "status line carries the open record only" "| Annotations: 1 awaiting destination (2026-10-04-a)" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "session start shows no Annotations segment for graduated, abandoned or live-only folders"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/2026-10-04-c" "$TEST_DIR/.craft/annotations/live-1"
+printf -- '---\nstatus: graduated\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+printf -- '---\nstatus: abandoned\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-c/record.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_not_contains "no Annotations segment" "Annotations:" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
 # --- Summary ---
 finish_tests

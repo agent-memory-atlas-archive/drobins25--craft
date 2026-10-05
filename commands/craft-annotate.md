@@ -1,13 +1,14 @@
 ---
 name: annotate
-description: "Point at anything in a live browser tab - comment-mode pins go back to the session when you press SEND, or are read directly from the page when its policy blocks localhost."
+description: "Point at anything in a live browser tab - each pin you SEND lands as a live change on the page, the session keeps one record of the run, and a pin the page cannot show is quoted back and asked about."
 when_to_use: |
   Use when the user wants to point at something on a page they are looking
   at: "let me point at something", "annotate this page", "mark up what I'm
   looking at". The page is already open in a browser craft can reach through
   chrome-devtools. Not for visual-value questions ("is this gap too loose") -
   those are dial's - and not for pages that do not exist yet (mockup).
-  SEND needs a page that can reach localhost; on a site whose policy
+  Every change made during the run is kept as a record that can become a
+  tweak, a story or a todo. SEND needs a page that can reach localhost; on a site whose policy
   blocks that, craft says so up front and will read the pins directly
   from the page instead. Invoked by the user only; craft never offers it.
 argument-hint: "[what you are pointing at]"
@@ -15,7 +16,7 @@ argument-hint: "[what you are pointing at]"
 
 # Annotate
 
-Put a comment-mode sheet on a live tab, let the user click anything and leave notes, and read those notes the moment they press SEND TO CLAUDE. The page is left pristine when it ends. This is the one flow that waits: standing by the page is the whole job.
+Put a comment-mode sheet on a live tab, let the user click anything and leave notes, and read those notes the moment they press SEND TO CLAUDE. Each note that a stylesheet can express lands on the page live, and the run is kept as a record when it ends. The page is left pristine. This is the one flow that waits: standing by the page is the whole job.
 
 This shell owns only routing. The flow lives in one reference file.
 

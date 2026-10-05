@@ -55,6 +55,8 @@ RULED_OUT = {
         "date field, not a reference",
     ("mockup", "status"):
         "lifecycle value -> envelope attribute, not a link",
+    ("annotation", "status"):
+        "lifecycle value -> envelope attribute, not a link",
     ("checkpoint", "story"):
         "checkpoints are state, not records - not nodes (alignment)",
     ("checkpoint", "cycle"):

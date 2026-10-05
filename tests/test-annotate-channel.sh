@@ -561,4 +561,173 @@ RC=$?
 set -e
 assert_exit_code "unknown session exits non-zero" "1" "$RC"
 
+# hist_seqs <root> <sid> - the seq of every history line, space separated
+hist_seqs() {
+  python3 -c '
+import json, sys
+print(" ".join(str(json.loads(l)["seq"]) for l in open(sys.argv[1]) if l.strip()))
+' "$1/.craft/annotations/$2/history.jsonl" 2>/dev/null || echo MISSING
+}
+
+begin_test "history survives a listener restart and seq stays monotonic"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session hist1
+http POST "$PORT" /pins "[$(pin_json 1 one)]" >/dev/null
+http POST "$PORT" /pins "[$(pin_json 1 two)]" >/dev/null
+LPID="$(cat "$ROOT/.craft/annotations/hist1/listener.pid")"
+kill "$LPID" 2>/dev/null || true
+wait_dead "$LPID" || true
+arm_session "$ROOT" --session hist1
+RAW="$(http POST "$PORT" /pins "[$(pin_json 1 three)]")"
+assert_contains "the restarted listener answers seq 3" '"seq": 3' "$RAW"
+assert_eq "history holds every line, nothing truncated" "1 2 3" "$(hist_seqs "$ROOT" hist1)"
+assert_eq "current.json holds the third set" "3" "$(json_get "$ROOT/.craft/annotations/hist1/current.json" 'd["seq"]')"
+
+begin_test "a torn trailing history line is skipped when the listener resumes"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session torn1
+http POST "$PORT" /pins "[$(pin_json 1 one)]" >/dev/null
+LPID="$(cat "$ROOT/.craft/annotations/torn1/listener.pid")"
+kill "$LPID" 2>/dev/null || true
+wait_dead "$LPID" || true
+printf '{"seq": 9, "pins": [' >> "$ROOT/.craft/annotations/torn1/history.jsonl"
+rm -f "$ROOT/.craft/annotations/torn1/current.json"
+arm_session "$ROOT" --session torn1
+RAW="$(http POST "$PORT" /pins "[$(pin_json 1 two)]")"
+assert_contains "seq resumes past the last parsable history line only" '"seq": 2' "$RAW"
+
+begin_test "every POST appends one history line in seq order while current.json holds only the latest"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session hist2
+D="$ROOT/.craft/annotations/hist2"
+http POST "$PORT" /pins "[$(pin_json 1 a)]" >/dev/null
+http POST "$PORT" /pins "[$(pin_json 1 b),$(pin_json 2 c)]" >/dev/null
+http POST "$PORT" /pins "[$(pin_json 1 d)]" >/dev/null
+http POST "$PORT" /clear >/dev/null
+assert_eq "four lines in seq order" "1 2 3 4" "$(hist_seqs "$ROOT" hist2)"
+assert_eq "current.json holds only the tombstone" "True 4" "$(json_get "$D/current.json" '"%s %s" % (d["cleared"], d["seq"])')"
+assert_eq "history line 2 carries both pins" "2" "$(python3 -c 'import json,sys; print(len(json.loads(open(sys.argv[1]).read().splitlines()[1])["pins"]))' "$D/history.jsonl")"
+assert_eq "the cleared entry is in history" "True" "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[3])["cleared"])' "$D/history.jsonl")"
+assert_eq "history line equals the state written to current.json" "$(python3 -c 'import json,sys; print(json.dumps(json.loads(open(sys.argv[1]).read().splitlines()[3]), sort_keys=True))' "$D/history.jsonl")" "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), sort_keys=True))' "$D/current.json")"
+
+begin_test "begin prints RUN <seq> equal to the last seq on disk, writes run.json, empties session.css"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session run1
+D="$ROOT/.craft/annotations/run1"
+http POST "$PORT" /pins "[$(pin_json 1 a)]" >/dev/null
+http POST "$PORT" /pins "[$(pin_json 1 b)]" >/dev/null
+printf '.old{color:red}\n' > "$D/session.css"
+OUT="$(run_in "$ROOT" begin --session run1 --subject "Hero polish")"
+assert_eq "begin prints RUN 2" "RUN 2" "$OUT"
+assert_eq "start_seq recorded" "2" "$(json_get "$D/run.json" 'd["start_seq"]')"
+assert_eq "subject recorded" "Hero polish" "$(json_get "$D/run.json" 'd["subject"]')"
+assert_contains "started_at is a UTC timestamp" '^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}Z$' "$(json_get "$D/run.json" 'd["started_at"]')"
+assert_eq "session.css emptied" "0" "$(wc -c < "$D/session.css" | tr -d ' ')"
+rm -f "$D/current.json"
+assert_eq "begin reads the max across current.json and history" "RUN 2" "$(run_in "$ROOT" begin --session run1)"
+set +e
+CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" begin --session nosuch >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "begin on an unknown session exits 1" "1" "$RC"
+
+# sheet_literal <apply-statement> - the decoded JSON string literal
+sheet_literal() {
+  python3 -c '
+import json, sys
+line = sys.argv[1]
+start = line.index("textContent = ") + len("textContent = ")
+end = line.rindex("; document.head")
+sys.stdout.write(json.loads(line[start:end]))
+' "$1"
+}
+
+begin_test "the apply statement's literal decodes to session.css byte-for-byte"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session sh1
+D="$ROOT/.craft/annotations/sh1"
+OUT="$(printf '.a{content:"\\201C;caf\xc3\xa9 \\\\ \x27q\x27";}\n/* semi; colon */\n' | run_in "$ROOT" sheet --session sh1 --add --key 101)"
+assert_eq "one line printed" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+assert_contains_literal "IIFE form" '(() => { ' "$OUT"
+assert_eq "starts as an IIFE" "(() =>" "${OUT:0:6}"
+assert_contains "finds or creates the session style" 'ca-session-css' "$OUT"
+assert_contains "marks the style as injected" 'data-craft-annotate-injected' "$OUT"
+assert_eq "ends as an IIFE" "})()" "${OUT: -4}"
+sheet_literal "$OUT" > "$ROOT/decoded.css"
+cmp -s "$ROOT/decoded.css" "$D/session.css" && echo "  PASS: literal equals the file" && PASS=$((PASS + 1)) || { echo "  FAIL: literal differs from the file"; FAIL=$((FAIL + 1)); }
+assert_eq "literal is ASCII-escaped" "0" "$(printf '%s' "$OUT" | LC_ALL=C grep -c '[^ -~]' || true)"
+
+begin_test "sheet --add appends a keyed block, the same key replaces in place, --drop removes it, output is one line"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session sh2
+D="$ROOT/.craft/annotations/sh2"
+printf '.a{color:red}\n' | run_in "$ROOT" sheet --session sh2 --add --key 1 >/dev/null
+printf '.b{color:blue}' | run_in "$ROOT" sheet --session sh2 --add --key 2 >/dev/null
+assert_eq "two keyed blocks" $'/* annotate-key 1 */\n.a{color:red}\n/* annotate-key 2 */\n.b{color:blue}' "$(cat "$D/session.css")"
+OUT="$(printf '.a{color:green}\n' | run_in "$ROOT" sheet --session sh2 --add --key 1)"
+assert_eq "replaced in place, order kept" $'/* annotate-key 1 */\n.a{color:green}\n/* annotate-key 2 */\n.b{color:blue}' "$(cat "$D/session.css")"
+assert_eq "replace prints one line" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+OUT="$(run_in "$ROOT" sheet --session sh2 --drop 1)"
+assert_eq "drop removes the block" $'/* annotate-key 2 */\n.b{color:blue}' "$(cat "$D/session.css")"
+assert_eq "drop prints one line" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+assert_eq "drop of an absent key changes nothing" "$(cat "$D/session.css")" "$(run_in "$ROOT" sheet --session sh2 --drop 99 >/dev/null; cat "$D/session.css")"
+OUT="$(run_in "$ROOT" sheet --session sh2)"
+assert_eq "print-only decodes to the file" "$(cat "$D/session.css")" "$(sheet_literal "$OUT")"
+OUT="$(run_in "$ROOT" sheet --session sh2 --drop 2)"
+assert_eq "dropping the last block leaves an empty sheet" "0" "$(wc -c < "$D/session.css" | tr -d ' ')"
+assert_eq "an empty sheet decodes to nothing" "" "$(sheet_literal "$OUT")"
+set +e
+printf '.a{}' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" sheet --session sh2 --add --key 'bad key' >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "an invalid key exits 1" "1" "$RC"
+
+begin_test "sheet refuses CSS carrying the key header and leaves the file untouched"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session sh3
+D="$ROOT/.craft/annotations/sh3"
+printf '.a{color:red}\n' | run_in "$ROOT" sheet --session sh3 --add --key 1 >/dev/null
+BEFORE="$(cat "$D/session.css")"
+set +e
+printf '.x{}\n/* annotate-key 7 */\n.y{}\n' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" sheet --session sh3 --add --key 2 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "refused with exit 1" "1" "$RC"
+assert_eq "file untouched" "$BEFORE" "$(cat "$D/session.css")"
+
+begin_test "send posts the stdin set; seq advances and history records it"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session snd1
+D="$ROOT/.craft/annotations/snd1"
+OUT="$(printf '[%s]' "$(pin_json 1 direct)" | run_in "$ROOT" send --session snd1)"
+assert_contains "the listener's reply is printed" '"seq": 1' "$OUT"
+assert_eq "history records it" "1" "$(hist_seqs "$ROOT" snd1)"
+assert_eq "current.json carries the pin" "direct" "$(json_get "$D/current.json" 'd["pins"][0]["text"]')"
+set +e
+echo '{"not":"an array"}' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" send --session snd1 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "a non-array body is refused with exit 1" "1" "$RC"
+LPID="$(cat "$D/listener.pid")"
+kill "$LPID" 2>/dev/null || true
+wait_dead "$LPID" || true
+set +e
+echo '[]' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" send --session snd1 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "an unreachable listener exits 1" "1" "$RC"
+
+begin_test "status --all omits a record folder; sweep leaves a record folder that carries a dead owner.pid"
+new_root; ROOT="$NEW_ROOT"
+mkdir -p "$ROOT/.craft/annotations/2026-10-04-x" "$ROOT/.craft/annotations/live-1"
+printf -- '---\nsource: annotate\n---\n' > "$ROOT/.craft/annotations/2026-10-04-x/record.md"
+echo 999999 > "$ROOT/.craft/annotations/2026-10-04-x/owner.pid"
+echo 999999 > "$ROOT/.craft/annotations/live-1/owner.pid"
+OUT="$(run_in "$ROOT" status --all)"
+assert_contains "the live folder is listed" '^live-1 ' "$OUT"
+assert_not_contains "the record folder is not listed" '2026-10-04-x' "$OUT"
+run_in "$ROOT" sweep >/dev/null
+assert_file_exists "the record folder survives the sweep" "$ROOT/.craft/annotations/2026-10-04-x/record.md"
+assert_eq "the dead live folder is reaped" "MISSING" "$(rd "$ROOT/.craft/annotations/live-1/owner.pid")"
+
 finish_tests "test-annotate-channel"

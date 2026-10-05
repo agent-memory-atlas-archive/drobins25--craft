@@ -2,8 +2,8 @@
 """annotate-channel.py - per-session capture listener for page annotations.
 
 A page (often a file:// page, so a null origin) posts the pin set it wants
-Claude to read. The listener keeps one file, current.json, and that file only
-ever holds one of two things:
+Claude to read. The listener keeps current.json, and that file only ever holds
+one of two things:
 
   - the body of an explicit POST /pins, written wholesale, or
   - the cleared tombstone written by POST /clear.
@@ -13,6 +13,10 @@ connection per page and POST /announce pushes a reload event down every held
 stream; the stream registry lives in memory only and never touches the file. Nothing is merged: a write never reads the
 prior file's pins, and the process remembers only the last sequence number it
 wrote, so restarting it cannot bring back a set the user cleared.
+
+Beside current.json the listener keeps history.jsonl, an append-only ledger of
+every state it wrote (sets and tombstones, one JSON line each, in seq order).
+Only the record writer reads it; wait, mockup and dial read current.json alone.
 
 Usage: annotate-channel.py --dir <session-dir>
 
@@ -42,6 +46,10 @@ STREAM_POLL_SECONDS = 0.25
 RELOAD_EVENT = b"event: reload\ndata: reload\n\n"
 
 
+def _as_seq(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def read_last_seq(path):
     """The last sequence number on disk, and nothing else from the file.
 
@@ -50,10 +58,42 @@ def read_last_seq(path):
     """
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            seq = json.load(fh).get("seq", 0)
+            return _as_seq(json.load(fh).get("seq", 0))
     except (OSError, ValueError, AttributeError):
         return 0
-    return seq if isinstance(seq, int) and not isinstance(seq, bool) else 0
+
+
+def read_history_last_seq(path):
+    """The highest seq among the parsable lines of the history; a torn or
+    unparsable line is skipped, so a crash mid-append never blocks a restart."""
+    last = 0
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    last = max(last, _as_seq(json.loads(line).get("seq", 0)))
+                except (ValueError, AttributeError):
+                    continue
+    except OSError:
+        return 0
+    return last
+
+
+def terminate_torn_line(path):
+    """A crash can leave the last history line without its newline; end it so
+    the next append starts on a line of its own instead of fusing with it."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell() == 0:
+                return
+            fh.seek(-1, os.SEEK_END)
+            torn = fh.read(1) != b"\n"
+    except OSError:
+        return
+    if torn:
+        with open(path, "ab") as fh:
+            fh.write(b"\n")
 
 
 class Channel(ThreadingHTTPServer):
@@ -63,7 +103,9 @@ class Channel(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), Handler)
         self.session_dir = session_dir
         self.current_path = os.path.join(session_dir, "current.json")
-        self.seq = read_last_seq(self.current_path)
+        self.history_path = os.path.join(session_dir, "history.jsonl")
+        terminate_torn_line(self.history_path)
+        self.seq = max(read_last_seq(self.current_path), read_history_last_seq(self.history_path))
         self.write_lock = threading.Lock()
         self.clients = set()
         self.clients_lock = threading.Lock()
@@ -92,12 +134,18 @@ class Channel(ThreadingHTTPServer):
         return len(targets)
 
     def replace_state(self, cleared, pins, sent_at=None):
-        """The only write path: temp file in the same directory, then os.replace."""
+        """The only write path: append to the history, then temp file in the same
+        directory and os.replace for current.json. The history is only ever
+        opened for append, so no restart or write can shorten it."""
         with self.write_lock:
             self.seq += 1
             state = {"seq": self.seq, "cleared": cleared, "pins": pins}
             if sent_at is not None:
                 state["sent_at"] = sent_at
+            with open(self.history_path, "a", encoding="utf-8") as ledger:
+                ledger.write(json.dumps(state) + "\n")
+                ledger.flush()
+                os.fsync(ledger.fileno())
             tmp_path = self.current_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as fh:
                 json.dump(state, fh)
