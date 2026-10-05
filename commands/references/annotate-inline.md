@@ -27,7 +27,7 @@ The listener is lazy and per-session. It starts the first time a flow needs it a
   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" status --session "<id>"
   ```
 
-  If the line shows `PORT none`, or the listener is not answering, run `arm --session "<id>"` - it is idempotent and prints the current port. Only ever reuse an id this conversation armed: another pane in the same project has its own session, and its listener is not yours.
+  If the line shows `PORT none`, or `CLIENTS unreachable` (the listener is not answering), run `arm --session "<id>"` - it is idempotent and prints the current port. Only ever reuse an id this conversation armed: another pane in the same project has its own session, and its listener is not yours.
 
 Never arm a second listener while one is held.
 
@@ -70,7 +70,7 @@ Then tell the user ONCE:
 This is the one flow that waits. Start the wait ONCE as a background Bash command: run
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" wait --session "<id>" --timeout 3600
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" wait --session "<id>" --since "<seq>" --timeout 3600
 ```
 
 with the Bash tool's `run_in_background: true`. No tool timeout is set. A background command is permission-checked once, when it launches, and has no time limit in a terminal, desktop, or VS Code session. Do not poll it and do not start it in the foreground.
@@ -78,11 +78,7 @@ with the Bash tool's `run_in_background: true`. No tool timeout is set. A backgr
 - **SEND:** the command exits with the pins as JSON on its output, and that exit wakes the session. Read the output and go to Step 6.
 - **WAITING:** the hour ran out with no SEND. Start one new background wait, silently - say nothing to the user, and do not stack a second wait beside a live one.
 
-The wait notices only a SEND that lands while it is running. Each time a wait ends, read the channel file before starting the next one, and act if its `seq` is higher than the last one you acted on: a SEND in the gap between two waits is otherwise lost.
-
-```bash
-cat ".craft/annotations/<id>/current.json"
-```
+`<seq>` is the `seq` of the last payload you acted on, and `0` before the first. A SEND that landed in the gap between two waits has already advanced the counter past it, so the new wait returns that payload at once instead of missing it. Never start a wait without `--since`: a bare wait takes the file's current counter as its baseline and would skip exactly that payload.
 
 ## Step 6: Read the pins and act
 

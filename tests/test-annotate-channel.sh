@@ -396,6 +396,41 @@ assert_exit_code "advance exits 0" "0" "$RC"
 assert_contains "advance prints the payload" '"text": "woke"' "$WOUT"
 assert_eq "payload parses with a pin" "1" "$(echo "$WOUT" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["pins"]))' 2>/dev/null || echo BAD)"
 
+begin_test "wait --since takes the caller's last-seen seq as its baseline"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+http POST "$PORT" /pins "[$(pin_json 1 landed)]" >/dev/null
+SEQ_NOW="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["seq"])' "$ROOT/.craft/annotations/$SID/current.json" 2>/dev/null || echo BAD)"
+assert_contains "the send advanced seq" '^[1-9][0-9]*$' "$SEQ_NOW"
+set +e
+WOUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" wait --session "$SID" --since 0 --timeout 2 2>/dev/null)"
+RC=$?
+set -e
+assert_exit_code "a SEND that already landed past --since is returned (exit 0)" "0" "$RC"
+assert_contains "the already-landed payload is printed at once" '"text": "landed"' "$WOUT"
+set +e
+WOUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" wait --session "$SID" --since "$SEQ_NOW" --timeout 1 2>/dev/null)"
+RC=$?
+set -e
+assert_exit_code "--since at the current seq waits like before (exit 0)" "0" "$RC"
+assert_eq "--since at the current seq prints WAITING on a quiet window" "WAITING" "$WOUT"
+set +e
+WOUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" wait --session "$SID" --since nope --timeout 1 2>&1)"
+RC=$?
+set -e
+assert_exit_code "a non-numeric --since is refused" "1" "$RC"
+
+begin_test "status names a listener that does not answer instead of printing an idle count"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+LP="$(rd "$ROOT/.craft/annotations/$SID/listener.pid")"
+kill "$LP" 2>/dev/null || true
+wait_dead "$LP" || true
+ST="$(run_in "$ROOT" status --session "$SID")"
+assert_contains "status still names the session" "SESSION $SID" "$ST"
+assert_contains "a dead listener prints CLIENTS unreachable" 'CLIENTS unreachable' "$ST"
+assert_not_contains "a dead listener never prints a numeric count" 'CLIENTS [0-9]' "$ST"
+
 begin_test "clear verb posts the tombstone"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"

@@ -3,8 +3,8 @@
 #
 # Usage:
 #   annotate-run.sh arm     [--root R] [--session ID] [--owner-pid PID]
-#   annotate-run.sh status  [--root R] (--session ID | --all)
-#   annotate-run.sh wait    [--root R] --session ID --timeout SECONDS
+#   annotate-run.sh status  [--root R] (--session ID | --all)   (CLIENTS is a count, or 'unreachable' when the listener does not answer)
+#   annotate-run.sh wait    [--root R] --session ID --timeout SECONDS [--since SEQ]   (--since: the last seq already acted on; a SEND past it returns at once)
 #   annotate-run.sh clear   [--root R] --session ID
 #   annotate-run.sh announce [--root R] --session ID
 #   annotate-run.sh sweep   [--root R]
@@ -226,7 +226,7 @@ cmd_status() {
   dir="$(session_dir)"
   port="$(read_file "$dir/port")"
   pid="$(read_file "$dir/listener.pid")"
-  clients=0
+  clients=unreachable
   if is_number "$port" && health="$(http_call GET "$port" /health 2>/dev/null)"; then
     clients="$(echo "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("clients", 0))' 2>/dev/null || echo 0)"
   fi
@@ -238,7 +238,12 @@ cmd_wait() {
   dir="$(session_dir)"
   is_number "$TIMEOUT" || die "--timeout <seconds> is required"
   file="$dir/current.json"
-  baseline="$(read_seq "$file")"
+  if [ -n "$SINCE" ]; then
+    is_number "$SINCE" || die "--since must be a number (the last seq already acted on)"
+    baseline="$SINCE"
+  else
+    baseline="$(read_seq "$file")"
+  fi
   limit=$((TIMEOUT * 4))
   while [ "$ticks" -lt "$limit" ]; do
     now="$(read_seq "$file")"
@@ -310,6 +315,7 @@ ROOT_ARG=""
 SESSION=""
 OWNER_PID=""
 TIMEOUT=""
+SINCE=""
 ALL=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -317,6 +323,7 @@ while [ $# -gt 0 ]; do
     --session)   [ $# -ge 2 ] || die "--session needs a value"; SESSION="$2"; shift 2 ;;
     --owner-pid) [ $# -ge 2 ] || die "--owner-pid needs a value"; OWNER_PID="$2"; shift 2 ;;
     --timeout)   [ $# -ge 2 ] || die "--timeout needs a value"; TIMEOUT="$2"; shift 2 ;;
+    --since)     [ $# -ge 2 ] || die "--since needs a value"; SINCE="$2"; shift 2 ;;
     --all)       ALL=1; shift ;;
     *)           die "unknown argument: $1" ;;
   esac

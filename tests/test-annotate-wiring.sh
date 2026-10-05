@@ -308,6 +308,8 @@ assert_contains_literal "reuse goes through status before arming" 'annotate-run.
 begin_test "raw-tab flow: the one background wait"
 assert_contains_literal "wait verb with the one-hour timeout" 'wait --session' "$FLOW_TEXT"
 assert_contains_literal "wait timeout is 3600" '--timeout 3600' "$FLOW_TEXT"
+assert_contains_literal "the wait carries the last-seen seq so a SEND between waits is never lost" '--since' "$FLOW_TEXT"
+assert_contains_literal "Step 2 reads the unreachable word from status" 'CLIENTS unreachable' "$FLOW_TEXT"
 assert_contains_literal "wait runs in the background" "run_in_background: true" "$FLOW_TEXT"
 assert_contains_literal "SEND wake-up named" "SEND" "$FLOW_TEXT"
 assert_contains_literal "exit wakes the session" "wakes the session" "$FLOW_TEXT"
