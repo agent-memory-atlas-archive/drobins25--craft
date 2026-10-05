@@ -57,6 +57,10 @@ Injection is two `evaluate_script` steps, in this order:
 
 Stamp first because the overlay reads the port when the user presses SEND; without the stamp SEND reports that nothing is listening.
 
+Then probe the listener FROM THE PAGE, through one more `evaluate_script`: `fetch(base + '/health')` where `base` is `'http://127.0.0.1:' + window.__craftAnnotatePort`. A page can carry a policy that forbids requests to 127.0.0.1, and SEND runs the same request from the same page, so this answer predicts SEND's. If the probe resolves, say nothing about it. If it rejects, tell the user up front, in one line and never a widget:
+
+> "The sheet is on, but SEND will not work on this page - its policy blocks requests to localhost. Pin as usual and tell me when you're done; I'll read the pins directly."
+
 Then tell the user ONCE:
 
 > "The sheet is on the page - turn on COMMENT MODE, click anything, and press SEND TO CLAUDE when you want me to read it. Reloading the page removes the sheet; tell me and I'll put it back."
@@ -87,6 +91,8 @@ The payload is `{seq, cleared, pins, ...}`. A `cleared: true` payload means the 
 Otherwise quote every pin back as the user's exact words - never paraphrase a comment, relabel it, or merge two into one. Show each pin's number, its comment text verbatim, and where it points (`selector`, with `nearText` to confirm). A pin the user reports as detached is a pin whose element changed on the page; its comment still stands.
 
 Then act on what the pins ask, as the subject and conversation direct. Reading the set does not end the session: tell the user briefly what you took from the pins, and return to Step 5 for the next SEND.
+
+**When SEND cannot reach the listener.** The strip shows `BLOCKED BY PAGE - ask Claude to read pins directly` when the page refused the request, and the user may simply report that SEND did nothing. The pins are not lost: the overlay writes every pin to the page's local storage on every change, under the key `'ca-annotations:' + location.pathname`. Read it through the devtools connection with `evaluate_script`: `JSON.parse(localStorage.getItem('ca-annotations:' + location.pathname) || '[]')`. Treat that array as the sent set: quote every pin verbatim exactly as above, act, and return to Step 5. The wait will not wake for these pins, so after the user says they are done pinning, read the key again rather than waiting for a SEND.
 
 ## Navigation and re-injection
 

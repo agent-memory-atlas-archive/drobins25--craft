@@ -234,6 +234,15 @@ assert_contains_literal "NOT ARMED - no craft session listening" "NOT ARMED - no
 assert_contains_literal "non-200 is treated as not armed" "if (!res.ok)" "$SEND_BODY"
 assert_contains_literal "a rejected request is treated as not armed" ".catch(" "$SEND_BODY"
 
+begin_test "a refused SEND is named BLOCKED BY PAGE, never NOT ARMED"
+assert_contains_literal "BLOCKED BY PAGE string names its condition on screen" "BLOCKED BY PAGE - ask Claude to read pins directly" "$SRC"
+assert_eq "BLOCKED_BY_PAGE is defined once in the source" "1" "$(count_of "const BLOCKED_BY_PAGE = " "$SRC" | tr -d ' ')"
+CATCH_PART="$(printf '%s\n' "$SEND_BODY" | awk 'index($0, ".catch(") {on=1} on {print}')"
+assert_contains_literal "the catch branch says BLOCKED BY PAGE" "say(BLOCKED_BY_PAGE)" "$CATCH_PART"
+lacks_literal "the catch branch no longer says NOT ARMED" "say(NOT_ARMED)" "$CATCH_PART"
+assert_contains_literal "a non-200 reply still says NOT ARMED" "say(NOT_ARMED)" "$THEN_PART"
+assert_contains_literal "the reference prose names BLOCKED BY PAGE" "BLOCKED BY PAGE" "$(printf '%s\n' "$WHOLE" | grep -F "Honest confirmation" || true)"
+
 begin_test "delete and edit handlers exist and the renumber routine is called on delete"
 assert_contains_literal "DELETE control" "'DELETE'" "$SRC"
 assert_contains_literal "EDIT control" "'EDIT'" "$SRC"
@@ -416,6 +425,22 @@ for f in "$FLOW" "$SHELL_FILE"; do
 done
 
 # section_of <heading-prefix> <text> - from the heading line through the line before the next heading of the same or higher level
+begin_test "the raw-tab flow probes the listener from the page and falls back to a direct read"
+L_S4="$(line_of "## Step 4" "$FLOW_TEXT")"; L_S5="$(line_of "## Step 5" "$FLOW_TEXT")"; L_S6="$(line_of "## Step 6" "$FLOW_TEXT")"; L_NAV="$(line_of "## Navigation" "$FLOW_TEXT")"
+L_PROBE="$(line_of "fetch(base + '/health')" "$FLOW_TEXT")"
+assert_not_eq "Step 4 probes /health from the page" "" "$L_PROBE"
+before "the probe sits in Step 4" "$L_S4" "$L_PROBE"
+before "the probe precedes Step 5" "$L_PROBE" "$L_S5"
+assert_contains_literal "the probe warns up front that SEND will not work here" "SEND will not work on this page" "$FLOW_TEXT"
+L_FALL="$(line_of "ca-annotations:" "$FLOW_TEXT")"
+assert_not_eq "Step 6 names the localStorage key" "" "$L_FALL"
+before "the fallback sits in Step 6" "$L_S6" "$L_FALL"
+before "the fallback precedes the navigation section" "$L_FALL" "$L_NAV"
+assert_contains_literal "the fallback is keyed on the strip string" "BLOCKED BY PAGE" "$FLOW_TEXT"
+assert_contains_literal "the fallback reads through the devtools connection" "localStorage" "$FLOW_TEXT"
+assert_contains_literal "the shell says SEND needs localhost reach" "reach localhost" "$SHELL_TEXT"
+assert_contains_literal "the shell names the direct-read fallback" "read the pins directly" "$SHELL_TEXT"
+
 section_of() {
   printf '%s\n' "$2" | awk -v h="$1" '
     index($0, h) == 1 {on=1; level=0; while (substr(h, level + 1, 1) == "#") level++; print; next}

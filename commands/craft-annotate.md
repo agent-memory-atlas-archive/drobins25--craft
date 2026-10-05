@@ -1,13 +1,15 @@
 ---
 name: annotate
-description: "Point at anything in a live browser tab - comment-mode pins go back to the session when you press SEND."
+description: "Point at anything in a live browser tab - comment-mode pins go back to the session when you press SEND, or are read directly from the page when its policy blocks localhost."
 when_to_use: |
   Use when the user wants to point at something on a page they are looking
   at: "let me point at something", "annotate this page", "mark up what I'm
   looking at". The page is already open in a browser craft can reach through
   chrome-devtools. Not for visual-value questions ("is this gap too loose") -
   those are dial's - and not for pages that do not exist yet (mockup).
-  Invoked by the user only; craft never offers it.
+  SEND needs a page that can reach localhost; on a site whose policy
+  blocks that, craft says so up front and will read the pins directly
+  from the page instead. Invoked by the user only; craft never offers it.
 argument-hint: "[what you are pointing at]"
 ---
 

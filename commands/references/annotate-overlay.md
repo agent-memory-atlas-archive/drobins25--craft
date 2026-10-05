@@ -15,9 +15,9 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Install guard.** The source opens with `if (window.__craftAnnotateInstalled) return;`. A page that is re-injected after navigation, or injected twice by mistake, must not grow two strips. The canonical clear deletes the flag so a deliberate re-install still works.
 - **Placement.** The style element goes in `head`; the sheet and strip go in `body` as the last children. Framework re-renders reconcile only their own root, so anything appended inside it is eventually eaten. Pins are inserted just before the strip so the strip stays last.
 - **Namespaced handles.** `ca-style`, `ca-sheet`, `ca-strip` are ids; every other real node carries `data-craft-annotate-injected`. The canonical clear is total by construction because of that attribute. The overlay never sets the marker owned by the dial flow, because dial's bulk clear and several analyzers run on arrival and would silently delete unsent pins.
-- **No port in the source.** The channel base is `'http://127.0.0.1:' + window.__craftAnnotatePort`. Each session's listener has its own OS-assigned port, stamped into its own pages. A literal in shared source would point every page at one session. An absent stamp means SEND shows `NOT ARMED - no craft session listening` while everything else keeps working locally.
+- **No port in the source.** The channel base is `'http://127.0.0.1:' + window.__craftAnnotatePort`. Each session's listener has its own OS-assigned port, stamped into its own pages. A literal in shared source would point every page at one session. An absent stamp means SEND shows `NOT ARMED - no craft session listening` while everything else keeps working locally. A stamp that is present but a request the browser refuses to send (a page policy that does not allow 127.0.0.1) shows `BLOCKED BY PAGE - ask Claude to read pins directly`: the pins are still in the page's local storage, and the session reads them from there.
 - **Inert until asked.** An injected page makes no network request before a user gesture. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. A dropped stream retries quietly with a bounded backoff. There is no polling.
-- **Honest confirmation.** `RETURNED` is stamped only inside the resolved-200 branch of the SEND post, and every pin in the delivered set then gains a visible sent-stamp. A rejected request or a non-200 shows `NOT ARMED - no craft session listening` and stamps nothing. Every other channel failure is quiet; SEND alone is loud. A stamp written from a swallowed error is a lie the user acts on.
+- **Honest confirmation.** `RETURNED` is stamped only inside the resolved-200 branch of the SEND post, and every pin in the delivered set then gains a visible sent-stamp. A non-200 reply shows `NOT ARMED - no craft session listening` and stamps nothing. A request the browser rejects outright, with the port stamped, is a refusal by the page or the browser, never a listener state: it shows `BLOCKED BY PAGE - ask Claude to read pins directly` and stamps nothing. Every other channel failure is quiet; SEND alone is loud. A stamp written from a swallowed error is a lie the user acts on.
 - **Send-only.** The only request carrying pins is the one inside the SEND handler. Unsent pins live in the page and in local storage and nowhere else, so a pin the user never sent can never reach the channel.
 - **SEND commits first.** An open comment box is saved through the normal save path before the set is collected, so a comment mid-typing is never dropped from the set it visibly belongs to.
 - **CLEAR is authoritative.** The clear post goes first, then the wipe of DOM nodes, in-memory state, the counter, and the page-path-keyed storage entry. The post does not wait on the wipe and the wipe does not wait on the post. The strip then reads `CLEARED` and `MARKUP - 0 marks`.
@@ -56,6 +56,7 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
   const MARK = 'data-craft-annotate-injected';
   const STORE_KEY = 'ca-annotations:' + location.pathname;
   const NOT_ARMED = 'NOT ARMED - no craft session listening';
+  const BLOCKED_BY_PAGE = 'BLOCKED BY PAGE - ask Claude to read pins directly';
 
   const css = [
     '#ca-sheet{position:fixed;top:0;left:0;right:0;bottom:0;box-sizing:border-box;border:' + CA.proofBorder + ';pointer-events:none;opacity:0;transition:opacity 120ms ease;z-index:2147482990}',
@@ -394,7 +395,7 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     }).catch(() => {
       sending = false;
       sendBtn.classList.remove('ca-lift');
-      say(NOT_ARMED);
+      say(BLOCKED_BY_PAGE);
     });
   };
 
@@ -486,7 +487,7 @@ window.__craftAnnotateBaked = true;
 window.__craftAnnotateContext = '<candidate letter>';
 ```
 
-- `__craftAnnotatePort` is stamped by every delivery. Without it the overlay still annotates locally and SEND reports `NOT ARMED - no craft session listening`.
+- `__craftAnnotatePort` is stamped by every delivery. Without it the overlay still annotates locally and SEND reports `NOT ARMED - no craft session listening`. With it, a page whose policy blocks the request reports `BLOCKED BY PAGE - ask Claude to read pins directly`, and the pins wait in local storage under `ca-annotations:<pathname>` for the session to read.
 - `__craftAnnotateBaked` is stamped only by a mockup round written to disk. It is the single switch that makes the page hold the event stream open. Raw-tab and dial injections never stamp it.
 - `__craftAnnotateContext` is optional and owned by the dial flow: the bare candidate letter string (for example `"B"`), never an object. Each pin copies it verbatim into a `candidate` field.
 
