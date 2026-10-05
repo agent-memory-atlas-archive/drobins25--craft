@@ -299,7 +299,9 @@ sweep_all() {
     is_number "$owner" || continue
     pid_alive "$owner" && continue
     listener="$(read_file "$dir/listener.pid")"
-    if is_number "$listener"; then
+    # Kill only a process that is still a listener: the recorded pid may have been
+    # reused by an unrelated process after a listener died on its own.
+    if is_number "$listener" && ps -o command= -p "$listener" 2>/dev/null | grep -q "annotate-channel"; then
       kill "$listener" 2>/dev/null || true
     fi
     rm -rf "$dir" 2>/dev/null || true

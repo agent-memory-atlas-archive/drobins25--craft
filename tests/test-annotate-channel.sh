@@ -323,16 +323,20 @@ assert_contains "dead owner reported dead" 'dead-session.*dead' "$ALL"
 
 begin_test "sweep reaps a dead-owner dir and kills its listener; leaves a live-owner dir untouched; tolerates garbage; exits 0"
 new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
 AN="$ROOT/.craft/annotations"
-mkdir -p "$AN/dead-1" "$AN/live-1" "$AN/empty-1" "$AN/garbage-1"
+DEAD_DIR="$AN/$SID"
+DEAD_LISTENER="$(rd "$DEAD_DIR/listener.pid")"
+mkdir -p "$AN/live-1" "$AN/empty-1" "$AN/garbage-1" "$AN/stranger-1"
 sleep 0.05 & DOWNER=$!; wait "$DOWNER" || true
-sleep 300 & DEAD_LISTENER=$!
 sleep 300 & LIVE_LISTENER=$!
-TMP_PIDS+=("$DEAD_LISTENER" "$LIVE_LISTENER")
-echo "$DOWNER" > "$AN/dead-1/owner.pid"
-echo "$DEAD_LISTENER" > "$AN/dead-1/listener.pid"
+sleep 300 & STRANGER=$!
+TMP_PIDS+=("$LIVE_LISTENER" "$STRANGER")
+echo "$DOWNER" > "$DEAD_DIR/owner.pid"
 echo "$$" > "$AN/live-1/owner.pid"
 echo "$LIVE_LISTENER" > "$AN/live-1/listener.pid"
+echo "$DOWNER" > "$AN/stranger-1/owner.pid"
+echo "$STRANGER" > "$AN/stranger-1/listener.pid"
 echo "not-a-pid" > "$AN/garbage-1/owner.pid"
 echo "also bad" > "$AN/garbage-1/listener.pid"
 set +e
@@ -340,14 +344,16 @@ CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" sweep >/dev/null 2>&1
 RC=$?
 set -e
 assert_exit_code "sweep exits 0" "0" "$RC"
-assert_dir_not_exists "dead-owner dir removed" "$AN/dead-1"
-if wait_dead "$DEAD_LISTENER"; then echo "  PASS: dead-owner listener was killed"; PASS=$((PASS + 1)); else echo "  FAIL: dead-owner listener still alive"; FAIL=$((FAIL + 1)); fi
+assert_dir_not_exists "dead-owner dir removed" "$DEAD_DIR"
+if wait_dead "$DEAD_LISTENER"; then echo "  PASS: dead-owner real listener was killed"; PASS=$((PASS + 1)); else echo "  FAIL: dead-owner real listener still alive"; FAIL=$((FAIL + 1)); fi
+assert_dir_not_exists "dead-owner dir whose pid is no longer a listener is still removed" "$AN/stranger-1"
+if is_running "$STRANGER"; then echo "  PASS: a reused pid that is not a listener is left alone"; PASS=$((PASS + 1)); else echo "  FAIL: sweep killed a process that is not a listener"; FAIL=$((FAIL + 1)); fi
 assert_dir_exists "live-owner dir untouched" "$AN/live-1"
 assert_file_exists "live-owner pid file untouched" "$AN/live-1/owner.pid"
 if is_running "$LIVE_LISTENER"; then echo "  PASS: live-owner listener still alive"; PASS=$((PASS + 1)); else echo "  FAIL: live-owner listener was killed"; FAIL=$((FAIL + 1)); fi
 assert_dir_exists "empty dir tolerated" "$AN/empty-1"
 assert_dir_exists "garbage dir tolerated" "$AN/garbage-1"
-kill "$LIVE_LISTENER" 2>/dev/null || true
+kill "$LIVE_LISTENER" "$STRANGER" 2>/dev/null || true
 new_root
 set +e
 CRAFT_PROJECT_ROOT="$NEW_ROOT" bash "$RUN" sweep >/dev/null 2>&1
