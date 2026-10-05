@@ -436,7 +436,7 @@ def resolution_of(item):
 
 PROBE_JS = r"""() => {
   const T = __TARGETS__;
-  const here = location.href.split(/[?#]/)[0];
+  const here = location.href.split(/[?#]/)[0] + (/^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '');
   const lastCompound = s => { let d = 0, st = 0, q = ''; for (let i = 0; i < s.length; i++) { const c = s[i];
     if (q) { if (c === q) q = ''; } else if (c === '"' || c === "'") q = c; else if (c === '(' || c === '[') d++;
     else if (c === ')' || c === ']') d--; else if (d === 0 && (/\s/.test(c) || '>+~'.includes(c))) st = i + 1; } return s.slice(st); };

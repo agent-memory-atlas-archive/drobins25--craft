@@ -30,7 +30,7 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Numbers are labels.** Deleting a pin renumbers the survivors contiguously. Nothing outside the page reasons about a pin's number as an identity.
 - **Detached pins.** A pin whose anchor no longer resolves after a live edit docks above the strip in a flagged detached state, keeping its number and comment. Pins are re-checked when the page changes, not only on the next overlay event. A comment never silently vanishes.
 - **Text, never markup.** Comments are written with `textContent`. A comment containing `<` must render as typed, not execute.
-- **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. The key is read from the path at every access, so it follows client-side navigation: the old path's pins are hidden and wait in storage until the user returns, and the new path's pins show without a click. Storage is best-effort: unavailable storage means memory-only pins and no error.
+- **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path, plus the hash route when the app routes with the hash: a fragment that starts with `#/` or `#!/` is a route, its own query cut off; any other fragment is an in-page anchor and changes nothing. The pin's `page` carries the same hash route, so a pin names the route it was made on. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. The key is read from the path and hash route at every access, so it follows client-side navigation, by path or by hash: the old path's pins are hidden and wait in storage until the user returns, and the new path's pins show without a click. Storage is best-effort: unavailable storage means memory-only pins and no error.
 - **One component lookup.** The source sets `window.__craftAnnotateComponentOf = componentOf;` right after defining it, so the pin-to-source probe asks the page for the component of any element, an ancestor included, instead of carrying a second copy of the fiber walk that would drift. The annotate clear does not delete it: the next install overwrites it.
 - **Total teardown.** Every document-level handler, the page-change observer and the stream stop themselves the moment the strip is no longer attached, so a clear followed by a re-install never leaves a ghost handler creating pins.
 - **Self-styled strip.** The host page's reset is hostile by default. The strip pins `position: fixed` at `z-index: 2147483000` and sets its own font, size, line height, colour, background, and box sizing.
@@ -145,7 +145,10 @@ The whole block is one self-invoking expression: served as a script it runs as i
   const say = text => { status.textContent = text; };
   const paintReadout = () => { readout.textContent = 'MARKUP - ' + entries.length + ' marks'; };
 
-  const storeKey = () => 'ca-annotations:' + location.pathname;
+  // A fragment that starts with #/ or #!/ is a client-side route (its own query cut off);
+  // any other fragment is an in-page anchor and does not change which pins show.
+  const hashRoute = () => /^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '';
+  const storeKey = () => 'ca-annotations:' + location.pathname + hashRoute();
 
   const persist = () => {
     try {
@@ -224,7 +227,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
       selector: cssPath(target),
       nearText: (target.textContent || '').trim().slice(0, 60),
       ts: Date.now(),
-      page: location.href.split(/[?#]/)[0],
+      page: location.href.split(/[?#]/)[0] + hashRoute(),
       box: boxOf(target),
       component: componentOf(target)
     };
@@ -474,14 +477,14 @@ The whole block is one self-invoking expression: served as a script it runs as i
     } catch (e) { /* unreadable storage: start empty */ }
   };
 
-  // The page path this overlay last rendered pins for.
-  let renderedPath = location.pathname;
+  // The page route (path plus hash route) this overlay last rendered pins for.
+  let renderedRoute = location.pathname + hashRoute();
 
   // A client-side route change keeps the document, so the old path's pins are hidden
   // (their data is already persisted) and the new path's are shown.
   const checkPath = () => {
-    if (location.pathname === renderedPath) return;
-    renderedPath = location.pathname;
+    if (location.pathname + hashRoute() === renderedRoute) return;
+    renderedRoute = location.pathname + hashRoute();
     closePopover();
     if (openBox) openBox.cancel();
     entries.forEach(en => en.node.remove());
@@ -512,6 +515,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   }, true);
   on(document, 'keydown', e => { if (e.key === 'Escape') closePopover(); }, false);
   on(window, 'popstate', checkPath, false);
+  on(window, 'hashchange', checkPath, false);
   if (window.navigation) on(window.navigation, 'currententrychange', checkPath, false);
 
   // pushState is not promised to fire an event, so any DOM change also checks the path.
