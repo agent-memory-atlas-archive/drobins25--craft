@@ -98,9 +98,10 @@ plugins/craft/
 ├── hooks/
 │   ├── hooks.json             ← Hook event definitions
 │   └── scripts/               ← 45+ bash/python hook scripts
-│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / status / wait / clear / announce / begin / sheet / send / sweep / disarm)
+│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / status / wait / clear / announce / begin / sheet / kind / loader / bake / strip / ensure / send / sweep / disarm)
+│       ├── annotate-resolve.sh    ← Pin to source: probe / resolve / where - maps the page's matched rules and the component name to project files, honest about bundles, cached per run in resolutions.json
 │       ├── annotate-record.sh     ← Files a run as .craft/annotations/<date>-<slug>/ (record.md + session.css) and graduates it; the sweep and the next begin file orphaned runs
-│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, replace-the-set / tombstone, history.jsonl ledger, CORS, SSE stream, client registry)
+│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, serves the overlay at /overlay.js, replace-the-set / tombstone, history.jsonl ledger, CORS, SSE stream, client registry)
 ├── templates/                 ← File templates for craft init and scaffolding
 │   ├── craft/                 ← .craft/ directory templates
 │   │   ├── design/            ← tokens.yaml, components.md, locked.md

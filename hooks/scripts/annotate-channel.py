@@ -18,7 +18,15 @@ Beside current.json the listener keeps history.jsonl, an append-only ledger of
 every state it wrote (sets and tombstones, one JSON line each, in seq order).
 Only the record writer reads it; wait, mockup and dial read current.json alone.
 
+GET /overlay.js serves the overlay script. The listener holds no copy of it:
+every request reads the one fence in commands/references/annotate-overlay.md,
+so an edit or a plugin update is served on the next load.
+
 Usage: annotate-channel.py --dir <session-dir>
+       annotate-channel.py --print-overlay
+
+--print-overlay writes the same bytes /overlay.js serves to stdout and exits;
+it is how the bake command reads the fence without a second parser.
 
 Binds 127.0.0.1 on an OS-assigned port and prints "PORT <n>" to stdout once
 it is listening. Python 3.9, standard library only.
@@ -44,6 +52,35 @@ ALLOW_METHODS = "POST, OPTIONS"
 # How often a held stream checks its queue and whether the page went away.
 STREAM_POLL_SECONDS = 0.25
 RELOAD_EVENT = b"event: reload\ndata: reload\n\n"
+
+
+OVERLAY_FENCE_OPEN = "```overlay-source"
+OVERLAY_FENCE_CLOSE = "```"
+
+
+def overlay_source():
+    """The overlay fence from the reference, read fresh on every call.
+
+    The reference sits beside this script's plugin tree: hooks/scripts and
+    commands/references are siblings under the plugin root. Returns the lines
+    strictly between the opening fence and the next bare fence, each ended with
+    a newline, or None when the file or either fence line is missing.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "..", "..", "commands", "references", "annotate-overlay.md")
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            lines = fh.read().split("\n")
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        start = lines.index(OVERLAY_FENCE_OPEN) + 1
+    except ValueError:
+        return None
+    for end in range(start, len(lines)):
+        if lines[end] == OVERLAY_FENCE_CLOSE:
+            return "".join(line + "\n" for line in lines[start:end]).encode("utf-8")
+    return None
 
 
 def _as_seq(value):
@@ -231,8 +268,26 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             self.server.unregister_client(events)
 
+    def _serve_overlay(self):
+        """The overlay fence as a script. Reads the reference per request and
+        never touches current.json or history.jsonl."""
+        body = overlay_source()
+        if body is None:
+            self._send(404, {"ok": False, "error": "overlay source not found"})
+            return
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        if self.path == "/health":
+        if self.path == "/overlay.js":
+            self._serve_overlay()
+        elif self.path == "/health":
             self._send(200, {
                 "ok": True,
                 "port": self.server.server_address[1],
@@ -271,8 +326,20 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--dir", required=True, help="the session directory holding current.json")
+    parser.add_argument("--dir", help="the session directory holding current.json")
+    parser.add_argument("--print-overlay", action="store_true", help="print the overlay script and exit")
     args = parser.parse_args()
+
+    if args.print_overlay:
+        body = overlay_source()
+        if body is None:
+            sys.stderr.write("annotate-channel: overlay source not found in annotate-overlay.md\n")
+            return 1
+        sys.stdout.buffer.write(body)
+        sys.stdout.buffer.flush()
+        return 0
+    if not args.dir:
+        parser.error("--dir is required unless --print-overlay is given")
 
     os.makedirs(args.dir, exist_ok=True)
     server = Channel(args.dir)

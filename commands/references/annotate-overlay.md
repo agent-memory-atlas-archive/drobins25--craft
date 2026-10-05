@@ -1,8 +1,14 @@
 # Annotate overlay
 
-The comment-mode overlay that lets someone point at a page and have Claude read what they said. It is one self-contained script. Every delivery installs this same source unchanged: a mockup round bakes it into the file, dial injects it into the running app, and the raw-tab command injects it into whatever tab is open. Nothing in the script knows which delivery it came from except two stamps the delivering flow writes into the page first (see [The stamps](#the-stamps)).
+The comment-mode overlay that lets someone point at a page and have Claude read what they said. It is one self-contained script, and every delivery installs this same source unchanged:
 
-The script is the only copy. Flows reference this file and paste the block below; they never retype, trim, or fork it, because a second copy drifts and a drifted overlay posts to the wrong place or leaves nodes behind.
+- **Served by the listener** for a live inject on a project page (localhost, 127.0.0.1 or file://): `GET /overlay.js` returns the fence below, and `annotate-run.sh loader` prints the one line that loads it.
+- **Pasted** on an external page, and on any page that refuses the served script: the fence goes to `evaluate_script` as the body of `() => { ... }`.
+- **Spliced by `bake`** for a mockup round: `annotate-run.sh bake` writes the stamps and the fence into the page file.
+
+The listener and `bake` read the fence below at run time, through one extractor, so the three deliveries are the same bytes. Nothing in the script knows which delivery it came from except two stamps the delivering flow writes into the page first (see [The stamps](#the-stamps)).
+
+The script is the only copy. Flows reference this file and never retype, trim, or fork the block below, because a second copy drifts and a drifted overlay posts to the wrong place or leaves nodes behind.
 
 ## What the overlay does
 
@@ -16,22 +22,23 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Placement.** The style element goes in `head`; the sheet and strip go in `body` as the last children. Framework re-renders reconcile only their own root, so anything appended inside it is eventually eaten. Pins are inserted just before the strip so the strip stays last.
 - **Namespaced handles.** `ca-style`, `ca-sheet`, `ca-strip` are ids; every other real node carries `data-craft-annotate-injected`. The canonical clear is total by construction because of that attribute. The overlay never sets the marker owned by the dial flow, because dial's bulk clear and several analyzers run on arrival and would silently delete unsent pins.
 - **No port in the source.** The channel base is `'http://127.0.0.1:' + window.__craftAnnotatePort`. Each session's listener has its own OS-assigned port, stamped into its own pages. A literal in shared source would point every page at one session. An absent stamp means SEND shows `NOT ARMED - no craft session listening` while everything else keeps working locally. A stamp that is present but a request the browser refuses to send (a page policy that does not allow 127.0.0.1) shows `BLOCKED BY PAGE - ask Claude to read pins directly`: the pins are still in the page's local storage, and the session reads them from there.
-- **Inert until asked.** An injected page makes no network request before a user gesture. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. A dropped stream retries quietly with a bounded backoff. There is no polling.
+- **Inert until asked.** An injected page makes no network request before a user gesture. The loader's one script request is the delivery itself, made by the flow and never by the overlay. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. A dropped stream retries quietly with a bounded backoff. There is no polling.
 - **Honest confirmation.** `RETURNED` is stamped only inside the resolved-200 branch of the SEND post, and every pin in the delivered set then gains a visible sent-stamp. A non-200 reply shows `NOT ARMED - no craft session listening` and stamps nothing. A request the browser rejects outright, with the port stamped, is a refusal by the page or the browser, never a listener state: it shows `BLOCKED BY PAGE - ask Claude to read pins directly` and stamps nothing. Every other channel failure is quiet; SEND alone is loud. A stamp written from a swallowed error is a lie the user acts on.
 - **Send-only.** The only request carrying pins is the one inside the SEND handler. Unsent pins live in the page and in local storage and nowhere else, so a pin the user never sent can never reach the channel.
 - **SEND commits first.** An open comment box is saved through the normal save path before the set is collected, so a comment mid-typing is never dropped from the set it visibly belongs to.
 - **CLEAR is authoritative.** The clear post goes first, then the wipe of DOM nodes, in-memory state, the counter, and the page-path-keyed storage entry. The post does not wait on the wipe and the wipe does not wait on the post. The strip then reads `CLEARED` and `MARKUP - 0 marks`.
 - **Numbers are labels.** Deleting a pin renumbers the survivors contiguously. Nothing outside the page reasons about a pin's number as an identity.
-- **Detached pins.** A pin whose anchor no longer resolves after a live edit docks above the strip in a flagged detached state, keeping its number and comment. A comment never silently vanishes.
+- **Detached pins.** A pin whose anchor no longer resolves after a live edit docks above the strip in a flagged detached state, keeping its number and comment. Pins are re-checked when the page changes, not only on the next overlay event. A comment never silently vanishes.
 - **Text, never markup.** Comments are written with `textContent`. A comment containing `<` must render as typed, not execute.
-- **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. Storage is best-effort: unavailable storage means memory-only pins and no error.
-- **Total teardown.** Every document-level handler and the stream stop themselves the moment the strip is no longer attached, so a clear followed by a re-install never leaves a ghost handler creating pins.
+- **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. The key is read from the path at every access, so it follows client-side navigation: the old path's pins are hidden and wait in storage until the user returns, and the new path's pins show without a click. Storage is best-effort: unavailable storage means memory-only pins and no error.
+- **One component lookup.** The source sets `window.__craftAnnotateComponentOf = componentOf;` right after defining it, so the pin-to-source probe asks the page for the component of any element, an ancestor included, instead of carrying a second copy of the fiber walk that would drift. The annotate clear does not delete it: the next install overwrites it.
+- **Total teardown.** Every document-level handler, the page-change observer and the stream stop themselves the moment the strip is no longer attached, so a clear followed by a re-install never leaves a ghost handler creating pins.
 - **Self-styled strip.** The host page's reset is hostile by default. The strip pins `position: fixed` at `z-index: 2147483000` and sets its own font, size, line height, colour, background, and box sizing.
 - **Motion.** The sheet fades in over 200ms and out over 120ms; a pin settles in 150ms; the send button lifts 4px while the request is in flight. Under `prefers-reduced-motion: reduce` every duration is 0 and the stamps still show.
 
 ## The overlay source
 
-Paste the whole block as a single expression. The `CA` constants at the top are the only definition of the overlay's colours and geometry; they are local to this script and are not read from, or written to, any page palette or shared style source.
+The whole block is one self-invoking expression: served as a script it runs as is, and pasted it rides inside `() => { ... }`. The `CA` constants at the top are the only definition of the overlay's colours and geometry; they are local to this script and are not read from, or written to, any page palette or shared style source.
 
 ```overlay-source
 (() => {
@@ -54,7 +61,6 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     zTop: 2147482999
   };
   const MARK = 'data-craft-annotate-injected';
-  const STORE_KEY = 'ca-annotations:' + location.pathname;
   const NOT_ARMED = 'NOT ARMED - no craft session listening';
   const BLOCKED_BY_PAGE = 'BLOCKED BY PAGE - ask Claude to read pins directly';
 
@@ -139,9 +145,11 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
   const say = text => { status.textContent = text; };
   const paintReadout = () => { readout.textContent = 'MARKUP - ' + entries.length + ' marks'; };
 
+  const storeKey = () => 'ca-annotations:' + location.pathname;
+
   const persist = () => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(entries.map(en => Object.assign({}, en.d, { sent: en.sent }))));
+      localStorage.setItem(storeKey(), JSON.stringify(entries.map(en => Object.assign({}, en.d, { sent: en.sent }))));
     } catch (e) { /* storage unavailable: pins stay memory-only */ }
   };
 
@@ -195,6 +203,7 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     } catch (e) {}
     return null;
   };
+  window.__craftAnnotateComponentOf = componentOf;
 
   const boxOf = el => {
     const r = el.getBoundingClientRect();
@@ -383,7 +392,7 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
       paintReadout();
       say('');
     };
-    openBox = { commit: commit };
+    openBox = { commit: commit, cancel: cancel };
     ta.addEventListener('keydown', ev => {
       if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
       if (ev.key === 'Escape') cancel();
@@ -443,24 +452,47 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     openBox = null;
     entries = [];
     seq = 0;
-    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* storage unavailable */ }
+    try { localStorage.removeItem(storeKey()); } catch (e) { /* storage unavailable */ }
     paintReadout();
     say('CLEARED');
   };
 
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
-    if (Array.isArray(stored)) {
-      stored.forEach(a => {
-        if (!a || typeof a.n !== 'number' || typeof a.x !== 'number' || typeof a.y !== 'number') return;
-        const sent = a.sent === true;
-        const d = Object.assign({}, a);
-        delete d.sent;
-        adopt(d, sent, buildPin(d.n, d.x, d.y));
-      });
-      renumber();
-    }
-  } catch (e) { /* unreadable storage: start empty */ }
+  // Loads the pins stored under the current path; runs at install and after a path change.
+  const rehydrate = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(storeKey()) || '[]');
+      if (Array.isArray(stored)) {
+        stored.forEach(a => {
+          if (!a || typeof a.n !== 'number' || typeof a.x !== 'number' || typeof a.y !== 'number') return;
+          const sent = a.sent === true;
+          const d = Object.assign({}, a);
+          delete d.sent;
+          adopt(d, sent, buildPin(d.n, d.x, d.y));
+        });
+        renumber();
+      }
+    } catch (e) { /* unreadable storage: start empty */ }
+  };
+
+  // The page path this overlay last rendered pins for.
+  let renderedPath = location.pathname;
+
+  // A client-side route change keeps the document, so the old path's pins are hidden
+  // (their data is already persisted) and the new path's are shown.
+  const checkPath = () => {
+    if (location.pathname === renderedPath) return;
+    renderedPath = location.pathname;
+    closePopover();
+    if (openBox) openBox.cancel();
+    entries.forEach(en => en.node.remove());
+    entries = [];
+    seq = 0;
+    rehydrate();
+    settle();
+    paintReadout();
+  };
+
+  rehydrate();
   settle();
   paintReadout();
 
@@ -479,6 +511,23 @@ Paste the whole block as a single expression. The `CA` constants at the top are 
     closePopover();
   }, true);
   on(document, 'keydown', e => { if (e.key === 'Escape') closePopover(); }, false);
+  on(window, 'popstate', checkPath, false);
+  if (window.navigation) on(window.navigation, 'currententrychange', checkPath, false);
+
+  // pushState is not promised to fire an event, so any DOM change also checks the path.
+  // One frame of debounce; the observer stops with the strip.
+  let framePending = false;
+  const watcher = new MutationObserver(() => {
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(() => {
+      framePending = false;
+      if (!strip.isConnected) { watcher.disconnect(); stopStream(); return; }
+      checkPath();
+      settle();
+    });
+  });
+  watcher.observe(document.body, { childList: true, subtree: true });
 
   if (window.__craftAnnotateBaked && base()) {
     let delay = 1000;
@@ -524,7 +573,7 @@ window.__craftAnnotateContext = '<candidate letter>';
 - `__craftAnnotateBaked` is stamped only by a mockup round written to disk. It is the single switch that makes the page hold the event stream open. Raw-tab and dial injections never stamp it.
 - `__craftAnnotateContext` is optional and owned by the dial flow: the bare candidate letter string (for example `"B"`), never an object. Each pin copies it verbatim into a `candidate` field.
 
-For a raw tab, run the stamp and the source in one injection, in that order. For a baked page, write the stamp lines into a script element that precedes the overlay's own script element.
+On a project page the loader line stamps the port itself and never stamps the baked flag or a context. For a raw tab pasted as the fallback, run the stamp and the source in one injection, in that order. A baked page's stamps are the first two lines of the one `ca-overlay` script element that `annotate-run.sh bake` writes; the overlay source follows them in that same element, and no flow writes them by hand.
 
 ## The channel protocol
 
@@ -535,9 +584,10 @@ The channel is a per-session listener on `127.0.0.1`. Pages reach it from any or
 | `POST /pins` | replace the working set with exactly this array | JSON array of pin objects | 200 with `{ok, seq, count}` |
 | `POST /clear` | void the working set (tombstone) | none | 200 with `{ok, seq, cleared}` |
 | `GET /events` | hold a stream open; the listener pushes `event: reload` with `data: reload` when a new round is written | none | `text/event-stream` |
+| `GET /overlay.js` | the overlay fence, read from this file on every request | none | 200 `text/javascript` (404 JSON when the fence is missing) |
 | `GET /health` | liveness and connection count | none | `{ok, port, clients}` |
 
-A pin object is `{n, text, x, y, selector, nearText, ts, page, box, component}` (`page` is the address without query or hash, `box` the target's rounded rect in document coordinates, `component` the nearest framework component name or null) plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses only the first three requests; `GET /health` exists for the flows, which check it before opening a browser.
+A pin object is `{n, text, x, y, selector, nearText, ts, page, box, component}` (`page` is the address without query or hash, `box` the target's rounded rect in document coordinates, `component` the nearest framework component name or null) plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses only `POST /pins`, `POST /clear` and `GET /events`; `GET /overlay.js` is requested by the loader the flow injects, and `GET /health` exists for the flows, which check it before opening a browser.
 
 ## Reading pins back
 

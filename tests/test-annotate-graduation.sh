@@ -61,6 +61,22 @@ assert_file_contains "component anchor" 'component `' "$REF"
 assert_file_contains "unblocked pins become scope lines" '## Scope' "$REF"
 assert_file_contains "annotation files category" 'Annotation files:' "$REF"
 
+begin_test "Pin source cites each binding row and the source column is unchanged"
+assert_file_contains "pin source category" 'Pin source (resolved during the run):' "$REF"
+assert_file_contains "read from the pin's resolved key" '`resolved`' "$REF"
+assert_file_contains "one entry per annotate-key block" 'one entry per `annotate-key` block' "$REF"
+assert_file_contains "matched by the pin's ts" 'str(ts)' "$REF"
+assert_file_contains "rule anchored by line and selector" 'anchored by `line N`' "$REF"
+assert_file_contains "class-search labelled" 'found by class name' "$REF"
+assert_file_contains "source column still names the session.css rule" 'The Value/Source cell still names the session.css rule' "$REF"
+assert_file_contains "the table example is unchanged" 'session.css `annotate-key 1728000000000` - `.toolbar .save { padding: 12px 20px }`; anchors:' "$REF"
+
+begin_test "an unresolved row names its notes without a path"
+assert_file_contains "one line naming the block and notes" 'one line naming the block and its `notes`, with no path' "$REF"
+
+begin_test "the surface re-check names the resolved files"
+assert_file_contains "re-check confirms resolved files" 'confirm each resolved file still exists and the rule text still appears in it' "$REF"
+
 begin_test "the reference names no question widget"
 assert_eq "every AskUserQuestion mention is the prohibition" "$(grep -c 'AskUserQuestion' "$REF")" "$(grep -c 'no AskUserQuestion' "$REF")"
 assert_file_contains "says no widget" 'no AskUserQuestion' "$REF"

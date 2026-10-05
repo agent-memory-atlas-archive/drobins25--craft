@@ -16,11 +16,11 @@ grep -l "^status: open" "$CRAFT_PROJECT_ROOT"/.craft/annotations/*/record.md 2>/
 
 One record: use it, confirm conversationally ("Building the story from [name]"). Several: ask conversationally which one - no AskUserQuestion; the fork already spent the flow's question budget.
 
-Read the full record: frontmatter, `## Pins` (the reading list), `## Pin Data` (the json fence, the source of truth for selector, component, box and page), and `session.css` beside it.
+Read the full record: frontmatter, `## Pins` (the reading list), `## Pin Data` (the json fence, the source of truth for selector, component, box, page and `resolved`, the location the run found for the pin or null), and `session.css` beside it.
 
 ## Phase 2: Surface re-check (older records)
 
-If the record's `created` is more than a few days old, re-verify the surface still exists as annotated BEFORE any pre-fill: for each pin's component name, confirm the component still exists in source; for each selector's classes, confirm they still appear. Drift is surfaced to the user first ("the pin names `SaveButton`, which no longer exists - it looks like `PrimaryButton` now") - they decide whether the record still stands or the story should absorb the drift. Never silently pre-fill a story against a surface that no longer matches.
+If the record's `created` is more than a few days old, re-verify the surface still exists as annotated BEFORE any pre-fill: for each pin's component name, confirm the component still exists in source; for each selector's classes, confirm they still appear; for each pin with a `resolved` key, confirm each resolved file still exists and the rule text still appears in it. Drift is surfaced to the user first ("the pin names `SaveButton`, which no longer exists - it looks like `PrimaryButton` now") - they decide whether the record still stands or the story should absorb the drift. Never silently pre-fill a story against a surface that no longer matches.
 
 A record filed in this session skips this phase.
 
@@ -46,7 +46,7 @@ Type is almost always `ui`: `type: ui`. Set `alignment: pending` - the alignment
   |------|------------|-------|--------------|
   | Save button | default | - | session.css `annotate-key 1728000000000` - `.toolbar .save { padding: 12px 20px }`; anchors: selector `div.toolbar > button.save`, component `SaveButton` |
   ```
-  The source is the rule, never the selector. Selector and component are anchors that help the implementer find the element in source; a null component is simply omitted. Planning validation requires every non-TBD row bound by a `[visual-source:]` contract, so partial adoption of the sheet becomes a blocked plan, not a silent omission.
+  The Value/Source cell still names the session.css rule; the resolved location goes in Reference Materials, never in this cell. The source is the rule, never the selector. Selector and component are anchors that help the implementer find the element in source; a null component is simply omitted. Planning validation requires every non-TBD row bound by a `[visual-source:]` contract, so partial adoption of the sheet becomes a blocked plan, not a silent omission.
 
 - **`## Scope`** - pins with no block in `session.css` (a direction ask, new scope, a question, a copy or behavior change, or a change the user undid) become scope lines, quoted verbatim, each with one clause on why it is not in the sheet. They are requirements the page could not show, so the story must still carry them.
 
@@ -56,6 +56,13 @@ Type is almost always `ui`: `type: ui`. Set `alignment: pending` - the alignment
   - [absolute path]/record.md (`## Pins`, `## Pin Data`)
   - [absolute path]/session.css (`annotate-key` blocks, one per pin)
   ```
+  Then a "**Pin source (resolved during the run):**" category with one entry per `annotate-key` block, matched to the pin whose `str(ts)` equals the key and read from that pin's `resolved` in `## Pin Data`. Paths are the project root plus the stored relative path, absolute:
+  ```markdown
+  **Pin source (resolved during the run):**
+  - `annotate-key 1728000000000`: [absolute path]/src/SaveButton.tsx (`SaveButton`, line 12); [absolute path]/src/styles/toolbar.css (`line 3`, `.toolbar .save`)
+  - `annotate-key 1728000000001`: no source found - no component name, no rule
+  ```
+  The component file is anchored by its symbol and `component_line`; the rule file is anchored by `line N` and the rule selector. A location whose `rule_via` is `class-search` says it was found by class name. A block whose pin resolved nothing (`resolved` null or no file) gets one line naming the block and its `notes`, with no path.
 
 - **`## Likely Files`** - scan as usual; the pins' component names and page names the surface.
 

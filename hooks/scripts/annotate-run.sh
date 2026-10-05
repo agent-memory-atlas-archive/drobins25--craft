@@ -10,6 +10,11 @@
 #   annotate-run.sh sweep   [--root R]
 #   annotate-run.sh begin   [--root R] --session ID [--subject TEXT]   (annotate only: marks the run's start seq)
 #   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
+#   annotate-run.sh kind    --page URL   (prints project or external; needs no session)
+#   annotate-run.sh loader  [--root R] --session ID --page URL   (project page: ONE line for evaluate_script that loads the served overlay; external page: EXTERNAL)
+#   annotate-run.sh bake    [--root R] --session ID --file PATH   (mockup: splices the stamps and the overlay into the page file)
+#   annotate-run.sh strip   --file PATH   (mockup: removes every baked overlay element; needs no session)
+#   annotate-run.sh ensure  [--root R] --session ID   (read beat: OK PORT p | REARMED PORT p STREAK k | GONE | FAILED; restarts a dead or hung listener)
 #   annotate-run.sh send    [--root R] --session ID   (POSTs the JSON pin array on stdin to the listener)
 #   annotate-run.sh disarm  [--root R] --session ID
 #
@@ -26,10 +31,25 @@
 # --add nor --drop it only prints. send is for a page that blocks SEND: the
 # session posts the pins it read from local storage itself.
 #
+# kind calls a page a project page when it is served from localhost, 127.0.0.1
+# or file://; every other address is external. The loader never contacts the
+# listener for an external page, which always takes the pasted overlay instead.
+#
+# bake writes one <script id="ca-overlay"> element immediately before the last
+# </body>: the port stamp, the baked flag, then the overlay fence, which it reads
+# only through annotate-channel.py --print-overlay. It never contacts the
+# listener, so a page can be re-baked right after the listener died. Any
+# existing overlay element is removed first; strip removes them and nothing
+# else, so bake then strip restores the original bytes.
+#
+# wait prints UNREACHABLE (exit 0) when the listener process is gone and no SEND
+# arrived. ensure counts consecutive re-arms in <session-dir>/rearm.streak and a
+# healthy probe resets it; it never recreates a swept session folder (GONE).
+#
 # Each armed session owns one listener (annotate-channel.py) on an OS-assigned
 # port, with its state under <root>/.craft/annotations/<session-id>/:
 #   port, listener.pid, owner.pid, listener.log, current.json, history.jsonl,
-#   run.json, session.css
+#   run.json, session.css, rearm.streak
 # Any directory holding record.md is a filed record, not a live session: status
 # --all and sweep never list or touch it.
 #
@@ -329,6 +349,12 @@ cmd_wait() {
       cat "$file"
       return 0
     fi
+    # Once a second, a listener that is gone ends the wait: nothing can arrive.
+    # The seq was read just above, so a SEND that landed in the same tick wins.
+    if [ $((ticks % 4)) -eq 3 ] && ! pid_alive "$(read_file "$dir/listener.pid")"; then
+      echo "UNREACHABLE"
+      return 0
+    fi
     sleep 0.25
     ticks=$((ticks + 1))
   done
@@ -484,6 +510,190 @@ PYEOF
   python3 -c "$source" "$dir/session.css" "$mode" "$KEY"
 }
 
+# cmd_kind - project when the page is a local one (file, or http/https on
+# exactly localhost or 127.0.0.1, any port), external for everything else
+cmd_kind() {
+  [ -n "$PAGE" ] || die "--page <url> is required"
+  page_kind "$PAGE"
+}
+
+page_kind() {
+  python3 - "$1" <<'PYEOF'
+import sys
+from urllib.parse import urlparse
+
+try:
+    parsed = urlparse(sys.argv[1].strip())
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+except ValueError:
+    scheme, host = "", ""
+local = scheme == "file" or (scheme in ("http", "https") and host in ("localhost", "127.0.0.1"))
+print("project" if local else "external")
+PYEOF
+}
+
+# cmd_loader - the one line that loads the served overlay. It is an async
+# function because evaluate_script awaits a function's return value but only
+# runs an immediately invoked expression while building its handle.
+cmd_loader() {
+  local dir port
+  [ -n "$PAGE" ] || die "--page <url> is required"
+  if [ "$(page_kind "$PAGE")" != "project" ]; then
+    echo "EXTERNAL"
+    return 0
+  fi
+  dir="$(session_dir)"
+  port="$(read_file "$dir/port")"
+  is_number "$port" || die "session $SESSION has no port"
+  http_call GET "$port" /health >/dev/null 2>&1 || die "listener for $SESSION is not answering"
+  python3 - "$port" <<'PYEOF'
+import sys
+
+port = int(sys.argv[1])
+sys.stdout.write(
+    "async () => { "
+    "window.__craftAnnotatePort = %(port)d; "
+    "if (window.__craftAnnotateInstalled) return 'LOADED'; "
+    "try { "
+    "return await new Promise((resolve) => { "
+    "let timer = null; "
+    "const settle = (status) => { clearTimeout(timer); resolve(status); }; "
+    "const el = document.createElement('script'); "
+    "el.src = 'http://127.0.0.1:%(port)d/overlay.js'; "
+    "el.setAttribute('data-craft-annotate-injected', ''); "
+    "el.onload = () => settle(window.__craftAnnotateInstalled ? 'LOADED' : 'SCRIPT-BLOCKED'); "
+    "el.onerror = () => settle('SCRIPT-BLOCKED'); "
+    "timer = setTimeout(() => settle('SCRIPT-BLOCKED'), 3000); "
+    "document.head.appendChild(el); "
+    "}); "
+    "} catch (error) { return 'SCRIPT-BLOCKED'; } "
+    "}\n" % {"port": port}
+)
+PYEOF
+}
+
+# strip_overlay_py - Python source shared by bake and strip: removes every
+# <script id="ca-overlay"> ... </script> element plus one following newline
+read -r -d '' STRIP_PY <<'PYEOF' || true
+import re
+
+OVERLAY_ELEMENT = re.compile(r'<script id="ca-overlay">.*?</script>\n?', re.DOTALL)
+
+
+def strip_overlay(text):
+    return OVERLAY_ELEMENT.subn("", text)
+PYEOF
+
+cmd_bake() {
+  local dir port fence_file out
+  [ -n "$FILE" ] || die "--file <path> is required"
+  [ -f "$FILE" ] || die "no such file: $FILE"
+  dir="$(session_dir)"
+  port="$(read_file "$dir/port")"
+  is_number "$port" || die "session $SESSION has no port"
+  fence_file="$(mktemp)"
+  if ! python3 "$CHANNEL_PY" --print-overlay > "$fence_file" 2>/dev/null; then
+    rm -f "$fence_file"
+    die "overlay source not found"
+  fi
+  if out="$(python3 -c "$STRIP_PY
+import os, sys
+
+path, port, fence_path = sys.argv[1:4]
+with open(path, encoding='utf-8', newline='') as handle:
+    text = handle.read()
+with open(fence_path, encoding='utf-8', newline='') as handle:
+    fence = handle.read()
+text, _ = strip_overlay(text)
+at = text.rfind('</body>')
+if at < 0 or not fence:
+    sys.stderr.write('annotate-run: %s has no </body> to bake before\n' % path)
+    sys.exit(1)
+element = (
+    '<script id=\"ca-overlay\">\n'
+    'window.__craftAnnotatePort = %s;\n'
+    'window.__craftAnnotateBaked = true;\n'
+    '%s</script>\n' % (port, fence)
+)
+temp = path + '.bake-tmp'
+with open(temp, 'w', encoding='utf-8', newline='') as handle:
+    handle.write(text[:at] + element + text[at:])
+os.replace(temp, path)
+" "$FILE" "$port" "$fence_file")"; then
+    rm -f "$fence_file"
+    echo "BAKED $FILE PORT $port"
+  else
+    rm -f "$fence_file" "$FILE.bake-tmp"
+    exit 1
+  fi
+}
+
+cmd_strip() {
+  local count
+  [ -n "$FILE" ] || die "--file <path> is required"
+  [ -f "$FILE" ] || die "no such file: $FILE"
+  count="$(python3 -c "$STRIP_PY
+import os, sys
+
+path = sys.argv[1]
+with open(path, encoding='utf-8', newline='') as handle:
+    text = handle.read()
+text, count = strip_overlay(text)
+if count:
+    temp = path + '.strip-tmp'
+    with open(temp, 'w', encoding='utf-8', newline='') as handle:
+        handle.write(text)
+    os.replace(temp, path)
+print(count)
+" "$FILE")" || die "could not strip $FILE"
+  echo "STRIPPED $count"
+}
+
+# ensure: the read-beat health check. A live listener resets the failure streak;
+# a dead or hung one is terminated (only if the pid is still a listener), restarted
+# through the arm path, and counted. The streak lives in a file because "did the
+# last beat re-arm?" is exactly what a model forgets.
+cmd_ensure() {
+  local dir port pid streak ticks=0 out new_port
+  [ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
+  dir="$ROOT/.craft/annotations/$SESSION"
+  # A swept or never-armed folder stays gone: re-creating it would apply an empty sheet.
+  if ! valid_session_id "$SESSION" || [ ! -d "$dir" ]; then
+    echo "GONE"
+    return 1
+  fi
+  port="$(read_file "$dir/port")"
+  if is_number "$port" && http_call GET "$port" /health >/dev/null 2>&1; then
+    echo 0 > "$dir/rearm.streak"
+    echo "OK PORT $port"
+    return 0
+  fi
+
+  pid="$(read_file "$dir/listener.pid")"
+  if is_number "$pid" && ps -o command= -p "$pid" 2>/dev/null | grep -q "annotate-channel"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    while [ "$ticks" -lt 10 ] && pid_alive "$pid"; do
+      sleep 0.1
+      ticks=$((ticks + 1))
+    done
+    pid_alive "$pid" && kill -KILL "$pid" 2>/dev/null || true
+  fi
+  # arm returns early on any live pid in this file, so a recycled pid must not stay in it.
+  rm -f "$dir/listener.pid"
+
+  if ! out="$(cmd_arm 2>/dev/null)"; then
+    echo "FAILED"
+    return 1
+  fi
+  new_port="$(read_file "$dir/port")"
+  streak="$(read_file "$dir/rearm.streak")"
+  is_number "$streak" || streak=0
+  streak=$((streak + 1))
+  echo "$streak" > "$dir/rearm.streak"
+  echo "REARMED PORT $new_port STREAK $streak"
+}
+
 cmd_send() {
   local dir port
   dir="$(session_dir)"
@@ -526,7 +736,7 @@ sweep_all() {
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|send|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|kind|loader|bake|strip|ensure|send|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -539,6 +749,8 @@ SUBJECT=""
 KEY=""
 SHEET_ADD=0
 SHEET_DROP=""
+PAGE=""
+FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root)      [ $# -ge 2 ] || die "--root needs a value"; ROOT_ARG="$2"; shift 2 ;;
@@ -549,6 +761,8 @@ while [ $# -gt 0 ]; do
     --all)       ALL=1; shift ;;
     --subject)   [ $# -ge 2 ] || die "--subject needs a value"; SUBJECT="$2"; shift 2 ;;
     --key)       [ $# -ge 2 ] || die "--key needs a value"; KEY="$2"; shift 2 ;;
+    --page)      [ $# -ge 2 ] || die "--page needs a value"; PAGE="$2"; shift 2 ;;
+    --file)      [ $# -ge 2 ] || die "--file needs a value"; FILE="$2"; shift 2 ;;
     --add)       SHEET_ADD=1; shift ;;
     --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; shift 2 ;;
     *)           die "unknown argument: $1" ;;
@@ -571,6 +785,11 @@ case "$VERB" in
   announce) cmd_announce ;;
   begin)  cmd_begin ;;
   sheet)  cmd_sheet ;;
+  kind)   cmd_kind ;;
+  loader) cmd_loader ;;
+  bake)   cmd_bake ;;
+  strip)  cmd_strip ;;
+  ensure) cmd_ensure ;;
   send)   cmd_send ;;
   disarm) cmd_disarm ;;
   *)      die "unknown verb: $VERB" ;;

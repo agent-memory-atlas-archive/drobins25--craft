@@ -730,4 +730,206 @@ run_in "$ROOT" sweep >/dev/null
 assert_file_exists "the record folder survives the sweep" "$ROOT/.craft/annotations/2026-10-04-x/record.md"
 assert_eq "the dead live folder is reaped" "MISSING" "$(rd "$ROOT/.craft/annotations/live-1/owner.pid")"
 
+# ---------------------------------------------------------------------------
+# The served overlay, the loader line, and project vs external pages.
+
+OVERLAY_REF="$REPO/commands/references/annotate-overlay.md"
+
+# lacks_literal <desc> <needle> <text> - literal absence assertion
+lacks_literal() {
+  if printf '%s\n' "$3" | grep -qF -- "$2"; then
+    echo "  FAIL: $1"
+    echo "    should NOT contain (literal): '$2'"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $1"
+    PASS=$((PASS + 1))
+  fi
+}
+
+# fence_of_ref <ref-file> - the overlay-source fence body, by an independent awk
+fence_of_ref() {
+  awk '
+    $0 == "```overlay-source" {inside=1; next}
+    inside && $0 == "```" {exit}
+    inside {print}
+  ' "$1"
+}
+
+begin_test "the loader line falls back when the script cannot load"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ldr1
+LOADER="$(run_in "$ROOT" loader --session ldr1 --page http://localhost:3000/)"
+assert_eq "exactly one line" "1" "$(printf '%s\n' "$LOADER" | wc -l | tr -d ' ')"
+case "$LOADER" in "async () =>"*) STARTS=yes ;; *) STARTS=no ;; esac
+assert_eq "starts with the async function head" "yes" "$STARTS"
+case "$LOADER" in *")()") ENDS=iife ;; *) ENDS=function ;; esac
+assert_eq "is never invoked in place" "function" "$ENDS"
+assert_contains_literal "resolves SCRIPT-BLOCKED" "'SCRIPT-BLOCKED'" "$LOADER"
+assert_contains_literal "resolves LOADED" "'LOADED'" "$LOADER"
+assert_contains_literal "carries an error handler" "onerror" "$LOADER"
+assert_contains_literal "gives up after 3000ms" "3000" "$LOADER"
+assert_contains_literal "stamps the armed port" "window.__craftAnnotatePort = ${PORT:-none};" "$LOADER"
+assert_contains_literal "loads the served script from the armed port" "http://127.0.0.1:${PORT:-none}/overlay.js" "$LOADER"
+assert_contains_literal "returns at once when already installed" "window.__craftAnnotateInstalled" "$LOADER"
+assert_contains_literal "marks the script as injected" "data-craft-annotate-injected" "$LOADER"
+lacks_literal "never stamps the baked flag" "__craftAnnotateBaked" "$LOADER"
+lacks_literal "never stamps a context" "__craftAnnotateContext" "$LOADER"
+
+begin_test "GET /overlay.js serves the fence byte-for-byte"
+FENCE_FILE="$(mktemp)"; BODY_FILE="$(mktemp)"; PRINT_FILE="$(mktemp)"
+fence_of_ref "$OVERLAY_REF" > "$FENCE_FILE"
+assert_not_eq "the reference fence is not empty" "0" "$(wc -c < "$FENCE_FILE" | tr -d ' ')"
+RESP="$(curl -s -i --max-time 5 "http://127.0.0.1:${PORT:-0}/overlay.js" 2>/dev/null || true)"
+assert_eq "status 200" "200" "$(status_of "$RESP")"
+curl -s --max-time 5 -o "$BODY_FILE" "http://127.0.0.1:${PORT:-0}/overlay.js" 2>/dev/null || true
+CMP_RC=0; cmp -s "$FENCE_FILE" "$BODY_FILE" || CMP_RC=$?
+assert_eq "body equals the reference fence" "0" "$CMP_RC"
+
+begin_test "the overlay route carries script, no-store and cross-origin headers"
+assert_contains "content type" '^[Cc]ontent-[Tt]ype: text/javascript; charset=utf-8' "$RESP"
+assert_contains "no-store" '^[Cc]ache-[Cc]ontrol: no-store' "$RESP"
+assert_contains "cross-origin resource policy" '^[Cc]ross-[Oo]rigin-[Rr]esource-[Pp]olicy: cross-origin' "$RESP"
+assert_contains "allow-origin" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Oo]rigin: \*' "$RESP"
+assert_file_not_exists "serving the script wrote no history" "$ROOT/.craft/annotations/ldr1/history.jsonl"
+assert_file_not_exists "serving the script wrote no current.json" "$ROOT/.craft/annotations/ldr1/current.json"
+
+begin_test "--print-overlay prints the route's bytes"
+PRINT_RC=0
+python3 "$CHANNEL" --print-overlay > "$PRINT_FILE" 2>/dev/null || PRINT_RC=$?
+assert_exit_code "exits 0" "0" "$PRINT_RC"
+CMP_RC=0; cmp -s "$BODY_FILE" "$PRINT_FILE" || CMP_RC=$?
+assert_eq "same bytes as the served body" "0" "$CMP_RC"
+rm -f "$FENCE_FILE" "$BODY_FILE" "$PRINT_FILE"
+
+begin_test "a listener with no reference answers 404 and --print-overlay exits 1"
+ISO="$(mktemp -d)"; TMP_ROOTS+=("$ISO")
+mkdir -p "$ISO/hooks/scripts" "$ISO/sess"
+cp "$CHANNEL" "$ISO/hooks/scripts/annotate-channel.py"
+python3 "$ISO/hooks/scripts/annotate-channel.py" --dir "$ISO/sess" > "$ISO/log" 2>&1 < /dev/null &
+ISO_PID=$!
+TMP_PIDS+=("$ISO_PID")
+for _ in $(seq 1 50); do grep -q '^PORT ' "$ISO/log" 2>/dev/null && break; sleep 0.1; done
+ISO_PORT="$(awk '/^PORT /{print $2; exit}' "$ISO/log")"
+RESP="$(curl -s -i --max-time 5 "http://127.0.0.1:${ISO_PORT:-0}/overlay.js" 2>/dev/null || true)"
+assert_eq "status 404" "404" "$(status_of "$RESP")"
+assert_contains_literal "names the failure" '"error": "overlay source not found"' "$RESP"
+PRINT_RC=0
+PRINT_ERR="$(python3 "$ISO/hooks/scripts/annotate-channel.py" --print-overlay 2>&1 >/dev/null)" || PRINT_RC=$?
+assert_exit_code "--print-overlay exits 1" "1" "$PRINT_RC"
+assert_eq "one stderr line" "1" "$(printf '%s\n' "$PRINT_ERR" | wc -l | tr -d ' ')"
+kill "$ISO_PID" 2>/dev/null || true
+wait "$ISO_PID" 2>/dev/null || true
+
+begin_test "kind classifies pages"
+for U in http://localhost:3000/ http://127.0.0.1:5173/a/b https://localhost/ file:///tmp/mockup.html http://localhost; do
+  assert_eq "project: $U" "project" "$(run_in "$ROOT" kind --page "$U")"
+done
+for U in https://example.com/ http://[::1]:3000/ http://127.0.0.2:3000/ http://app.localhost:3000/ http://localhost.example.com/ about:blank; do
+  assert_eq "external: $U" "external" "$(run_in "$ROOT" kind --page "$U")"
+done
+
+begin_test "loader on an external page prints EXTERNAL"
+assert_eq "an external page prints EXTERNAL" "EXTERNAL" "$(run_in "$ROOT" loader --session ldr1 --page https://example.com/app)"
+kill "$(cat "$ROOT/.craft/annotations/ldr1/listener.pid")" 2>/dev/null || true
+wait_dead "$(cat "$ROOT/.craft/annotations/ldr1/listener.pid")" || true
+assert_eq "still EXTERNAL with the listener dead" "EXTERNAL" "$(run_in "$ROOT" loader --session ldr1 --page https://example.com/app)"
+assert_eq "even for a session that does not exist" "EXTERNAL" "$(run_in "$ROOT" loader --session nosuch --page https://example.com/app)"
+
+begin_test "loader exits 1 when the listener does not answer"
+set +e
+LOADER_ERR="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" loader --session ldr1 --page http://localhost:3000/ 2>&1 >/dev/null)"
+RC=$?
+LOADER_OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" loader --session ldr1 --page http://localhost:3000/ 2>/dev/null)"
+set -e
+assert_exit_code "exit 1" "1" "$RC"
+assert_contains_literal "stderr names the session" "annotate-run: listener for ldr1 is not answering" "$LOADER_ERR"
+assert_eq "prints no loader" "" "$LOADER_OUT"
+
+# ---------------------------------------------------------------------------
+# The listener heals itself: wait wakes on a dead listener, ensure restarts it.
+
+begin_test "wait wakes with UNREACHABLE when the listener dies"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session heal1
+HEAL_DIR="$ROOT/.craft/annotations/heal1"
+HEAL_PID="$(cat "$HEAL_DIR/listener.pid")"
+HEAL_OUT="$(mktemp)"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" wait --session heal1 --timeout 30 > "$HEAL_OUT" 2>/dev/null &
+WAIT_PID=$!
+TMP_PIDS+=("$WAIT_PID")
+sleep 0.5
+kill "$HEAL_PID" 2>/dev/null || true
+for _ in $(seq 1 40); do kill -0 "$WAIT_PID" 2>/dev/null || break; sleep 0.25; done
+if kill -0 "$WAIT_PID" 2>/dev/null; then WOKE=no; kill "$WAIT_PID" 2>/dev/null || true; else WOKE=yes; fi
+wait "$WAIT_PID" 2>/dev/null || true
+assert_eq "the wait woke within the poll window" "yes" "$WOKE"
+assert_eq "it printed UNREACHABLE" "UNREACHABLE" "$(cat "$HEAL_OUT")"
+rm -f "$HEAL_OUT"
+
+begin_test "ensure restarts a dead listener on a new port, STREAK 1, owner kept"
+OLD_PORT="$(cat "$HEAL_DIR/port")"
+OWNER_BEFORE="$(cat "$HEAL_DIR/owner.pid")"
+OUT="$(run_in "$ROOT" ensure --session heal1)"
+case "$OUT" in "REARMED PORT "*" STREAK 1") SHAPE=yes ;; *) SHAPE="no: $OUT" ;; esac
+assert_eq "REARMED with streak 1" "yes" "$SHAPE"
+NEW_PORT="$(cat "$HEAL_DIR/port")"
+assert_eq "the port file follows the print" "REARMED PORT $NEW_PORT STREAK 1" "$OUT"
+assert_contains_literal "the new listener answers" '"ok"' "$(http GET "$NEW_PORT" /health)"
+assert_eq "the owner is kept" "$OWNER_BEFORE" "$(cat "$HEAL_DIR/owner.pid")"
+assert_eq "the streak is a file" "1" "$(cat "$HEAL_DIR/rearm.streak")"
+
+begin_test "a POST after a re-arm advances past the old seq"
+http POST "$NEW_PORT" /pins "[$(pin_json 1 first)]" >/dev/null
+SEQ_A="$(json_get "$HEAL_DIR/current.json" "d['seq']")"
+kill "$(cat "$HEAL_DIR/listener.pid")" 2>/dev/null || true
+wait_dead "$(cat "$HEAL_DIR/listener.pid")" || true
+run_in "$ROOT" ensure --session heal1 >/dev/null
+http POST "$(cat "$HEAL_DIR/port")" /pins "[$(pin_json 2 second)]" >/dev/null
+SEQ_B="$(json_get "$HEAL_DIR/current.json" "d['seq']")"
+assert_eq "the seq continues past the old listener's" "yes" "$([ "$SEQ_B" -gt "$SEQ_A" ] 2>/dev/null && echo yes || echo "no: $SEQ_A $SEQ_B")"
+
+begin_test "ensure reports a streak of 2 on a second consecutive failure"
+# Two re-arms above (one per kill) with no OK in between.
+assert_eq "the streak counts both" "2" "$(cat "$HEAL_DIR/rearm.streak")"
+kill "$(cat "$HEAL_DIR/listener.pid")" 2>/dev/null || true
+wait_dead "$(cat "$HEAL_DIR/listener.pid")" || true
+OUT="$(run_in "$ROOT" ensure --session heal1)"
+case "$OUT" in *" STREAK 3") S3=yes ;; *) S3="no: $OUT" ;; esac
+assert_eq "a third failure keeps counting" "yes" "$S3"
+
+begin_test "ensure prints OK and resets the streak on a live listener"
+OUT="$(run_in "$ROOT" ensure --session heal1)"
+assert_eq "OK with the port" "OK PORT $(cat "$HEAL_DIR/port")" "$OUT"
+assert_eq "the streak is back to 0" "0" "$(cat "$HEAL_DIR/rearm.streak")"
+
+begin_test "ensure replaces a hung listener"
+HUNG_PID="$(cat "$HEAL_DIR/listener.pid")"
+kill -STOP "$HUNG_PID"
+OUT="$(run_in "$ROOT" ensure --session heal1)"
+case "$OUT" in "REARMED PORT "*" STREAK 1") HUNG=yes ;; *) HUNG="no: $OUT" ;; esac
+kill -CONT "$HUNG_PID" 2>/dev/null || true
+assert_eq "REARMED at streak 1" "yes" "$HUNG"
+wait_dead "$HUNG_PID" || true
+assert_eq "the hung listener is gone" "no" "$(is_running "$HUNG_PID" && echo yes || echo no)"
+
+begin_test "ensure never signals a recycled pid that is not a listener"
+SLEEPER_PID="$(sleep 60 >/dev/null 2>&1 & echo $!)"
+TMP_PIDS+=("$SLEEPER_PID")
+kill "$(cat "$HEAL_DIR/listener.pid")" 2>/dev/null || true
+wait_dead "$(cat "$HEAL_DIR/listener.pid")" || true
+echo "$SLEEPER_PID" > "$HEAL_DIR/listener.pid"
+run_in "$ROOT" ensure --session heal1 >/dev/null
+assert_eq "the unrelated process survives" "yes" "$(is_running "$SLEEPER_PID" && echo yes || echo no)"
+kill "$SLEEPER_PID" 2>/dev/null || true
+
+begin_test "ensure on a missing session folder prints GONE and creates nothing"
+set +e
+OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" ensure --session nosuch 2>/dev/null)"
+RC=$?
+set -e
+assert_eq "prints GONE" "GONE" "$OUT"
+assert_exit_code "exit 1" "1" "$RC"
+assert_file_not_exists "no folder was created" "$ROOT/.craft/annotations/nosuch"
+
 finish_tests "test-annotate-channel"

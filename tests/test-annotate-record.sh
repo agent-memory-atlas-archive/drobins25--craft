@@ -79,8 +79,55 @@ assert_eq "pin 1 carries the last sent_at" "2026-10-04T10:02:00Z" "$(pins_json "
 assert_eq "pin 2 is the new pin" "b" "$(pins_json "$OUT" 'p[1]["text"]')"
 assert_eq "n is the record ordinal" "1,2" "$(pins_json "$OUT" '",".join(str(x["n"]) for x in p)')"
 assert_eq "absent fields are null" "None" "$(pins_json "$OUT" 'p[0]["candidate"]')"
-assert_eq "every record pin key is present" "True" "$(pins_json "$OUT" 'all(set(x) == {"n","seq","sent_at","text","selector","nearText","candidate","page","box","component","ts","x","y"} for x in p)')"
+assert_eq "every record pin key is present" "True" "$(pins_json "$OUT" 'all(set(x) == {"n","seq","sent_at","text","selector","nearText","candidate","page","box","component","ts","x","y","resolved"} for x in p)')"
 assert_contains "the reading list quotes the text verbatim" '^1\. "a2"' "$(rd "$OUT")"
+
+begin_test "a filed pin carries the resolution the run cached"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "resolved run"
+hist "$LIVE" "$S1"; hist "$LIVE" "$S2"
+cat > "$LIVE/resolutions.json" <<'JSON'
+{"run": "0@2026-10-04T10:00:00Z",
+ "pins": {"http://x/p": {"1": "div.a"}},
+ "targets": {"http://x/p": {"div.a": {"component": "Hero", "component_file": "src/Hero.tsx", "rule": ".a", "rule_file": "src/a.css", "notes": []}}}}
+JSON
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "the numeric ts finds its cached target" "src/Hero.tsx" "$(pins_json "$OUT" 'p[0]["resolved"]["component_file"]')"
+assert_eq "a pin the run never resolved is null" "None" "$(pins_json "$OUT" 'p[1]["resolved"]')"
+
+begin_test "a pin without a ts reads its target by selector"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "no ts"
+hist "$LIVE" '{"seq":1,"pins":[{"n":1,"text":"t","selector":"div.z","page":"http://x/p"}],"sent_at":"2026-10-04T10:01:00Z"}'
+printf '%s\n' '{"run": "0@2026-10-04T10:00:00Z", "pins": {}, "targets": {"http://x/p": {"div.z": {"rule": ".z"}}}}' > "$LIVE/resolutions.json"
+file_rec "$ROOT" s1 nothing
+assert_eq "selector-keyed lookup" ".z" "$(pins_json "$OUT" 'p[0]["resolved"]["rule"]')"
+
+begin_test "a run with no cache files every pin with resolved null"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "no cache"
+hist "$LIVE" "$S2"
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "every resolved is null" "True" "$(pins_json "$OUT" 'all(x["resolved"] is None for x in p)')"
+
+begin_test "a cache from another run is ignored"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "stale cache"
+hist "$LIVE" "$S1"
+printf '%s\n' '{"run": "0@1999-01-01T00:00:00Z", "pins": {"http://x/p": {"1": "div.a"}}, "targets": {"http://x/p": {"div.a": {"rule": ".a"}}}}' > "$LIVE/resolutions.json"
+file_rec "$ROOT" s1 nothing
+assert_eq "resolved is null" "None" "$(pins_json "$OUT" 'p[0]["resolved"]')"
+
+begin_test "filing survives an unreadable resolutions.json"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "bad cache"
+hist "$LIVE" "$S1"
+printf 'not json {' > "$LIVE/resolutions.json"
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "resolved is null" "None" "$(pins_json "$OUT" 'p[0]["resolved"]')"
 
 begin_test "file includes only entries after the run's start seq"
 new_root; ROOT="$NEW_ROOT"

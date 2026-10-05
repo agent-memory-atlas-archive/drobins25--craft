@@ -175,6 +175,44 @@ for line in read_text("history.jsonl").splitlines():
             record_pin[field] = pin.get(field)
         latest[key] = record_pin
 
+def load_resolutions():
+    """The run's cached resolutions, or an empty cache when absent, unreadable or from another run."""
+    empty = {"pins": {}, "targets": {}}
+    try:
+        cache = json.loads(read_text("resolutions.json"))
+    except ValueError:
+        return empty
+    if not isinstance(cache, dict):
+        return empty
+    if cache.get("run") != "%s@%s" % (start_seq, run.get("started_at")):
+        return empty
+    pins = cache.get("pins")
+    targets = cache.get("targets")
+    return {
+        "pins": pins if isinstance(pins, dict) else {},
+        "targets": targets if isinstance(targets, dict) else {},
+    }
+
+
+resolutions = load_resolutions()
+
+
+def resolved_for(pin):
+    """The cached Resolution for a record pin, or None. Cache keys are (page, str(ts))."""
+    page = pin["page"]
+    page_targets = resolutions["targets"].get(page)
+    if not isinstance(page_targets, dict):
+        return None
+    selector = pin["selector"]
+    if pin["ts"] is not None:
+        page_pins = resolutions["pins"].get(page)
+        if not isinstance(page_pins, dict):
+            return None
+        selector = page_pins.get(str(pin["ts"]))
+    found = page_targets.get(selector) if isinstance(selector, str) else None
+    return found if isinstance(found, dict) else None
+
+
 pins_out = []
 for ordinal, key in enumerate(order, start=1):
     source = latest[key]
@@ -192,6 +230,7 @@ for ordinal, key in enumerate(order, start=1):
         "ts": source["ts"],
         "x": source["x"],
         "y": source["y"],
+        "resolved": resolved_for(source),
     })
 
 sheet = read_text("session.css")

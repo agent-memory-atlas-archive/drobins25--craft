@@ -100,6 +100,11 @@ NOT_RECORDS = {
     "process id - runtime state",
     "annotations/*/owner.pid": "a live annotate session's owner process "
     "id - runtime state the sweep reads",
+    "annotations/*/rearm.streak": "a live annotate session's count of "
+    "consecutive listener restarts - runtime state",
+    "annotations/*/resolutions.json": "a live annotate session's cache of "
+    "resolved pin locations - runtime state, copied onto the record pins "
+    "when the run is filed",
     "annotations/*/listener.log": "a live annotate session's listener log "
     "- runtime churn",
     "checkpoints": "state, not records - not nodes (alignment)",
