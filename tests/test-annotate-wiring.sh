@@ -740,6 +740,17 @@ assert_contains_literal "DESIGN names story-from-annotate.md" "story-from-annota
 assert_contains_literal "DESIGN names the annotations folder" ".craft/annotations/" "$(cat "$REPO/DESIGN.md")"
 assert_contains_literal "DESIGN names the sheet verb" "sheet" "$(grep -F 'annotate-run.sh' "$REPO/DESIGN.md")"
 
+begin_test "annotate flow: every page snippet reaches evaluate_script as a function body"
+STEP4="$(section_of '## Step 4' "$FLOW_TEXT")"
+assert_contains_literal "the rule names the function shape" '() => { <snippet> }' "$FLOW_TEXT"
+assert_contains_literal "the rule says what a bare snippet does" "Unexpected token" "$FLOW_TEXT"
+assert_contains_literal "Step 4 passes the overlay inside a function body" 'inside `() => { ... }`' "$STEP4"
+lacks_literal "Step 4 no longer pastes the overlay as a bare expression" "pasted unchanged as a single expression" "$STEP4"
+assert_contains_literal "Step 6 passes the printed line inside a function body" '() => { <printed line> }' "$STEP6"
+lacks_literal "Step 6 no longer pastes the line bare" 'Paste that line into `evaluate_script` verbatim' "$STEP6"
+assert_contains_literal "re-inject passes the printed line inside a function body" '() => { <printed line> }' "$NAV"
+lacks_literal "re-inject no longer pastes the line bare" 'paste the printed line into `evaluate_script` verbatim' "$NAV"
+
 begin_test "annotate flow hygiene: no decision-record slug"
 assert_eq "no dated slug in the flow" "0" "$(grep -cE '20[0-9]{2}-[0-9]{2}-[0-9]{2}-[a-z]' "$FLOW" || true)"
 

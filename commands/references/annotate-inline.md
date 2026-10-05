@@ -6,6 +6,8 @@ The full raw-tab session: arm through teardown. The overlay source, the port sta
 
 This flow runs in the orchestrator, not a subagent: it needs the browser connection and the session's own wake-up.
 
+**How a snippet reaches the page.** `evaluate_script` takes a function and calls it. Every snippet this flow sends to the page - the clears, the port stamp, the overlay source, the line `sheet` prints - goes in as the body of `() => { <snippet> }`, with the snippet's text unchanged inside. Pasted bare, a snippet that ends in `;` is refused with `Unexpected token ';'` and nothing runs, and the printed `sheet` line runs but the tool reports `fn is not a function`, which reads as a failure when the change has landed.
+
 ## Step 1: Connection check
 
 The overlay reaches a tab through the chrome-devtools connection. If that connection is not available, say so in one plain line and stop - no offer, no error, no setup instructions. Otherwise list the tabs and select the one the user means (the subject, or the tab already selected when no subject was given).
@@ -61,7 +63,7 @@ document.getElementById('ca-style')?.remove(); document.getElementById('ca-sheet
 Injection is two `evaluate_script` steps, in this order:
 
 1. The port stamp: `window.__craftAnnotatePort = <port>;` - the port printed in Step 2, as in the `annotate-stamp` fence of the overlay reference. Only the port line. Never stamp the baked flag and never stamp a context: a baked page opens an event stream at load, and an injected page must make no request before the user acts.
-2. The overlay source: the whole `overlay-source` fence from the overlay reference, pasted unchanged as a single expression.
+2. The overlay source: the whole `overlay-source` fence from the overlay reference, its text unchanged, passed inside `() => { ... }`.
 
 Stamp first because the overlay reads the port when the user presses SEND; without the stamp SEND reports that nothing is listening.
 
@@ -124,7 +126,7 @@ There is exactly one road onto the page, and it runs through the sheet. For ever
    ```
 
    The same key replaces that pin's block in place, so an edited pin updates its rule instead of stacking a second one. CSS carrying a block header of its own is refused.
-2. The command prints ONE line: a statement that makes the page's session style equal the whole `session.css`. Paste that line into `evaluate_script` verbatim - never edit it, never rebuild it, never paste a different one.
+2. The command prints ONE line: a statement that makes the page's session style equal the whole `session.css`. Pass that line to `evaluate_script` as `() => { <printed line> }`, the line verbatim inside - never edit it, never rebuild it, never paste a different one.
 3. Read the live value back from the page (`getComputedStyle` on the element, through `evaluate_script`) and report what you measured, never what you intended.
 
 The sheet is the only road: never write CSS into the page any other way. The sheet is the single source of truth for what the page shows, so a reload, an undo and the record all read the same bytes.
@@ -135,7 +137,7 @@ The sheet is the only road: never write CSS into the page any other way. The she
 
 ## Navigation and re-injection
 
-The overlay and the changes live in the page, so they die on reload and on any navigation that replaces the document. When the user says the page reloaded, or a snapshot shows the controls are gone, re-inject in this order: the port stamp first, then the overlay source, exactly as in Step 4, and only then the sheet, second: print it with `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" sheet --session "<id>"` (no `--add`, no `--drop`) and paste the printed line into `evaluate_script` verbatim. That restores every earlier change exactly as the file holds it - never re-derive a rule from memory. An empty sheet is applied too: one path, no branch, and it does no harm. If the session's listener was restarted, take the port from `arm --session "<id>"` first. A redundant re-inject is harmless - the overlay's install guard makes a second copy a no-op, and applying the sheet again changes nothing - so when unsure, re-inject. Pins the user had not sent come back with the page, because the overlay keeps them in the page's local storage. The overlay source is the 429-line paste every time, and it grows with the pin payload; that cost is real.
+The overlay and the changes live in the page, so they die on reload and on any navigation that replaces the document. When the user says the page reloaded, or a snapshot shows the controls are gone, re-inject in this order: the port stamp first, then the overlay source, exactly as in Step 4, and only then the sheet, second: print it with `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" sheet --session "<id>"` (no `--add`, no `--drop`) and pass the printed line to `evaluate_script` as `() => { <printed line> }`, the line verbatim inside. That restores every earlier change exactly as the file holds it - never re-derive a rule from memory. An empty sheet is applied too: one path, no branch, and it does no harm. If the session's listener was restarted, take the port from `arm --session "<id>"` first. A redundant re-inject is harmless - the overlay's install guard makes a second copy a no-op, and applying the sheet again changes nothing - so when unsure, re-inject. Pins the user had not sent come back with the page, because the overlay keeps them in the page's local storage. The overlay source is the 429-line paste every time, and it grows with the pin payload; that cost is real.
 
 ## Teardown, then file, on EVERY exit path
 
