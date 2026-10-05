@@ -17,6 +17,18 @@ CHANNEL="$SCRIPTS_DIR/annotate-channel.py"
 TMP_ROOTS=()
 TMP_PIDS=()
 
+# stop_job <pid>... - signal a background job of this shell and reap it, so the
+# shell never prints a "Terminated: 15" job report into the test output
+stop_job() {
+  local p
+  for p in "$@"; do
+    [ -n "$p" ] || continue
+    kill "$p" 2>/dev/null || true
+    wait "$p" 2>/dev/null || true
+  done
+  return 0
+}
+
 cleanup() {
   local r p f
   for r in "${TMP_ROOTS[@]:-}"; do
@@ -28,9 +40,7 @@ cleanup() {
     done
     rm -rf "$r"
   done
-  for p in "${TMP_PIDS[@]:-}"; do
-    [ -n "$p" ] && kill "$p" 2>/dev/null || true
-  done
+  stop_job "${TMP_PIDS[@]:-}"
   return 0
 }
 trap cleanup EXIT
@@ -353,7 +363,7 @@ assert_file_exists "live-owner pid file untouched" "$AN/live-1/owner.pid"
 if is_running "$LIVE_LISTENER"; then echo "  PASS: live-owner listener still alive"; PASS=$((PASS + 1)); else echo "  FAIL: live-owner listener was killed"; FAIL=$((FAIL + 1)); fi
 assert_dir_exists "empty dir tolerated" "$AN/empty-1"
 assert_dir_exists "garbage dir tolerated" "$AN/garbage-1"
-kill "$LIVE_LISTENER" "$STRANGER" 2>/dev/null || true
+stop_job "$LIVE_LISTENER" "$STRANGER"
 new_root
 set +e
 CRAFT_PROJECT_ROOT="$NEW_ROOT" bash "$RUN" sweep >/dev/null 2>&1
@@ -484,14 +494,14 @@ new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"
 assert_eq "no stream yet: clients 0" "0" "$(clients_of "$PORT")"
 open_stream "$PORT" "$ROOT/s1"
+S1_PID="$STREAM_PID"
 if wait_clients "$PORT" 1; then echo "  PASS: clients 1 while the stream is held"; PASS=$((PASS + 1)); else echo "  FAIL: clients never reached 1 (got $(clients_of "$PORT"))"; FAIL=$((FAIL + 1)); fi
 open_stream "$PORT" "$ROOT/s2"
 if wait_clients "$PORT" 2; then echo "  PASS: a second stream makes clients 2"; PASS=$((PASS + 1)); else echo "  FAIL: second stream not registered (got $(clients_of "$PORT"))"; FAIL=$((FAIL + 1)); fi
 assert_contains "health still reports ok and port" "\"port\": $PORT" "$(curl -s --max-time 5 "http://127.0.0.1:$PORT/health")"
-kill "$STREAM_PID" 2>/dev/null || true
+stop_job "$STREAM_PID"
 if wait_clients "$PORT" 1; then echo "  PASS: dropping one stream returns clients to 1"; PASS=$((PASS + 1)); else echo "  FAIL: clients did not drop to 1 (got $(clients_of "$PORT"))"; FAIL=$((FAIL + 1)); fi
-S1_PID="$(pgrep -f "$ROOT/s1.hdr" | head -1 || true)"
-[ -n "$S1_PID" ] && kill "$S1_PID" 2>/dev/null || true
+stop_job "$S1_PID"
 if wait_clients "$PORT" 0; then echo "  PASS: clients 0 after every stream disconnects"; PASS=$((PASS + 1)); else echo "  FAIL: clients did not return to 0 (got $(clients_of "$PORT"))"; FAIL=$((FAIL + 1)); fi
 
 begin_test "the stream carries the event-stream headers and the Origin null allow header"
@@ -552,7 +562,7 @@ new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"
 open_stream "$PORT" "$ROOT/p"
 wait_clients "$PORT" 1 >/dev/null || true
-kill "$STREAM_PID" 2>/dev/null || true
+stop_job "$STREAM_PID"
 wait_clients "$PORT" 0 >/dev/null || true
 assert_contains "announce after the disconnect delivers to nobody" '"delivered": 0' "$(http POST "$PORT" /announce)"
 set +e
@@ -819,7 +829,7 @@ PRINT_RC=0
 PRINT_ERR="$(python3 "$ISO/hooks/scripts/annotate-channel.py" --print-overlay 2>&1 >/dev/null)" || PRINT_RC=$?
 assert_exit_code "--print-overlay exits 1" "1" "$PRINT_RC"
 assert_eq "one stderr line" "1" "$(printf '%s\n' "$PRINT_ERR" | wc -l | tr -d ' ')"
-kill "$ISO_PID" 2>/dev/null || true
+stop_job "$ISO_PID"
 wait "$ISO_PID" 2>/dev/null || true
 
 begin_test "kind classifies pages"
@@ -862,7 +872,7 @@ TMP_PIDS+=("$WAIT_PID")
 sleep 0.5
 kill "$HEAL_PID" 2>/dev/null || true
 for _ in $(seq 1 40); do kill -0 "$WAIT_PID" 2>/dev/null || break; sleep 0.25; done
-if kill -0 "$WAIT_PID" 2>/dev/null; then WOKE=no; kill "$WAIT_PID" 2>/dev/null || true; else WOKE=yes; fi
+if kill -0 "$WAIT_PID" 2>/dev/null; then WOKE=no; stop_job "$WAIT_PID"; else WOKE=yes; wait "$WAIT_PID" 2>/dev/null || true; fi
 wait "$WAIT_PID" 2>/dev/null || true
 assert_eq "the wait woke within the poll window" "yes" "$WOKE"
 assert_eq "it printed UNREACHABLE" "UNREACHABLE" "$(cat "$HEAL_OUT")"

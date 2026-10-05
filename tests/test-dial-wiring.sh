@@ -145,7 +145,22 @@ DI="$REPO/commands/references/dial-inject.md"
 DL="$REPO/commands/references/dial-inline.md"
 grep -qF '() => { <payload> }' "$DI" && pass "dial-inject names the function shape" || fail "dial-inject names the function shape" "the payload-shape rule" "absent"
 grep -qF "Unexpected token" "$DI" && pass "dial-inject says what a bare payload does" || fail "dial-inject says what a bare payload does" "Unexpected token" "absent"
-grep -qF 'then the whole `overlay-source` fence unchanged.' "$DL" && fail "comment mode no longer pastes the overlay bare" "no bare overlay paste" "bare paste wording present" || pass "comment mode no longer pastes the overlay bare"
+# Every sentence that names the overlay-source fence must also carry the function shape,
+# so a bare paste cannot come back in any wording.
+BARE_SENTENCES="$(python3 - "$DL" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+sentences = re.split(r"(?<=[.!?])\s+", text)
+bad = [s.strip() for s in sentences if "overlay-source" in s and "() => {" not in s]
+print(len(bad))
+for s in bad:
+    print("    " + s[:160])
+PYEOF
+)"
+BARE_COUNT="$(printf '%s\n' "$BARE_SENTENCES" | head -1)"
+OVERLAY_MENTIONS="$(grep -c 'overlay-source' "$DL" || true)"
+[ "$OVERLAY_MENTIONS" -gt 0 ] && pass "dial-inline still names the overlay-source fence for the fallback" || fail "dial-inline still names the overlay-source fence for the fallback" ">=1 mention" "0"
+[ "$BARE_COUNT" = "0" ] && pass "every sentence naming the overlay-source fence passes it inside a function body" || fail "every sentence naming the overlay-source fence passes it inside a function body" "0 bare sentences" "$BARE_SENTENCES"
 grep -qF 'each inside `() => { ... }`' "$DL" && pass "comment mode passes the stamp and overlay inside a function body" || fail "comment mode passes the stamp and overlay inside a function body" "each inside () => { ... }" "absent"
 echo ""
 echo "-- Summary --"

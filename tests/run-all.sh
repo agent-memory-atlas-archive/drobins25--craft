@@ -25,30 +25,53 @@ echo "  Craft Plugin Test Suite"
 echo "========================================"
 echo ""
 
-# Find and run all test files (tests/ plus the hook-script tests beside the code they cover)
+# Find all test files (tests/ plus the hook-script tests beside the code they cover)
+FILES=()
 for test_file in "$TESTS_DIR"/test-*.sh "$TESTS_DIR/../hooks/scripts/__tests__"/*.test.sh; do
-  [ -f "$test_file" ] || continue
+  [ -f "$test_file" ] && FILES+=("$test_file")
+done
 
+# Run them CRAFT_TEST_JOBS at a time (default 8; 1 runs one at a time). Each file
+# writes its output, exit code and time to its own slot, and nothing reads the
+# runner's stdin; the blocks then print in file order, so the report reads the
+# same however the runs interleaved.
+JOBS="${CRAFT_TEST_JOBS:-8}"
+case "$JOBS" in ''|*[!0-9]*|0) JOBS=8 ;; esac
+RUN_DIR="$(mktemp -d)"
+trap 'rm -rf "$RUN_DIR"' EXIT
+echo "  Running ${#FILES[@]} files, $JOBS at a time"
+echo ""
+
+i=0
+for test_file in "${FILES[@]}"; do
+  printf '%s\0%s\0' "$i" "$test_file"
+  i=$((i + 1))
+done | RUN_DIR="$RUN_DIR" xargs -0 -n 2 -P "$JOBS" bash -c '
+  s=$(date +%s)
+  bash "$2" > "$RUN_DIR/$1.out" 2>&1 < /dev/null
+  echo $? > "$RUN_DIR/$1.rc"
+  echo $(( $(date +%s) - s )) > "$RUN_DIR/$1.time"
+' _
+
+i=0
+for test_file in "${FILES[@]}"; do
   test_name=$(basename "$test_file")
   TOTAL_FILES=$((TOTAL_FILES + 1))
-
-  file_start=$(date +%s)
   echo "--- $test_name ---"
 
-  # Run test, capture output and exit code
-  set +e
-  output=$(bash "$test_file" 2>&1)
-  exit_code=$?
-  set -e
+  output="$(cat "$RUN_DIR/$i.out" 2>/dev/null || true)"
+  exit_code="$(cat "$RUN_DIR/$i.rc" 2>/dev/null || echo 1)"
+  file_time="$(cat "$RUN_DIR/$i.time" 2>/dev/null || echo 0)"
+  i=$((i + 1))
 
   echo "$output"
 
-  file_end=$(date +%s)
-  file_time=$((file_end - file_start))
-
-  # Extract PASS/FAIL counts from output (last "Results" line)
-  file_pass=$(echo "$output" | grep -o '[0-9]* passed' | tail -1 | grep -o '[0-9]*' || echo "0")
-  file_fail=$(echo "$output" | grep -o '[0-9]* failed' | tail -1 | grep -o '[0-9]*' || echo "0")
+  # Extract PASS/FAIL counts from the file's last result line, in either format
+  # the suite uses: "N passed, M failed" or a "Passed: N" / "Failed: M" summary
+  file_pass=$(echo "$output" | grep -oE '[0-9]+ passed|Passed: *[0-9]+' | tail -1 | grep -oE '[0-9]+' || true)
+  file_fail=$(echo "$output" | grep -oE '[0-9]+ failed|Failed: *[0-9]+' | tail -1 | grep -oE '[0-9]+' || true)
+  file_pass="${file_pass:-0}"
+  file_fail="${file_fail:-0}"
 
   TOTAL_PASS=$((TOTAL_PASS + file_pass))
   TOTAL_FAIL=$((TOTAL_FAIL + file_fail))
@@ -113,8 +136,9 @@ echo "    - statusline.sh: malformed UTF-8 in progress bar (e2e2 byte sequence)"
 echo ""
 
 # Timing check. Budget is process-spawn headroom, not a hang detector: the suite is
-# about 90 separate bash subprocesses (git, python3, mktemp per file), so wall-clock
-# grows with the file count. 240s is the measured ~136s plus room for a slow machine.
+# well over a hundred separate bash files (git, python3, mktemp per file), run
+# CRAFT_TEST_JOBS at a time, so wall-clock is set by the slowest files rather than
+# the file count. 240s is generous headroom over a parallel run on a busy machine.
 # The check is local only: CI runs the group runner, which has no timing check.
 # CRAFT_SUITE_TIME_LIMIT overrides the limit (the runner's own test sets it).
 LIMIT="${CRAFT_SUITE_TIME_LIMIT:-240}"

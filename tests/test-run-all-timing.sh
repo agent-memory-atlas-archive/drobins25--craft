@@ -69,6 +69,68 @@ assert_eq "exit code is 1" "1" "$RUNNER_RC"
 assert_contains "RESULT line names the failures" "2 failures" "$RUNNER_OUT"
 assert_contains "RESULT line names the time" "over the 1s limit" "$RUNNER_OUT"
 
+begin_test "files run concurrently, CRAFT_TEST_JOBS sets the width, and 8 is the default"
+# four files that each sleep 2s: concurrent they finish inside a 6s limit,
+# one at a time they need 8s
+make_multi() {
+  local dir="$TREE/$1" n
+  mkdir -p "$dir/tests" "$dir/hooks/scripts"
+  cp "$SCRIPT_DIR/run-all.sh" "$dir/tests/run-all.sh"
+  for n in a b c d; do
+    printf '#!/bin/bash\nsleep 2\necho "1 passed, 0 failed"\n' > "$dir/tests/test-$n.sh"
+  done
+  echo "$dir/tests/run-all.sh"
+}
+PAR="$(make_multi par)"
+set +e
+PAR_OUT="$(CRAFT_TEST_JOBS=4 CRAFT_SUITE_TIME_LIMIT=6 bash "$PAR" 2>&1)"; PAR_RC=$?
+SER_OUT="$(CRAFT_TEST_JOBS=1 CRAFT_SUITE_TIME_LIMIT=6 bash "$PAR" 2>&1)"; SER_RC=$?
+DEF_OUT="$(env -u CRAFT_TEST_JOBS CRAFT_SUITE_TIME_LIMIT=6 bash "$PAR" 2>&1)"; DEF_RC=$?
+set -e
+assert_eq "four 2s files at width 4 pass a 6s limit" "0" "$PAR_RC"
+assert_contains "the run names its width" "4 at a time" "$PAR_OUT"
+assert_eq "the same files one at a time blow the 6s limit" "1" "$SER_RC"
+assert_contains "width 1 runs one at a time" "1 at a time" "$SER_OUT"
+assert_eq "the default width also runs them concurrently" "0" "$DEF_RC"
+assert_contains "the default width is 8" "8 at a time" "$DEF_OUT"
+assert_contains "every file is counted" "Total: 4 passed, 0 failed across 4 files" "$PAR_OUT"
+
+begin_test "output stays in file order and each file's block stays whole"
+ORD="$TREE/ord"
+mkdir -p "$ORD/tests" "$ORD/hooks/scripts"
+cp "$SCRIPT_DIR/run-all.sh" "$ORD/tests/run-all.sh"
+printf '#!/bin/bash\nsleep 2\necho "alpha line"\necho "1 passed, 0 failed"\n' > "$ORD/tests/test-a.sh"
+printf '#!/bin/bash\necho "beta line"\necho "1 passed, 0 failed"\n' > "$ORD/tests/test-b.sh"
+set +e
+ORD_OUT="$(CRAFT_TEST_JOBS=2 bash "$ORD/tests/run-all.sh" 2>&1)"
+set -e
+L_A="$(printf '%s\n' "$ORD_OUT" | grep -n -- '--- test-a.sh ---' | cut -d: -f1)"
+L_ALPHA="$(printf '%s\n' "$ORD_OUT" | grep -n 'alpha line' | cut -d: -f1)"
+L_B="$(printf '%s\n' "$ORD_OUT" | grep -n -- '--- test-b.sh ---' | cut -d: -f1)"
+L_BETA="$(printf '%s\n' "$ORD_OUT" | grep -n 'beta line' | cut -d: -f1)"
+assert_eq "test-a's block prints before test-b's although b finished first" "yes" "$([ -n "$L_A" ] && [ -n "$L_B" ] && [ "$L_A" -lt "$L_B" ] && echo yes || echo no)"
+assert_eq "test-a's output sits inside its own block" "yes" "$([ -n "$L_ALPHA" ] && [ "$L_A" -lt "$L_ALPHA" ] && [ "$L_ALPHA" -lt "$L_B" ] && echo yes || echo no)"
+assert_eq "test-b's output follows its header" "yes" "$([ -n "$L_BETA" ] && [ "$L_B" -lt "$L_BETA" ] && echo yes || echo no)"
+
+begin_test "a test file never reads the runner's stdin"
+STD="$TREE/std"
+mkdir -p "$STD/tests" "$STD/hooks/scripts"
+cp "$SCRIPT_DIR/run-all.sh" "$STD/tests/run-all.sh"
+printf '#!/bin/bash\nif read -r -t 1 line; then echo "got stdin: $line"; fi\necho "1 passed, 0 failed"\n' > "$STD/tests/test-s.sh"
+set +e
+STD_OUT="$(echo "leaked" | bash "$STD/tests/run-all.sh" 2>&1)"
+set -e
+assert_not_contains "no runner stdin reaches a test" "got stdin" "$STD_OUT"
+
+begin_test "both result formats count toward the totals"
+CAP="$(make_tree cap 'printf "%s\\n" "-- Summary --" "Total:  5" "Passed: 5" "Failed: 0"')"
+run_runner "$CAP" 240
+assert_eq "a Passed: N file passes" "0" "$RUNNER_RC"
+assert_contains "Passed: N counts" "Total: 5 passed, 0 failed across 1 files" "$RUNNER_OUT"
+CAPF="$(make_tree capf 'printf "%s\\n" "Passed: 1" "Failed: 2"; exit 1')"
+run_runner "$CAPF" 240
+assert_contains "Failed: N counts" "RESULT: FAIL (2 failures)" "$RUNNER_OUT"
+
 begin_test "the timing lines carry no em dash"
 TIMING_LINES="$(printf '%s\n' "$RUNNER_OUT" | grep 'TIMING:' || true)"
 case "$TIMING_LINES" in
