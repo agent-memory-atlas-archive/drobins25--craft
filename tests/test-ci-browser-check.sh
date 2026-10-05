@@ -54,6 +54,28 @@ else
   fail "SKIP path wrong" "rc=$RC out: $(echo "$OUT" | tr '\n' ' ')"
 fi
 
+# The probe lets the page run its own loop in real time: it never calls the
+# page's frame callback itself and never runs under an artificial clock, the
+# two things that once stacked ~150 render loops and made the old probe
+# measure its own artifact.
+PROBE="$ROOT/scripts/ci/browser-probe.mjs"
+if [ -f "$PROBE" ] && ! grep -q '\.tick(' "$PROBE" && ! grep -q 'virtual-time' "$PROBE" "$HARNESS"; then
+  pass "the probe never drives the page's tick and never uses virtual time"
+else
+  fail "the probe drives tick or uses virtual time" "probe: $PROBE"
+fi
+
+# With no node found, the full run exits 0 with a SKIP line, like a missing Chrome
+set +e
+OUT=$(CRAFT_CI_NODE=/nonexistent-node-for-test bash "$HARNESS" 2>&1)
+RC=$?
+set -e
+if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "^SKIP: no node binary found"; then
+  pass "no node present: exits 0 with a SKIP line naming what it looked for"
+else
+  fail "node SKIP path wrong" "rc=$RC out: $(echo "$OUT" | tr '\n' ' ')"
+fi
+
 # Tests 4-6: the three live assertions, when a Chrome is available.
 # Discovery mirrors the harness's own order.
 have_chrome=0
@@ -92,6 +114,21 @@ if [ "$have_chrome" -eq 1 ]; then
   else
     fail "assertion 4 (parse produced elements) did not pass or SKIP" "out: $(echo "$OUT" | tr '\n' ' ')"
   fi
+  if echo "$OUT" | grep -q "assert 7 OK: the render loop parked with a node pinned"; then
+    pass "with Chrome: the render loop parks after a drag with the node pinned"
+  else
+    fail "assertion 7 (loop parks after drag) did not pass" "out: $(echo "$OUT" | tr '\n' ' ')"
+  fi
+  if echo "$OUT" | grep -q "assert 9 OK: every card carries a leader"; then
+    pass "with Chrome: every insight card carries a finite leader"
+  else
+    fail "assertion 9 (finite leaders) did not pass" "out: $(echo "$OUT" | tr '\n' ' ')"
+  fi
+  if echo "$OUT" | grep -q "assert 10 OK: the page runs one render loop"; then
+    pass "with Chrome: the page runs one render loop"
+  else
+    fail "assertion 10 (one render loop) did not pass" "out: $(echo "$OUT" | tr '\n' ' ')"
+  fi
   # And the full run's temp dir is gone too
   TMP_USED=$(tmp_path_from "$OUT")
   if [ -n "$TMP_USED" ] && [ ! -e "$TMP_USED" ]; then
@@ -105,6 +142,9 @@ else
   pass "with Chrome: card renders on selection (SKIPPED - no Chrome on this machine)"
   pass "with Chrome: the parse produced real elements (SKIPPED - no Chrome on this machine)"
   pass "full run temp cleanup (SKIPPED - no Chrome on this machine)"
+  pass "loop parks after drag (SKIPPED - no Chrome on this machine)"
+  pass "finite leaders (SKIPPED - no Chrome on this machine)"
+  pass "one render loop (SKIPPED - no Chrome on this machine)"
 fi
 
 echo ""
