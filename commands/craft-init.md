@@ -727,11 +727,11 @@ Step 1 - Navigate: Use `navigate_page` tool with the URL. Wait for page load.
 
 Step 2 - Screenshot: Use `take_screenshot` tool. Save to `.craft/inspiration/screenshots/[domain-slug].png`.
 
-Step 3 - Extract: Use `evaluate_script` tool with JavaScript that extracts the requested aspects. The script depends on which aspects were selected:
+Step 3 - Extract: Use `evaluate_script` tool with JavaScript that extracts the requested aspects. The script depends on which aspects were selected: `evaluate_script` takes a function and calls it, so each script goes in as written - a function - and a self-calling script runs but the tool reports `fn is not a function` and the data is lost.
 
 For **colors**: Run this JavaScript via `evaluate_script`:
 ```javascript
-(() => {
+() => {
   const colors = new Map();
   const els = document.querySelectorAll('*');
   for (const el of els) {
@@ -764,12 +764,12 @@ For **colors**: Run this JavaScript via `evaluate_script`:
     return '#' + [m[1],m[2],m[3]].map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
   }
   return [...colors.entries()].sort((a,b) => b[1] - a[1]).slice(0, 20).map(([hex, count]) => ({hex, count}));
-})()
+}
 ```
 
 For **typography**: Run this JavaScript via `evaluate_script`:
 ```javascript
-(() => {
+() => {
   const fonts = new Map();
   const sizes = new Map();
   const weights = new Map();
@@ -786,12 +786,12 @@ For **typography**: Run this JavaScript via `evaluate_script`:
     sizes: [...sizes.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10),
     weights: [...weights.entries()].sort((a,b) => b[1] - a[1]).slice(0, 5)
   };
-})()
+}
 ```
 
 For **spacing**: Run this JavaScript via `evaluate_script`:
 ```javascript
-(() => {
+() => {
   const gaps = new Map();
   const paddings = new Map();
   const els = document.querySelectorAll('*');
@@ -810,31 +810,31 @@ For **spacing**: Run this JavaScript via `evaluate_script`:
     gaps: [...gaps.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10),
     paddings: [...paddings.entries()].sort((a,b) => b[1] - a[1]).slice(0, 10)
   };
-})()
+}
 ```
 
 For **shadows**: Run via `evaluate_script`:
 ```javascript
-(() => {
+() => {
   const shadows = new Map();
   for (const el of document.querySelectorAll('*')) {
     const s = getComputedStyle(el).boxShadow;
     if (s && s !== 'none') shadows.set(s, (shadows.get(s) || 0) + 1);
   }
   return [...shadows.entries()].sort((a,b) => b[1] - a[1]).slice(0, 5);
-})()
+}
 ```
 
 For **radius**: Run via `evaluate_script`:
 ```javascript
-(() => {
+() => {
   const radii = new Map();
   for (const el of document.querySelectorAll('*')) {
     const r = getComputedStyle(el).borderRadius;
     if (r && r !== '0px') radii.set(r, (radii.get(r) || 0) + 1);
   }
   return [...radii.entries()].sort((a,b) => b[1] - a[1]).slice(0, 5);
-})()
+}
 ```
 
 For **whole-vibe**: Run all of the above scripts sequentially.

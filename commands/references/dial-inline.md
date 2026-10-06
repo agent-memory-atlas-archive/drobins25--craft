@@ -36,7 +36,7 @@ Rules:
 
 ## Step 2: Open the surface
 
-Open the surface in the dial browser (rung (b): start the server first, as promised in the offer). The browser craft drives is a fresh Chrome with its own profile - it carries none of the user's cookies.
+Open the surface in the dial browser (rung (b): start the server first, as promised in the offer). The browser craft drives is a fresh Chrome with its own profile - it carries none of the user's cookies. Once the surface is open, run `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/devtools-launch.cjs" notice --quiet` - it marks the session's fallback notice as said without printing, because the clause in the offer already covers it.
 
 ## Step 3: The login beat
 
@@ -44,7 +44,7 @@ On any surface behind auth, the fresh profile lands on a login screen. This is a
 
 > "That's the login screen - sign in there and tell me when you're through."
 
-The session persists for the rest of the dial, so this costs one login per session at most. Dial never requires a remote-debugging port or any browser setup from the user - one login is the whole price.
+The session persists for the rest of the dial, so this costs at most one login. Dial never requires a remote-debugging port or any browser setup from the user - one login is the whole price.
 
 ## Step 4: Measure
 

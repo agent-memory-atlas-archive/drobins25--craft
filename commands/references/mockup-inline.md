@@ -148,7 +148,7 @@ curl -s --max-time 3 "http://127.0.0.1:<port>/health"
 ```
 
 - **`clients >= 1`:** a page is connected. Run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" announce --session "<id>"` and the page reloads itself. The flow never opens a browser while a page is connected.
-- **`clients == 0`, or no answer:** no page is listening. Re-run `arm --session "<id>"` if the listener did not answer, then open the page once.
+- **`clients == 0`, or no answer:** no page is listening. Re-run `arm --session "<id>"` if the listener did not answer, then open the page once. The first time the flow opens the page in a session, run `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/devtools-launch.cjs" notice` right after that first browser call; a printed line is said to the user verbatim, and nothing printed means nothing said.
 - **The pre-check is never trusted alone.** The registry prunes a closed tab only when a write to it fails, so a closed tab can still read `clients >= 1`. The authority is the `delivered` count that `announce` prints: `delivered == 0` means the page is gone, so open the page on the spot. No round's reload is ever silently lost.
 
 Announce fires when the round is written, after the bake and the verification - never at SEND, and never for a Polish change the user kept (the live page already shows it, and a reload would drop the injections still in the ledger).

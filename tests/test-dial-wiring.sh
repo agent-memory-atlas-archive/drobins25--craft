@@ -20,7 +20,7 @@ PASS_COUNT=0; FAIL_COUNT=0; TOTAL=0
 pass() { PASS_COUNT=$((PASS_COUNT+1)); TOTAL=$((TOTAL+1)); echo "  PASS: $1"; }
 fail() { FAIL_COUNT=$((FAIL_COUNT+1)); TOTAL=$((TOTAL+1)); echo "  FAIL: $1"; [ -n "${2:-}" ] && echo "    Expected: $2"; [ -n "${3:-}" ] && echo "    Got:      $3"; }
 
-# The eight files that must carry the canonical clear, named literally.
+# The nine files that must carry the canonical clear, named literally.
 CLEAR_CARRIERS=(
   "agents/qa-analyzer.md"
   "agents/ux-analyzer.md"
@@ -29,10 +29,11 @@ CLEAR_CARRIERS=(
   "agents/creative-analyzer.md"
   "skills/browser/SKILL.md"
   "skills/adhoc/references/tweak.md"
+  "skills/adhoc/references/fix.md"
   "commands/references/annotate-inline.md"
 )
 
-# Sweep coverage: files the live `grep -rl chrome-devtools` sweep finds that
+# Sweep coverage: files the live `grep -rliE "chrome[- ]devtools"` sweep finds that
 # must carry the clear (the analyzer agents - their mcpServers frontmatter is
 # the machine-readable lowercase marker, so a new browser agent always lands
 # in this sweep).
@@ -43,6 +44,8 @@ REQUIRED_IN_SWEEP=(
   "agents/walkthrough-analyzer.md"
   "agents/creative-analyzer.md"
   "commands/references/annotate-inline.md"
+  "skills/adhoc/references/fix.md"
+  "skills/browser/SKILL.md"
 )
 
 # Sweep hits that deliberately do NOT carry the clear - each with its reason.
@@ -52,13 +55,14 @@ EXCLUSIONS=(
   "commands/craft-annotate.md"          # routing shell; the flow it reads carries the clear
   "commands/craft-analyze.md"           # describes analyzer browser access; the analyzers themselves carry the clear
   "commands/craft-init.md"              # drives the browser but always navigates fresh URLs first - the reload wipes any injection
+  "agents/alchemist.md"                 # names the DevTools product in performance advice; never drives a browser
   "commands/references/taste-pass.md"   # prose reference; the actual browsing happens in the tweak flow, which carries the clear
 )
 
 echo "=== test-dial-wiring.sh ==="
 echo ""
 
-echo "-- Test: clear literal present in all eight browser-touching entry points --"
+echo "-- Test: clear literal present in all nine browser-touching entry points --"
 for f in "${CLEAR_CARRIERS[@]}"; do
   if grep -q "craft-dial-style" "$REPO/$f"; then
     pass "clear named in $f"
@@ -68,7 +72,7 @@ for f in "${CLEAR_CARRIERS[@]}"; do
 done
 
 echo "-- Test: live sweep finds no unaccounted browser entry point --"
-SWEEP_HITS=$(cd "$REPO" && grep -rl "chrome-devtools" agents/ commands/ skills/ 2>/dev/null | sort)
+SWEEP_HITS=$(cd "$REPO" && grep -rliE "chrome[- ]devtools" agents/ commands/ skills/ 2>/dev/null | sort)
 ACCOUNTED=$(printf '%s\n' "${REQUIRED_IN_SWEEP[@]}" "${EXCLUSIONS[@]}" | sort)
 if [ "$SWEEP_HITS" = "$ACCOUNTED" ]; then
   pass "sweep hits equal required-plus-exclusions"

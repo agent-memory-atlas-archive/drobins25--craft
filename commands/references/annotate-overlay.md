@@ -20,7 +20,7 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 
 - **Install guard.** The source opens with `if (window.__craftAnnotateInstalled) return;`. A page that is re-injected after navigation, or injected twice by mistake, must not grow two strips. The canonical clear deletes the flag so a deliberate re-install still works.
 - **Placement.** The style element goes in `head`; the sheet and strip go in `body` as the last children. Framework re-renders reconcile only their own root, so anything appended inside it is eventually eaten. Pins are inserted just before the strip so the strip stays last.
-- **Namespaced handles.** `ca-style`, `ca-sheet`, `ca-strip` are ids; every other real node carries `data-craft-annotate-injected`. The canonical clear is total by construction because of that attribute. The overlay never sets the marker owned by the dial flow, because dial's bulk clear and several analyzers run on arrival and would silently delete unsent pins.
+- **Namespaced handles.** `ca-style`, `ca-sheet`, `ca-strip` are ids; every other real node carries `data-craft-annotate-injected`. The canonical clear is total by construction because of that attribute. The overlay never sets the marker owned by the dial flow, because dial's clear runs unconditionally on arrival, while review flows clear annotate only through `review-clear`, which leaves the page alone during an open run.
 - **No port in the source.** The channel base is `'http://127.0.0.1:' + window.__craftAnnotatePort`. Each session's listener has its own OS-assigned port, stamped into its own pages. A literal in shared source would point every page at one session. An absent stamp means SEND shows `NOT ARMED - no craft session listening` while everything else keeps working locally. A stamp that is present but a request the browser refuses to send (a page policy that does not allow 127.0.0.1) shows `BLOCKED BY PAGE - ask Claude to read pins directly`: the pins are still in the page's local storage, and the session reads them from there.
 - **Inert until asked.** An injected page makes no network request before a user gesture. The loader's one script request is the delivery itself, made by the flow and never by the overlay. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. A dropped stream retries quietly with a bounded backoff. There is no polling.
 - **Honest confirmation.** `RETURNED` is stamped only inside the resolved-200 branch of the SEND post, and every pin in the delivered set then gains a visible sent-stamp. A non-200 reply shows `NOT ARMED - no craft session listening` and stamps nothing. A request the browser rejects outright, with the port stamped, is a refusal by the page or the browser, never a listener state: it shows `BLOCKED BY PAGE - ask Claude to read pins directly` and stamps nothing. Every other channel failure is quiet; SEND alone is loud. A stamp written from a swallowed error is a lie the user acts on.
@@ -562,6 +562,15 @@ document.getElementById('ca-style')?.remove(); document.getElementById('ca-sheet
 ```
 
 Removing the strip is what retires the overlay's handlers and any open stream: each one notices the strip is gone the next time it fires and unregisters itself. Pins the user has not sent stay in local storage; the clear removes the page's overlay, not the user's work. A flow that wants the channel emptied as well posts the tombstone separately (below).
+
+## Clearing leftovers before a review
+
+The five analyzers (creative, qa, style, ux and walkthrough) and adhoc fix and adhoc tweak start by clearing annotate changes left on the page from an earlier review. They never paste the clear above directly; they run `annotate-run.sh review-clear` and act on its one of two outputs:
+
+- `OPEN <id> <subject>`, one line per run: an annotate run is open in this project. The flow does not clear, leaves the page untouched, and tells the user which run it is waiting on by id and subject.
+- One line, a function ending in `return 'CLEARED'`: no run is open. The flow pastes that line to `evaluate_script` verbatim.
+
+The gate exists because an open run's page is the user's live review: clearing it would pull the overlay out from under someone mid-comment. The verb needs no session, writes nothing and contacts no listener; it reads the clear from the fence above at run time, so the text is stated once. The clear removes the overlay and the live session styles but never the pins waiting in local storage.
 
 ## The stamps
 

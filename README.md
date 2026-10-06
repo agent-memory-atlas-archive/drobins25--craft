@@ -850,6 +850,8 @@ Craft uses `chrome-devtools` MCP for the Analysis Phase:
 - Console log capture
 - Performance tracing
 
+The browser server is launched through a small craft launcher. One saved browser profile is shared across sessions, so your logins persist. When another session already has that profile open, a session gets its own fresh window and may need to sign in there. Usage statistics and CrUX lookups are off, and the server version is pinned and bumped deliberately.
+
 The `browser` skill (`/craft:browser`) uses `playwright-cli` as an alternative to Chrome DevTools MCP. Playwright saves accessibility snapshots to disk as YAML files (~27k tokens per task) rather than streaming them into context (~114k tokens per task) - approximately 4x cheaper in token cost. It also supports persistent named sessions steerable via SendMessage. Both tools coexist; playwright-cli is purely additive.
 
 To use `/craft:browser`, install playwright-cli globally:

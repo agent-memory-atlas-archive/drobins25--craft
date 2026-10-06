@@ -166,7 +166,7 @@ If chrome-devtools MCP tools are not available:
 - Style analysis: `craft:style-analyzer`
 - Walkthrough: `craft:walkthrough-analyzer`
 
-Pass the confirmed scope and any relevant context to the agent.
+Pass the confirmed scope and any relevant context to the agent. Include a `PLUGIN_ROOT: <resolved ${CLAUDE_PLUGIN_ROOT}>` line in every analyzer prompt - subagent shells cannot expand it, and the analyzers need it to run the annotate clear.
 
 **For walkthrough analysis**, assemble a structured brief before invoking the agent (the agent does NOT read story files - it only interacts with the browser):
 

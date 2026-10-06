@@ -12,6 +12,10 @@ This flow runs in the orchestrator, not a subagent: it needs the browser connect
 
 The overlay reaches a tab through the chrome-devtools connection. If that connection is not available, say so in one plain line and stop - no offer, no error, no setup instructions. Otherwise list the tabs and select the one the user means (the subject, or the tab already selected when no subject was given).
 
+Listing the tabs is the session's first browser call. Right after it run `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/devtools-launch.cjs" notice`; a printed line is said to the user verbatim, and nothing printed means nothing said.
+
+**Fresh window rule.** When every listed tab is `about:blank` or a new-tab page, the window has none of the user's pages. If the subject is an address (`http://`, `https://`, `file://`), open it with `new_page`. Otherwise say exactly "This window has none of your pages open - what address should I open?" (no question widget), open the reply with `new_page`, then select it. When the notice line and this question are both spoken, they go in one message.
+
 ## Step 2: Arm or reuse the session listener
 
 The listener is lazy and per-session. It starts the first time a flow needs it and lives until the session ends. Nothing in this flow ever shuts it down.

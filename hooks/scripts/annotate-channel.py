@@ -24,9 +24,12 @@ so an edit or a plugin update is served on the next load.
 
 Usage: annotate-channel.py --dir <session-dir>
        annotate-channel.py --print-overlay
+       annotate-channel.py --print-clear
 
 --print-overlay writes the same bytes /overlay.js serves to stdout and exits;
 it is how the bake command reads the fence without a second parser.
+--print-clear does the same for the annotate-clear fence, so review-clear
+reads the canonical clear through the one fence reader.
 
 Binds 127.0.0.1 on an OS-assigned port and prints "PORT <n>" to stdout once
 it is listening. Python 3.9, standard library only.
@@ -55,16 +58,17 @@ RELOAD_EVENT = b"event: reload\ndata: reload\n\n"
 
 
 OVERLAY_FENCE_OPEN = "```overlay-source"
-OVERLAY_FENCE_CLOSE = "```"
+CLEAR_FENCE_OPEN = "```annotate-clear"
+FENCE_CLOSE = "```"
 
 
-def overlay_source():
-    """The overlay fence from the reference, read fresh on every call.
+def fence_source(opener):
+    """The fence in the reference that starts at the opener line, read fresh.
 
     The reference sits beside this script's plugin tree: hooks/scripts and
     commands/references are siblings under the plugin root. Returns the lines
-    strictly between the opening fence and the next bare fence, each ended with
-    a newline, or None when the file or either fence line is missing.
+    strictly between the opener and the next bare fence, each ended with a
+    newline, or None when the file or either fence line is missing.
     """
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, "..", "..", "commands", "references", "annotate-overlay.md")
@@ -74,13 +78,18 @@ def overlay_source():
     except (OSError, UnicodeDecodeError):
         return None
     try:
-        start = lines.index(OVERLAY_FENCE_OPEN) + 1
+        start = lines.index(opener) + 1
     except ValueError:
         return None
     for end in range(start, len(lines)):
-        if lines[end] == OVERLAY_FENCE_CLOSE:
+        if lines[end] == FENCE_CLOSE:
             return "".join(line + "\n" for line in lines[start:end]).encode("utf-8")
     return None
+
+
+def overlay_source():
+    """The overlay fence, read fresh on every call."""
+    return fence_source(OVERLAY_FENCE_OPEN)
 
 
 def _as_seq(value):
@@ -328,6 +337,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dir", help="the session directory holding current.json")
     parser.add_argument("--print-overlay", action="store_true", help="print the overlay script and exit")
+    parser.add_argument("--print-clear", action="store_true", help="print the canonical annotate clear and exit")
     args = parser.parse_args()
 
     if args.print_overlay:
@@ -338,8 +348,16 @@ def main():
         sys.stdout.buffer.write(body)
         sys.stdout.buffer.flush()
         return 0
+    if args.print_clear:
+        body = fence_source(CLEAR_FENCE_OPEN)
+        if body is None:
+            sys.stderr.write("annotate-channel: annotate-clear fence not found in annotate-overlay.md\n")
+            return 1
+        sys.stdout.buffer.write(body)
+        sys.stdout.buffer.flush()
+        return 0
     if not args.dir:
-        parser.error("--dir is required unless --print-overlay is given")
+        parser.error("--dir is required unless --print-overlay or --print-clear is given")
 
     os.makedirs(args.dir, exist_ok=True)
     server = Channel(args.dir)

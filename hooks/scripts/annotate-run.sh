@@ -16,6 +16,7 @@
 #   annotate-run.sh strip   --file PATH   (mockup: removes every baked overlay element; needs no session)
 #   annotate-run.sh ensure  [--root R] --session ID   (read beat: OK PORT p | REARMED PORT p STREAK k | GONE | FAILED; restarts a dead or hung listener)
 #   annotate-run.sh send    [--root R] --session ID   (POSTs the JSON pin array on stdin to the listener)
+#   annotate-run.sh review-clear [--root R]   (review flows: OPEN <id> <subject> per open run, else ONE line, a function that clears leftover annotate changes and returns CLEARED; needs no session, writes nothing)
 #   annotate-run.sh disarm  [--root R] --session ID
 #
 # announce pushes a reload event to every page holding the session's stream and
@@ -713,6 +714,40 @@ cmd_disarm() {
   rm -rf "$dir"
 }
 
+# An open run is a folder with run.json, no record.md and an owner that is not a
+# dead pid. An unreadable or missing owner counts as open: unknown is never
+# treated as dead. Prints OPEN <id> <subject> per open run; with none, prints the
+# canonical clear as one function line. Writes nothing and contacts no listener.
+cmd_review_clear() {
+  local dir id owner subject open=0 clear
+  if [ -n "$ROOT" ]; then
+    for dir in "$ROOT"/.craft/annotations/*/; do
+      [ -d "$dir" ] || continue
+      [ -f "$dir/record.md" ] && continue
+      [ -f "$dir/run.json" ] || continue
+      owner="$(read_file "$dir/owner.pid")"
+      if is_number "$owner" && ! pid_alive "$owner"; then
+        continue
+      fi
+      id="$(basename "$dir")"
+      subject="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        text = str(json.load(fh).get("subject", "")).replace("\n", " ").strip()
+except Exception:
+    text = ""
+print(text or "-")
+' "$dir/run.json" 2>/dev/null || echo "-")"
+      echo "OPEN $id $subject"
+      open=1
+    done
+  fi
+  [ "$open" = "0" ] || return 0
+  clear="$(python3 "$CHANNEL_PY" --print-clear)" || exit 1
+  echo "() => { $clear return 'CLEARED'; }"
+}
+
 # Reaps session dirs whose owning session process is dead. A dir with no
 # readable owner is left alone: unknown is never treated as dead.
 sweep_all() {
@@ -737,7 +772,7 @@ sweep_all() {
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|kind|loader|bake|strip|ensure|send|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|kind|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -792,6 +827,7 @@ case "$VERB" in
   strip)  cmd_strip ;;
   ensure) cmd_ensure ;;
   send)   cmd_send ;;
+  review-clear) cmd_review_clear ;;
   disarm) cmd_disarm ;;
   *)      die "unknown verb: $VERB" ;;
 esac
