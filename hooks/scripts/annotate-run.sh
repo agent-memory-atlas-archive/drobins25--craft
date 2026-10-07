@@ -9,9 +9,12 @@
 #   annotate-run.sh announce [--root R] --session ID
 #   annotate-run.sh sweep   [--root R]
 #   annotate-run.sh begin   [--root R] --session ID [--subject TEXT]   (annotate only: marks the run's start seq)
+#   annotate-run.sh watch   [--root R] --session ID [--once]   (annotate only: prints each new change from the saved position as one line; --once blocks until one batch prints, then exits)
 #   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
+#   annotate-run.sh apply   [--root R] --session ID [--drop KEY]... [--target TS=SELECTOR]...   (annotate only: blocks on stdin; writes them, pushes the page, prints what the page measured)
+#   annotate-run.sh stamp   [--root R] --session ID   (annotate only: ONE line that stamps the port and the run id, for a page that blocks the loader)
 #   annotate-run.sh kind    --page URL   (prints project or external; needs no session)
-#   annotate-run.sh loader  [--root R] --session ID --page URL   (project page: ONE line for evaluate_script that loads the served overlay; external page: EXTERNAL)
+#   annotate-run.sh loader  [--root R] --session ID --page URL [--run]   (--run: annotate only, also stamps the run id; project page: ONE line for evaluate_script that loads the served overlay; external page: EXTERNAL)
 #   annotate-run.sh bake    [--root R] --session ID --file PATH   (mockup: splices the stamps and the overlay into the page file)
 #   annotate-run.sh strip   --file PATH   (mockup: removes every baked overlay element; needs no session)
 #   annotate-run.sh ensure  [--root R] --session ID   (read beat: OK PORT p | REARMED PORT p STREAK k | GONE | FAILED; restarts a dead or hung listener)
@@ -33,6 +36,15 @@
 # --add nor --drop it only prints. send is for a page that blocks SEND: the
 # session posts the pins it read from local storage itself.
 #
+# watch reads changes.jsonl from the byte offset saved in watch.cursor (begin
+# saves the log's size; a watch with no cursor starts at the log's end) and
+# prints one line per change: ADDED / EDITED with the pin's source, UNDONE for a
+# withdrawn pin whose block it dropped, UNREACHABLE when the listener is gone.
+# Each poll's complete lines are one batch, printed together before the position
+# moves, so a change is never lost across a restart and never printed twice.
+# The newest watch owns watch.pid and older ones leave; a watch ends silently
+# when the run is filed or the session folder is gone.
+#
 # kind calls a page a project page when it is served from localhost, 127.0.0.1
 # or file://; every other address is external. The loader never contacts the
 # listener for an external page, which always takes the pasted overlay instead.
@@ -51,7 +63,8 @@
 # Each armed session owns one listener (annotate-channel.py) on an OS-assigned
 # port, with its state under <root>/.craft/annotations/<session-id>/:
 #   port, listener.pid, owner.pid, listener.log, current.json, history.jsonl,
-#   run.json, session.css, rearm.streak
+#   run.json, session.css, rearm.streak, changes.jsonl, probes.json, watch.cursor,
+#   watch.pid
 # Any directory holding record.md is a filed record, not a live session: status
 # --all and sweep never list or touch it.
 #
@@ -108,20 +121,21 @@ resolve_root() {
   echo "${found%/}"
 }
 
-# http_call <METHOD> <port> <path> - prints the response body; non-zero when unreachable
+# http_call <METHOD> <port> <path> [timeout-seconds] - prints the response body; non-zero when unreachable
 http_call() {
-  python3 - "$1" "$2" "$3" <<'PYEOF'
+  python3 - "$1" "$2" "$3" "${4:-5}" <<'PYEOF'
 import sys
 import urllib.request
 
 method, port, path = sys.argv[1:4]
+timeout = float(sys.argv[4])
 request = urllib.request.Request(
     "http://127.0.0.1:%s%s" % (port, path),
     data=b"" if method == "POST" else None,
     method=method,
 )
 try:
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         sys.stdout.write(response.read().decode("utf-8"))
 except Exception as error:
     sys.stderr.write("request failed: %s\n" % error)
@@ -399,6 +413,8 @@ cmd_begin() {
   dir="$(session_dir)"
   file_orphan "$dir"
   start="$(last_seq_on_disk "$dir")"
+  # An earlier run's probes must never resolve this run's pins.
+  rm -f "$dir/probes.json"
   python3 - "$dir" "$start" "$SUBJECT" <<'PYEOF'
 import json
 import os
@@ -411,7 +427,11 @@ run = {
     "subject": subject,
     "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
-for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", "")):
+try:
+    log_size = os.path.getsize(os.path.join(dir_path, "changes.jsonl"))
+except OSError:
+    log_size = 0
+for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", ""), ("watch.cursor", "%d\n" % log_size)):
     tmp_path = os.path.join(dir_path, name + ".tmp")
     with open(tmp_path, "w", encoding="utf-8") as handle:
         handle.write(content)
@@ -420,34 +440,23 @@ PYEOF
   echo "RUN $start"
 }
 
-# The sheet is a run of keyed blocks: a header line "/* annotate-key KEY */"
-# then that key's CSS. The page only ever receives the whole file, as one
-# function that replaces the session style's text and returns APPLIED, so
-# page == sheet after every apply.
-cmd_sheet() {
-  local dir mode="print"
-  dir="$(session_dir)"
-  if [ "$SHEET_ADD" = "1" ] && [ -n "$SHEET_DROP" ]; then
-    die "sheet takes --add or --drop, not both"
-  fi
-  if [ "$SHEET_ADD" = "1" ]; then
-    mode="add"
-    valid_session_id "$KEY" || die "--add needs --key KEY (letters, digits, dash, underscore)"
-  elif [ -n "$SHEET_DROP" ]; then
-    mode="drop"
-    KEY="$SHEET_DROP"
-    valid_session_id "$KEY" || die "--drop needs a KEY (letters, digits, dash, underscore)"
-  fi
-  local source
-  # The script rides in -c so stdin stays free for the CSS.
-  read -r -d '' source <<'PYEOF' || true
+# The sheet's own grammar and the paste literal, shared by sheet and apply.
+# argv: <file> <mode> <key> [d:KEY | t:TS=SELECTOR]...
+#   print/add/drop  the sheet verb's modes (the printed function is the paste line)
+#   apply           stdin holds blocks; d: entries drop keys, t: entries aim a
+#                   pin at another element; prints the page job as one JSON line
+read -r -d '' SHEET_PY <<'PYEOF' || true
 import json
 import os
 import re
 import sys
+import uuid
 
 path, mode, key = sys.argv[1:4]
-HEADER = re.compile(r"^/\* annotate-key ([A-Za-z0-9_-]+) \*/$")
+extras = sys.argv[4:]
+KEY = r"[A-Za-z0-9_-]+"
+HEADER = re.compile(r"^/\* annotate-key (%s) \*/$" % KEY)
+VALID_KEY = re.compile(r"^%s$" % KEY)
 MARKER = "/* annotate-key "
 
 
@@ -472,44 +481,527 @@ def render(blocks):
     return out
 
 
+def refuse(message):
+    sys.stderr.write("annotate-run: %s\n" % message)
+    sys.exit(1)
+
+
+def parse_input(text):
+    """Blocks from apply's stdin; anything that is not a block is refused."""
+    blocks = []
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\n")
+        found = HEADER.match(bare)
+        if found:
+            blocks.append([found.group(1), ""])
+        elif MARKER in line:
+            refuse("a line carries an annotate-key marker that is not a valid header: %s" % bare[:60])
+        elif blocks:
+            blocks[-1][1] += line
+        elif bare.strip():
+            refuse("text before the first annotate-key header")
+    return blocks
+
+
+def set_block(blocks, block_key, css):
+    for block in blocks:
+        if block[0] == block_key:
+            block[1] = css
+            return
+    blocks.append([block_key, css])
+
+
+def save(text):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(tmp_path, path)
+
+
 try:
     with open(path, "r", encoding="utf-8") as handle:
         current = handle.read()
 except OSError:
     current = ""
 
+job = None
 if mode == "print":
     text = current
+elif mode == "apply":
+    drops = [e[2:] for e in extras if e.startswith("d:")]
+    targets = []
+    for entry in extras:
+        if entry.startswith("t:"):
+            ts, _, selector = entry[2:].partition("=")
+            targets.append({"ts": int(ts) if ts.isdigit() else ts, "selector": selector})
+    for drop in drops:
+        if not VALID_KEY.match(drop):
+            refuse("--drop needs a KEY (letters, digits, dash, underscore)")
+    incoming = [] if sys.stdin.isatty() else parse_input(sys.stdin.read())
+    blocks = [block for block in parse(current) if block[0] not in drops]
+    for block_key, css in incoming:
+        set_block(blocks, block_key, css)
+    text = render(blocks)
+    save(text)
+    measure = []
+    for block_key, _ in incoming:
+        if block_key not in measure:
+            measure.append(block_key)
+    job = {"id": uuid.uuid4().hex[:12], "measure": measure, "targets": targets}
 else:
     blocks = parse(current)
     if mode == "add":
         css = sys.stdin.read()
         if MARKER in css:
-            sys.stderr.write("annotate-run: CSS must not carry an annotate-key header\n")
-            sys.exit(1)
-        for block in blocks:
-            if block[0] == key:
-                block[1] = css
-                break
-        else:
-            blocks.append([key, css])
+            refuse("CSS must not carry an annotate-key header")
+        set_block(blocks, key, css)
     else:
         blocks = [block for block in blocks if block[0] != key]
     text = render(blocks)
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    os.replace(tmp_path, path)
+    save(text)
 
-literal = json.dumps(text)
-sys.stdout.write(
-    "() => { let s = document.getElementById('ca-session-css'); "
-    "if (!s) { s = document.createElement('style'); s.id = 'ca-session-css'; "
-    "s.setAttribute('data-craft-annotate-injected', ''); } "
-    "s.textContent = %s; document.head.appendChild(s); return 'APPLIED'; }\n" % literal
-)
+if job is not None:
+    sys.stdout.write(json.dumps(job) + "\n")
+else:
+    sys.stdout.write(
+        "() => { let s = document.getElementById('ca-session-css'); "
+        "if (!s) { s = document.createElement('style'); s.id = 'ca-session-css'; "
+        "s.setAttribute('data-craft-annotate-injected', ''); } "
+        "s.textContent = %s; document.head.appendChild(s); return 'APPLIED'; }\n" % json.dumps(text)
+    )
 PYEOF
-  python3 -c "$source" "$dir/session.css" "$mode" "$KEY"
+
+# The sheet is a run of keyed blocks: a header line "/* annotate-key KEY */"
+# then that key's CSS. The page only ever receives the whole file, as one
+# function that replaces the session style's text and returns APPLIED, so
+# page == sheet after every apply.
+cmd_sheet() {
+  local dir mode="print"
+  dir="$(session_dir)"
+  if [ "$SHEET_ADD" = "1" ] && [ -n "$SHEET_DROP" ]; then
+    die "sheet takes --add or --drop, not both"
+  fi
+  if [ "$SHEET_ADD" = "1" ]; then
+    mode="add"
+    valid_session_id "$KEY" || die "--add needs --key KEY (letters, digits, dash, underscore)"
+  elif [ -n "$SHEET_DROP" ]; then
+    mode="drop"
+    KEY="$SHEET_DROP"
+    valid_session_id "$KEY" || die "--drop needs a KEY (letters, digits, dash, underscore)"
+  fi
+  python3 -c "$SHEET_PY" "$dir/session.css" "$mode" "$KEY"
+}
+
+# What the page measured, as lines. Reads the report on stdin; argv holds the
+# dropped keys. The tiers are data here, not in the page: the page measures,
+# this decides which facts call for a screenshot.
+read -r -d '' REPORT_PY <<'PYEOF' || true
+import json
+import re
+import sys
+
+LIMIT = 120
+LAYOUT_EXACT = {"display", "position", "float", "inset", "top", "right", "bottom", "left",
+                "width", "height", "min-width", "max-width", "min-height", "max-height",
+                "gap", "row-gap", "column-gap", "order", "transform", "translate", "scale", "rotate"}
+LAYOUT_PREFIX = ("grid", "flex", "align-", "justify-", "place-", "overflow")
+STACKING_EXACT = {"z-index", "isolation", "mix-blend-mode"}
+REASON_ORDER = ["matched nothing", "zero-size", "off-screen", "covered", "out of view",
+                "layout", "stacking", "drawn content"]
+
+
+def one_line(text, limit=None):
+    text = re.sub(r"\s+", " ", str(text)).strip()
+    return text[:limit] if limit else text
+
+
+def number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def box_of(rule):
+    box = rule.get("box")
+    if not isinstance(box, dict):
+        return None
+    parts = [number(box.get(k)) for k in ("x", "y", "w", "h")]
+    return None if None in parts else [int(round(p)) for p in parts]
+
+
+def visibility_of(rule):
+    if rule.get("inView") is False:
+        return "out of view"
+    top = rule.get("top")
+    if top is True:
+        return "visible"
+    if top is False:
+        return "covered by %s" % one_line(rule.get("coveredBy") or "another element", 60)
+    if "top" in rule and top is None and rule.get("inView") is True:
+        return "not checked"
+    return None
+
+
+def reasons_of(rule, page_size):
+    found = set()
+    if rule.get("matched") == 0:
+        found.add("matched nothing")
+        return found
+    box = box_of(rule)
+    if box is not None:
+        x, y, w, h = box
+        if w == 0 or h == 0:
+            found.add("zero-size")
+        elif page_size is not None and (x + w <= 0 or y + h <= 0 or x >= page_size[0] or y >= page_size[1]):
+            found.add("off-screen")
+    if rule.get("top") is False:
+        found.add("covered")
+    if rule.get("inView") is False:
+        found.add("out of view")
+    values = rule.get("values") if isinstance(rule.get("values"), dict) else {}
+    for prop in values:
+        if prop in LAYOUT_EXACT or prop.startswith(LAYOUT_PREFIX):
+            found.add("layout")
+        if prop in STACKING_EXACT or (prop.startswith("background") and rule.get("container") is True):
+            found.add("stacking")
+        if prop == "content":
+            found.add("drawn content")
+    return found
+
+
+def rule_line(key, rule):
+    selector = one_line(rule.get("selector", ""))
+    if rule.get("matched") == 0:
+        return "%s %s x0" % (key, selector)
+    line = "%s %s x%s" % (key, selector, rule.get("matched", 1))
+    box = box_of(rule)
+    if box is not None:
+        line += " box %d,%d %dx%d" % tuple(box)
+    visibility = visibility_of(rule)
+    if visibility:
+        line += " " + visibility
+    values = rule.get("values") if isinstance(rule.get("values"), dict) else {}
+    pairs = ["%s %s" % (one_line(p), one_line(v, LIMIT)) for p, v in values.items()]
+    if pairs:
+        line += (": " if visibility else " ") + "; ".join(pairs)
+    return line
+
+
+report = json.load(sys.stdin)
+drops = sys.argv[1:]
+view = report.get("view") if isinstance(report.get("view"), dict) else {}
+size = report.get("pageSize") if isinstance(report.get("pageSize"), dict) else {}
+vx, vy, vw, vh = (number(view.get(k)) for k in ("x", "y", "w", "h"))
+pw, ph = number(size.get("w")), number(size.get("h"))
+page_size = (pw, ph) if pw is not None and ph is not None else None
+head = "APPLIED %s" % one_line(report.get("page", ""))
+if None not in (vx, vy, vw, vh):
+    head += " view %d,%d %dx%d" % (round(vx), round(vy), round(vw), round(vh))
+if page_size is not None:
+    head += " page %dx%d" % (round(pw), round(ph))
+out = [head]
+shots = []
+blocks = report.get("blocks") if isinstance(report.get("blocks"), dict) else {}
+for key, rules in blocks.items():
+    reasons = set()
+    for rule in rules if isinstance(rules, list) else []:
+        if not isinstance(rule, dict):
+            continue
+        out.append(rule_line(key, rule))
+        reasons |= reasons_of(rule, page_size)
+    if reasons:
+        shots.append("SHOT %s %s" % (key, ", ".join(r for r in REASON_ORDER if r in reasons)))
+out.extend("%s dropped" % key for key in drops)
+out.extend(shots)
+sys.stdout.write("\n".join(out) + "\n")
+PYEOF
+
+# json_field <field> - a top-level field of the JSON on stdin; prints nothing when absent or unreadable
+json_field() {
+  python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin).get(sys.argv[1])
+except Exception:
+    sys.exit(0)
+if value is not None:
+    print(value)
+' "$1" 2>/dev/null || true
+}
+
+# cmd_apply - writes the blocks and drops, asks the page to apply and measure,
+# and prints what it measured. A page that cannot be reached, or did not
+# confirm, gets the paste line instead; the file is the truth once written.
+cmd_apply() {
+  local dir port job id reply delivered report args=() targets=() entry probes target_count=0
+  dir="$(session_dir)"
+  for entry in ${APPLY_DROPS[@]+"${APPLY_DROPS[@]}"}; do
+    args+=("d:$entry")
+  done
+  for entry in ${APPLY_TARGETS[@]+"${APPLY_TARGETS[@]}"}; do
+    args+=("t:$entry")
+    targets+=(--target "$entry")
+    target_count=$((target_count + 1))
+  done
+  job="$(python3 -c "$SHEET_PY" "$dir/session.css" apply "" ${args[@]+"${args[@]}"})" || exit 1
+  port="$(read_file "$dir/port")"
+  report=""
+  if is_number "$port" \
+     && reply="$(printf '%s' "$job" | http_post_body "$port" /sheet 2>/dev/null)"; then
+    delivered="$(printf '%s' "$reply" | json_field delivered)"
+    if is_number "$delivered" && [ "$delivered" -ge 1 ]; then
+      id="$(printf '%s' "$job" | json_field id)"
+      report="$(http_call GET "$port" "/applied?id=$id&wait=5" 8 2>/dev/null)" || report=""
+    fi
+  fi
+  if [ -z "$report" ] || [ -n "$(printf '%s' "$report" | json_field error)" ]; then
+    echo "PASTE"
+    python3 -c "$SHEET_PY" "$dir/session.css" print ""
+    return 0
+  fi
+  if [ "$target_count" -gt 0 ]; then
+    probes="$(printf '%s' "$report" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("probes") or []))' 2>/dev/null)" || probes="[]"
+    printf '%s' "$probes" | bash "$SCRIPT_DIR/annotate-resolve.sh" resolve --root "$ROOT" --session "$SESSION" ${targets[@]+"${targets[@]}"} >/dev/null 2>&1 || true
+  fi
+  printf '%s' "$report" | python3 -c "$REPORT_PY" ${APPLY_DROPS[@]+"${APPLY_DROPS[@]}"} \
+    || { echo "PASTE"; python3 -c "$SHEET_PY" "$dir/session.css" print ""; }
+}
+
+# The standby reader. Embedded program; argv: dir root session run.sh resolve.sh once
+read -r -d '' WATCH_PY <<'PYEOF' || true
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+
+dir_path, root, session, run_sh, resolve_sh, once = sys.argv[1:7]
+once = once == "1"
+POLL = 0.25
+LOG = os.path.join(dir_path, "changes.jsonl")
+CURSOR = os.path.join(dir_path, "watch.cursor")
+PID_FILE = os.path.join(dir_path, "watch.pid")
+KEY_HEADER = re.compile(r"^/\* annotate-key ([A-Za-z0-9_-]+) \*/$", re.M)
+LINE_BREAKS = {"\u0085": "\\u0085", " ": "\\u2028", " ": "\\u2029"}
+
+
+def read_json(path, fallback):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return fallback
+
+
+def run_id():
+    run = read_json(os.path.join(dir_path, "run.json"), None)
+    if not isinstance(run, dict):
+        return None
+    start = run.get("start_seq")
+    start = start if isinstance(start, int) and not isinstance(start, bool) else 0
+    return "%d@%s" % (start, run.get("started_at") or "")
+
+
+def quoted(text):
+    out = json.dumps("" if text is None else str(text), ensure_ascii=False)
+    for char, escaped in LINE_BREAKS.items():
+        out = out.replace(char, escaped)
+    return out
+
+
+def log_size():
+    try:
+        return os.path.getsize(LOG)
+    except OSError:
+        return 0
+
+
+def read_cursor():
+    try:
+        with open(CURSOR, "r", encoding="utf-8") as handle:
+            value = int(handle.read().strip())
+        return min(max(value, 0), log_size())
+    except (OSError, ValueError):
+        return log_size()
+
+
+def write_cursor(offset):
+    tmp = CURSOR + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write("%d\n" % offset)
+    os.replace(tmp, CURSOR)
+
+
+def new_batch(offset):
+    """The complete lines past offset and the offset after them."""
+    try:
+        with open(LOG, "rb") as handle:
+            handle.seek(offset)
+            data = handle.read()
+    except OSError:
+        return [], offset
+    end = data.rfind(b"\n")
+    if end < 0:
+        return [], offset
+    changes = []
+    for raw in data[:end + 1].split(b"\n"):
+        try:
+            change = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            continue
+        if isinstance(change, dict):
+            changes.append(change)
+    return changes, offset + end + 1
+
+
+def sheet_keys():
+    try:
+        with open(os.path.join(dir_path, "session.css"), "r", encoding="utf-8") as handle:
+            return set(KEY_HEADER.findall(handle.read()))
+    except OSError:
+        return set()
+
+
+def resolve(changes):
+    """One resolver call for every added or edited pin that has a probe item."""
+    probes = read_json(os.path.join(dir_path, "probes.json"), {})
+    probes = probes if isinstance(probes, dict) else {}
+    items = []
+    for change in changes:
+        if change.get("kind") in ("added", "edited"):
+            item = probes.get(str(change.get("ts")))
+            if isinstance(item, dict) and item not in items:
+                items.append(item)
+    if items:
+        subprocess.run(["bash", resolve_sh, "resolve", "--root", root, "--session", session],
+                       input=json.dumps(items), capture_output=True, text=True)
+    return probes
+
+
+def source_of(ts, probes):
+    if str(ts) not in probes:
+        return "not probed"
+    result = subprocess.run(["bash", resolve_sh, "where", "--root", root, "--session", session, "--ts", str(ts)],
+                            capture_output=True, text=True)
+    return " ".join(result.stdout.split()) or "not probed"
+
+
+def drop(keys):
+    """One apply call that removes the blocks; True when the page confirmed."""
+    args = ["bash", run_sh, "apply", "--root", root, "--session", session]
+    for key in keys:
+        args += ["--drop", key]
+    result = subprocess.run(args, input="", capture_output=True, text=True)
+    return result.stdout.startswith("APPLIED")
+
+
+def lines_for(changes):
+    probes = resolve(changes)
+    blocks = sheet_keys()
+    doomed = []
+    for change in changes:
+        key = str(change.get("ts"))
+        if change.get("kind") == "deleted" and key in blocks and key not in doomed:
+            doomed.append(key)
+    confirmed = drop(doomed) if doomed else False
+    out = []
+    for change in changes:
+        kind, key = change.get("kind"), str(change.get("ts"))
+        if kind in ("added", "edited"):
+            pin = change.get("pin") if isinstance(change.get("pin"), dict) else {}
+            out.append("%s %s #%s %s at %s near %s source %s" % (
+                kind.upper(), key, pin.get("n", "?"), quoted(pin.get("text")),
+                quoted(pin.get("selector")), quoted(pin.get("nearText")),
+                quoted(source_of(key, probes))))
+        elif kind == "deleted" and key in doomed:
+            out.append("UNDONE %s page %s" % (key, "confirmed" if confirmed else "did not confirm"))
+    return out
+
+
+def emit(lines):
+    sys.stdout.write("".join(line + "\n" for line in lines))
+    sys.stdout.flush()
+
+
+def listener_answers():
+    try:
+        with open(os.path.join(dir_path, "port"), "r", encoding="utf-8") as handle:
+            port = handle.read().strip()
+        with urllib.request.urlopen("http://127.0.0.1:%s/health" % port, timeout=2) as response:
+            return response.status == 200
+    except (OSError, ValueError):
+        return False
+
+
+def listener_alive():
+    try:
+        with open(os.path.join(dir_path, "listener.pid"), "r", encoding="utf-8") as handle:
+            os.kill(int(handle.read().strip()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+my_run = run_id()
+if my_run is None:
+    sys.stderr.write("annotate-run: no run in progress (run begin first)\n")
+    sys.exit(1)
+with open(PID_FILE, "w", encoding="utf-8") as handle:
+    handle.write("%d\n" % os.getpid())
+
+
+def still_mine():
+    try:
+        with open(PID_FILE, "r", encoding="utf-8") as handle:
+            owner = handle.read().strip()
+    except OSError:
+        return False
+    return os.path.isdir(dir_path) and run_id() == my_run and owner == str(os.getpid())
+
+
+offset = read_cursor()
+tick = 0
+failed_health = 0
+reported = False
+try:
+    while still_mine():
+        changes, end = new_batch(offset)
+        if end != offset:
+            lines = lines_for(changes)
+            if not still_mine():
+                break
+            if lines:
+                emit(lines)
+            write_cursor(end)
+            offset = end
+            if lines and once:
+                break
+        # Once a second: a dead listener is an outage at once; a live one that
+        # fails /health on two checks five seconds apart is too. After an outage
+        # is reported the check runs every second so recovery re-arms the notice.
+        if tick % 4 == 3:
+            alive = listener_alive()
+            if alive and (reported or tick % 20 == 19):
+                failed_health = 0 if listener_answers() else failed_health + 1
+            down = (not alive) or failed_health >= 2
+            if down and not reported:
+                emit(["UNREACHABLE"])
+                reported = True
+                if once:
+                    break
+            elif reported and not down and failed_health == 0:
+                reported = False
+        tick += 1
+        time.sleep(POLL)
+except (BrokenPipeError, KeyboardInterrupt):
+    pass
+PYEOF
+
+cmd_watch() {
+  local dir
+  dir="$(session_dir)"
+  [ -f "$dir/run.json" ] || die "no run in progress (run begin first)"
+  exec python3 -c "$WATCH_PY" "$dir" "$ROOT" "$SESSION" "$SCRIPT_DIR/annotate-run.sh" "$SCRIPT_DIR/annotate-resolve.sh" "$WATCH_ONCE"
 }
 
 # cmd_kind - project when the page is a local one (file, or http/https on
@@ -539,7 +1031,7 @@ PYEOF
 # function because evaluate_script awaits a function's return value but only
 # runs an immediately invoked expression while building its handle.
 cmd_loader() {
-  local dir port
+  local dir port stamp=""
   [ -n "$PAGE" ] || die "--page <url> is required"
   if [ "$(page_kind "$PAGE")" != "project" ]; then
     echo "EXTERNAL"
@@ -549,13 +1041,16 @@ cmd_loader() {
   port="$(read_file "$dir/port")"
   is_number "$port" || die "session $SESSION has no port"
   http_call GET "$port" /health >/dev/null 2>&1 || die "listener for $SESSION is not answering"
-  python3 - "$port" <<'PYEOF'
+  [ "$RUN_STAMP" = "0" ] || stamp="$(run_stamp_js "$dir")"
+  python3 - "$port" "$stamp" <<'PYEOF'
 import sys
 
 port = int(sys.argv[1])
+stamp = sys.argv[2]
 sys.stdout.write(
     "async () => { "
     "window.__craftAnnotatePort = %(port)d; "
+    "%(stamp)s"
     "if (window.__craftAnnotateInstalled) return 'LOADED'; "
     "try { "
     "return await new Promise((resolve) => { "
@@ -570,9 +1065,37 @@ sys.stdout.write(
     "document.head.appendChild(el); "
     "}); "
     "} catch (error) { return 'SCRIPT-BLOCKED'; } "
-    "}\n" % {"port": port}
+    "}\n" % {"port": port, "stamp": stamp}
 )
 PYEOF
+}
+
+# run_stamp_js <session-dir> - the statement that stamps the run id, with its
+# trailing space; exits 1 when the session has no run
+run_stamp_js() {
+  python3 - "$1/run.json" <<'PYEOF' || die "session $SESSION has no run (begin writes run.json)"
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        run = json.load(handle)
+    run_id = "%d@%s" % (run["start_seq"], run["started_at"])
+except Exception:
+    sys.exit(1)
+sys.stdout.write("window.__craftAnnotateRun = %s; " % json.dumps(run_id))
+PYEOF
+}
+
+# cmd_stamp - the paste-path stamp for a page that blocks the loader: the port
+# and the run id, set without loading anything
+cmd_stamp() {
+  local dir port stamp
+  dir="$(session_dir)"
+  port="$(read_file "$dir/port")"
+  is_number "$port" || die "session $SESSION has no port"
+  stamp="$(run_stamp_js "$dir")" || exit 1
+  echo "() => { window.__craftAnnotatePort = $port; ${stamp}return 'STAMPED'; }"
 }
 
 # strip_overlay_py - Python source shared by bake and strip: removes every
@@ -772,7 +1295,7 @@ sweep_all() {
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|sheet|kind|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|watch|sheet|kind|apply|stamp|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -785,6 +1308,10 @@ SUBJECT=""
 KEY=""
 SHEET_ADD=0
 SHEET_DROP=""
+APPLY_DROPS=()
+APPLY_TARGETS=()
+RUN_STAMP=0
+WATCH_ONCE=0
 PAGE=""
 FILE=""
 while [ $# -gt 0 ]; do
@@ -800,7 +1327,10 @@ while [ $# -gt 0 ]; do
     --page)      [ $# -ge 2 ] || die "--page needs a value"; PAGE="$2"; shift 2 ;;
     --file)      [ $# -ge 2 ] || die "--file needs a value"; FILE="$2"; shift 2 ;;
     --add)       SHEET_ADD=1; shift ;;
-    --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; shift 2 ;;
+    --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; APPLY_DROPS+=("$2"); shift 2 ;;
+    --target)    [ $# -ge 2 ] || die "--target needs a value"; case "$2" in ?*=?*) ;; *) die "--target must look like TS=SELECTOR" ;; esac; APPLY_TARGETS+=("$2"); shift 2 ;;
+    --run)       RUN_STAMP=1; shift ;;
+    --once)      WATCH_ONCE=1; shift ;;
     *)           die "unknown argument: $1" ;;
   esac
 done
@@ -820,7 +1350,10 @@ case "$VERB" in
   clear)  cmd_clear ;;
   announce) cmd_announce ;;
   begin)  cmd_begin ;;
+  watch)  cmd_watch ;;
   sheet)  cmd_sheet ;;
+  apply)  cmd_apply ;;
+  stamp)  cmd_stamp ;;
   kind)   cmd_kind ;;
   loader) cmd_loader ;;
   bake)   cmd_bake ;;

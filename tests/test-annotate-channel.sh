@@ -943,4 +943,643 @@ assert_eq "prints GONE" "GONE" "$OUT"
 assert_exit_code "exit 1" "1" "$RC"
 assert_file_not_exists "no folder was created" "$ROOT/.craft/annotations/nosuch"
 
+# ---------------------------------------------------------------------------
+# change stream, sheet route, page reports and the change log
+
+# open_changes <port> <out-prefix> - holds GET /changes with curl -N
+open_changes() {
+  curl -s -N -D "$2.hdr" -H 'Origin: null' "http://127.0.0.1:$1/changes" >"$2.body" 2>/dev/null &
+  STREAM_PID=$!
+  TMP_PIDS+=("$STREAM_PID")
+}
+
+# change_kinds <root> <sid> - "kind:ts" for every change line, space separated
+change_kinds() {
+  python3 -c '
+import json, sys
+out = []
+for l in open(sys.argv[1]):
+    try:
+        c = json.loads(l)
+    except ValueError:
+        continue
+    out.append(c["kind"] + ":" + str(c.get("ts", "")))
+print(" ".join(out))
+' "$1/.craft/annotations/$2/changes.jsonl" 2>/dev/null || echo MISSING
+}
+
+cpin() { # <ts> <page> <text>
+  printf '{"n":1,"text":"%s","x":1,"y":2,"selector":"div.a","nearText":"n","ts":%s,"page":"%s"}' "$3" "$1" "$2"
+}
+
+begin_test "a GET /changes stream is invisible to /health and to announce"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+open_changes "$PORT" "$ROOT/c1"
+if wait_for_text "$ROOT/c1.body" ": connected"; then echo "  PASS: the change stream greets"; PASS=$((PASS + 1)); else echo "  FAIL: no greeting on /changes"; FAIL=$((FAIL + 1)); fi
+assert_contains "event-stream content type" '^[Cc]ontent-[Tt]ype: text/event-stream' "$(cat "$ROOT/c1.hdr" 2>/dev/null || true)"
+assert_eq "health counts only /events streams" "0" "$(clients_of "$PORT")"
+assert_contains "announce delivers to nobody" '"delivered": 0' "$(http POST "$PORT" /announce)"
+sleep 0.6
+assert_not_contains "the change stream never sees a reload" 'event: reload' "$(cat "$ROOT/c1.body" 2>/dev/null || true)"
+
+begin_test "GET /session.css serves the sheet byte-for-byte with the CORS headers, and an absent sheet serves an empty 200"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+rm -f "$SD/session.css"
+RESP="$(http GET "$PORT" /session.css)"
+assert_eq "absent sheet is 200" "200" "$(status_of "$RESP")"
+assert_eq "absent sheet body is empty" "0" "$(curl -s --max-time 5 "http://127.0.0.1:$PORT/session.css" | wc -c | tr -d ' ')"
+printf '/* annotate-key 7 */\n.a { color: red; }\n/* caf\xc3\xa9 */\n' > "$SD/session.css"
+curl -s --max-time 5 "http://127.0.0.1:$PORT/session.css" > "$ROOT/served.css"
+assert_eq "served bytes equal the file" "$(shasum "$SD/session.css" | awk '{print $1}')" "$(shasum "$ROOT/served.css" | awk '{print $1}')"
+RESP="$(http GET "$PORT" /session.css)"
+assert_contains "css content type" '^[Cc]ontent-[Tt]ype: text/css; charset=utf-8' "$RESP"
+assert_contains "allow-origin star" '^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Oo]rigin: \*' "$RESP"
+assert_contains "no-store" '^[Cc]ache-[Cc]ontrol: no-store' "$RESP"
+assert_contains "cross-origin resource policy" '^[Cc]ross-[Oo]rigin-[Rr]esource-[Pp]olicy: cross-origin' "$RESP"
+
+begin_test "POST /sheet reaches a held /changes stream and reports delivered; a held /events stream receives nothing"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+assert_contains "no stream: delivered 0" '"delivered": 0' "$(http POST "$PORT" /sheet '{"id":"a0","measure":[],"targets":[]}')"
+open_changes "$PORT" "$ROOT/c1"
+open_stream "$PORT" "$ROOT/e1"
+wait_clients "$PORT" 1 >/dev/null || true
+wait_for_text "$ROOT/c1.body" ": connected" >/dev/null || true
+RESP="$(http POST "$PORT" /sheet '{"id":"a1","measure":["101"],"targets":[{"ts":101,"selector":".x"}]}')"
+assert_eq "sheet is 200" "200" "$(status_of "$RESP")"
+assert_contains "one stream got it" '"delivered": 1' "$RESP"
+if wait_for_text "$ROOT/c1.body" "event: sheet"; then echo "  PASS: the change stream received the sheet event"; PASS=$((PASS + 1)); else echo "  FAIL: no sheet event"; FAIL=$((FAIL + 1)); fi
+assert_contains "the event carries the job" '"id": "a1"' "$(cat "$ROOT/c1.body" 2>/dev/null || true)"
+sleep 0.5
+assert_not_contains "the /events stream received nothing" 'event: sheet' "$(cat "$ROOT/e1.body" 2>/dev/null || true)"
+assert_eq "no id is 400" "400" "$(status_of "$(http POST "$PORT" /sheet '{"measure":[]}')")"
+assert_eq "an array body is 400" "400" "$(status_of "$(http POST "$PORT" /sheet '[1]')")"
+assert_eq "a non-JSON body is 400" "400" "$(status_of "$(http POST "$PORT" /sheet 'nope')")"
+
+begin_test "GET /applied returns a report posted after the wait began, and times out with 404 when none comes"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+( sleep 1; http POST "$PORT" /applied '{"id":"r1","page":"http://localhost/x","blocks":{},"probes":[]}' >/dev/null ) &
+LATE_PID=$!
+TMP_PIDS+=("$LATE_PID")
+RESP="$(curl -s -i --max-time 8 "http://127.0.0.1:$PORT/applied?id=r1&wait=5" 2>/dev/null || true)"
+assert_eq "the late report is delivered" "200" "$(status_of "$RESP")"
+assert_contains "the report body is the posted JSON" '"page": "http://localhost/x"' "$RESP"
+assert_eq "a held report is returned at once" "200" "$(status_of "$(http GET "$PORT" '/applied?id=r1&wait=1')")"
+http POST "$PORT" /applied '{"id":"r1","page":"http://localhost/second","blocks":{},"probes":[]}' >/dev/null
+assert_contains "the first report for an id wins" '"page": "http://localhost/x"' "$(http GET "$PORT" '/applied?id=r1&wait=1')"
+RESP="$(curl -s -i --max-time 8 "http://127.0.0.1:$PORT/applied?id=none&wait=1" 2>/dev/null || true)"
+assert_eq "no report times out with 404" "404" "$(status_of "$RESP")"
+assert_contains "the 404 says why" '"error": "no report"' "$RESP"
+assert_eq "a report without an id is 400" "400" "$(status_of "$(http POST "$PORT" /applied '{"page":"p"}')")"
+
+begin_test "an object SEND stores pins and deleted, merges probes into probes.json, and probes.json is on disk before the change line"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+BODY='{"pins":['"$(cpin 11 http://localhost/a hello)"'],"deleted":[5],"probes":[{"page":"http://localhost/a","ts":11,"selector":".n","found":true,"component":null,"inline":false,"blocked":[],"rules":[]}]}'
+RESP="$(http POST "$PORT" /pins "$BODY")"
+assert_eq "object body is 200" "200" "$(status_of "$RESP")"
+assert_eq "current.json holds the pins" "1" "$(json_get "$SD/current.json" 'len(d["pins"])')"
+assert_eq "current.json carries deleted" "[5]" "$(json_get "$SD/current.json" 'd["deleted"]')"
+assert_eq "history carries deleted" "[5]" "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[-1])["deleted"])' "$SD/history.jsonl")"
+assert_eq "probes.json keyed by ts" ".n" "$(json_get "$SD/probes.json" 'd["11"]["selector"]')"
+http POST "$PORT" /pins '{"pins":[],"probes":[{"page":"http://localhost/a","ts":11,"selector":".m","found":true,"component":null,"inline":false,"blocked":[],"rules":[]},{"page":"http://localhost/a","ts":12,"selector":".o","found":false,"component":null,"inline":false,"blocked":[],"rules":[]}]}' >/dev/null
+assert_eq "an incoming item replaces its ts" ".m" "$(json_get "$SD/probes.json" 'd["11"]["selector"]')"
+assert_eq "other ts items are kept" ".o" "$(json_get "$SD/probes.json" 'd["12"]["selector"]')"
+http POST "$PORT" /pins "[$(cpin 13 http://localhost/a plain)]" >/dev/null
+assert_eq "an array body writes no deleted key" "False" "$(json_get "$SD/current.json" '"deleted" in d')"
+assert_eq "an object without a pins array stays 400" "400" "$(status_of "$(http POST "$PORT" /pins '{"n":1}')")"
+assert_eq "a non-array pins value is 400" "400" "$(status_of "$(http POST "$PORT" /pins '{"pins":"x"}')")"
+SRC="$(cat "$CHANNEL")"
+POS_PROBES="$(printf '%s' "$SRC" | grep -n 'merge_probes(' | tail -1 | cut -d: -f1)"
+POS_STATE="$(printf '%s' "$SRC" | grep -n 'self.server.replace_state(' | head -1 | cut -d: -f1)"
+if [ -n "$POS_PROBES" ] && [ -n "$POS_STATE" ] && [ "$POS_PROBES" -lt "$POS_STATE" ]; then echo "  PASS: probes are merged before replace_state is called"; PASS=$((PASS + 1)); else echo "  FAIL: probes merge does not precede replace_state"; FAIL=$((FAIL + 1)); fi
+
+begin_test "two SENDs with different pins append two added lines; a resent identical SEND appends nothing"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+A="http://localhost/a"
+http POST "$PORT" /pins "[$(cpin 1 $A x)]" >/dev/null
+assert_eq "one added" "added:1" "$(change_kinds "$ROOT" "$SID")"
+assert_eq "the change carries the page, the seq and the pin" "True" "$(python3 -c '
+import json, sys
+c = json.loads(open(sys.argv[1]).readline())
+print(c["page"] == "http://localhost/a" and c["seq"] == 1 and c["pin"]["text"] == "x" and c["ts"] == "1")
+' "$SD/changes.jsonl")"
+http POST "$PORT" /pins "[$(cpin 1 $A x),$(cpin 2 $A y)]" >/dev/null
+assert_eq "the second SEND adds only the new pin" "added:1 added:2" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 1 $A x),$(cpin 2 $A y)]" >/dev/null
+assert_eq "a resent identical SEND appends nothing" "added:1 added:2" "$(change_kinds "$ROOT" "$SID")"
+assert_eq "history still advanced for the resent SEND" "1 2 3" "$(hist_seqs "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 5 $A a),$(cpin 6 $A b)]" >/dev/null
+assert_eq "two new pins in one SEND are one write of two lines" "added:1 added:2 added:5 added:6" "$(change_kinds "$ROOT" "$SID")"
+assert_eq "both lines of one write share its seq" "4 4" "$(python3 -c '
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+print(" ".join(str(r["seq"]) for r in rows[-2:]))
+' "$SD/changes.jsonl")"
+http POST "$PORT" /pins "[{\"text\":\"no page\",\"ts\":9},{\"text\":\"no ts\",\"page\":\"$A\"}]" >/dev/null
+assert_eq "a pin without a page or a usable ts makes no change" "added:1 added:2 added:5 added:6" "$(change_kinds "$ROOT" "$SID")"
+
+begin_test "a changed text appends edited; a deleted ts appends once, and neither a resent delete nor a re-posted deleted pin appends again; CLEAR appends one cleared"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+A="http://localhost/a"
+http POST "$PORT" /pins "[$(cpin 1 $A x)]" >/dev/null
+http POST "$PORT" /pins "[$(cpin 1 $A y)]" >/dev/null
+assert_eq "an edit" "added:1 edited:1" "$(change_kinds "$ROOT" "$SID")"
+assert_eq "the edited change carries the new pin" "y" "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[-1])["pin"]["text"])' "$SD/changes.jsonl")"
+http POST "$PORT" /pins '{"pins":[],"deleted":[1]}' >/dev/null
+assert_eq "a delete of a live ts" "added:1 edited:1 deleted:1" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins '{"pins":[],"deleted":[1]}' >/dev/null
+assert_eq "a resent delete appends nothing" "added:1 edited:1 deleted:1" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 1 $A y)]" >/dev/null
+http POST "$PORT" /pins "[$(cpin 1 $A z)]" >/dev/null
+assert_eq "a deleted pin re-posted by a second tab appends nothing" "added:1 edited:1 deleted:1" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins '{"pins":[],"deleted":[77,"88"]}' >/dev/null
+assert_eq "a delete naming no live entry appends nothing" "added:1 edited:1 deleted:1" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 3 http://localhost/b q)]" >/dev/null
+http POST "$PORT" /pins '{"pins":[],"deleted":["3"]}' >/dev/null
+assert_eq "a string ts meets the number it was logged under" "added:1 edited:1 deleted:1 added:3 deleted:3" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /clear >/dev/null
+assert_eq "CLEAR appends one cleared" "added:1 edited:1 deleted:1 added:3 deleted:3 cleared:" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 4 $A w)]" >/dev/null
+http POST "$PORT" /pins "[$(cpin 4 $A w)]" >/dev/null
+assert_eq "after CLEAR a new pin is added once and CLEAR left the map alone" "added:1 edited:1 deleted:1 added:3 deleted:3 cleared: added:4" "$(change_kinds "$ROOT" "$SID")"
+http POST "$PORT" /pins "[$(cpin 1 $A z)]" >/dev/null
+assert_eq "a pin logged before CLEAR with the same text appends nothing" "added:1 edited:1 deleted:1 added:3 deleted:3 cleared: added:4" "$(change_kinds "$ROOT" "$SID")"
+
+begin_test "a restarted listener folds the log and appends nothing for a set it already logged"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+A="http://localhost/a"
+http POST "$PORT" /pins "[$(cpin 1 $A x),$(cpin 2 $A y)]" >/dev/null
+http POST "$PORT" /pins '{"pins":[],"deleted":[2]}' >/dev/null
+OLD_PID="$(cat "$SD/listener.pid")"
+kill "$OLD_PID" 2>/dev/null || true
+wait_dead "$OLD_PID" || true
+printf '{"seq": 9, "kind": "added", "pa' >> "$SD/changes.jsonl"
+OUT="$(run_in "$ROOT" ensure --session "$SID")"
+case "$OUT" in "REARMED PORT "*) RE=yes ;; *) RE="no: $OUT" ;; esac
+assert_eq "the listener was replaced" "yes" "$RE"
+NEWPORT="$(cat "$SD/port")"
+http POST "$NEWPORT" /pins "[$(cpin 1 $A x)]" >/dev/null
+http POST "$NEWPORT" /pins '{"pins":[],"deleted":[2]}' >/dev/null
+http POST "$NEWPORT" /pins "[$(cpin 2 $A y)]" >/dev/null
+assert_eq "nothing re-delivered after the restart" "added:1 added:2 deleted:2" "$(change_kinds "$ROOT" "$SID")"
+http POST "$NEWPORT" /pins "[$(cpin 7 $A n)]" >/dev/null
+assert_contains "a genuinely new pin still arrives" 'added:7$' "$(change_kinds "$ROOT" "$SID")"
+
+begin_test "array bodies, the non-JSON 400 and the {\"n\":1} 400 are unchanged"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+RESP="$(http POST "$PORT" /pins "[$(cpin 1 http://localhost/a x)]")"
+assert_eq "array body is 200" "200" "$(status_of "$RESP")"
+assert_contains "reply keeps seq and count" '"count": 1' "$RESP"
+assert_eq "current.json shape is unchanged" "cleared,pins,seq,sent_at" "$(python3 -c 'import json,sys; print(",".join(sorted(json.load(open(sys.argv[1])).keys(), key=lambda k: ["cleared","pins","seq","sent_at"].index(k))))' "$SD/current.json")"
+assert_eq "non-JSON is 400" "400" "$(status_of "$(http POST "$PORT" /pins 'not json')")"
+assert_eq "{n:1} is 400" "400" "$(status_of "$(http POST "$PORT" /pins '{"n":1}')")"
+assert_eq "the rejected bodies appended no change" "added:1" "$(change_kinds "$ROOT" "$SID")"
+
+# ---------------------------------------------------------------------------
+# apply: one command writes the blocks, pushes the page and prints its measurement
+
+# apply_with_page <root> <sid> <port> <blocks> <report-json> [apply args...]
+# A fake page holds /changes, reads the job id from the sheet event it receives
+# and posts <report-json> (its __ID__ replaced by that id). Sets APPLY_OUT.
+APPLY_N=0
+apply_with_page() {
+  local root="$1" sid="$2" port="$3" blocks="$4" report="$5" jid body apid cpid
+  shift 5
+  APPLY_N=$((APPLY_N + 1))
+  open_changes "$port" "$root/ap$APPLY_N"
+  cpid="$STREAM_PID"
+  wait_for_text "$root/ap$APPLY_N.body" ": connected" >/dev/null || true
+  ( printf '%s' "$blocks" | CRAFT_PROJECT_ROOT="$root" bash "$RUN" apply --session "$sid" "$@" >"$root/ap$APPLY_N.out" 2>/dev/null ) &
+  apid=$!
+  TMP_PIDS+=("$apid")
+  if wait_for_text "$root/ap$APPLY_N.body" "event: sheet"; then
+    jid="$(sed -n 's/^data: .*"id": "\([^"]*\)".*/\1/p' "$root/ap$APPLY_N.body" | head -1)"
+    body="${report//__ID__/$jid}"
+    http POST "$port" /applied "$body" >/dev/null
+  fi
+  wait "$apid" 2>/dev/null || true
+  stop_job "$cpid"
+  APPLY_OUT="$(cat "$root/ap$APPLY_N.out")"
+}
+
+PAGE_X='"page":"http://localhost/x","view":{"x":0,"y":0,"w":800,"h":600},"pageSize":{"w":800,"h":2000}'
+
+begin_test "apply round trip prints what the page measured"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap1
+D="$ROOT/.craft/annotations/ap1"
+apply_with_page "$ROOT" ap1 "$PORT" $'/* annotate-key 101 */\n.a{color:red}\n' \
+  '{"id":"__ID__",'"$PAGE_X"',"blocks":{"101":[{"selector":".a","matched":1,"values":{"color":"rgb(255, 0, 0)"},"box":{"x":0,"y":0,"w":100,"h":20},"top":true,"inView":true,"container":false}]},"probes":[]}'
+assert_eq "the block is in the file" $'/* annotate-key 101 */\n.a{color:red}' "$(cat "$D/session.css")"
+assert_eq "line 1 is the page, the view and the page size" "APPLIED http://localhost/x view 0,0 800x600 page 800x2000" "$(printf '%s\n' "$APPLY_OUT" | sed -n 1p)"
+assert_eq "line 2 is the measured rule" "101 .a x1 box 0,0 100x20 visible: color rgb(255, 0, 0)" "$(printf '%s\n' "$APPLY_OUT" | sed -n 2p)"
+assert_eq "a plain color change prints nothing else" "2" "$(printf '%s\n' "$APPLY_OUT" | wc -l | tr -d ' ')"
+
+begin_test "apply prints SHOT for layout, stacking on a container, drawn content, covered, zero-size, off-screen, out of view and matched nothing, and no SHOT for plain values"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap2
+BLOCKS=""
+for k in 201 202 203 204 205 206 207 208 209 210 211 212 213; do BLOCKS="$BLOCKS"$'/* annotate-key '"$k"$' */\n.k'"$k"$'{color:red}\n'; done
+REPORT='{"id":"__ID__",'"$PAGE_X"',"blocks":{
+"201":[{"selector":".panel","matched":1,"values":{"background-color":"rgb(0, 0, 0)"},"box":{"x":0,"y":0,"w":400,"h":320},"top":true,"inView":true,"container":true}],
+"202":[{"selector":".card","matched":1,"values":{"color":"red"},"box":{"x":10,"y":10,"w":50,"h":50},"top":false,"inView":true,"coveredBy":"div.cover","container":false}],
+"203":[{"selector":".n::after","matched":1,"values":{"content":"\"Ada\""},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}],
+"204":[{"selector":".z","matched":1,"values":{"color":"red"},"box":{"x":10,"y":10,"w":0,"h":50},"top":true,"inView":true,"container":false}],
+"205":[{"selector":".gone","matched":0,"values":{}}],
+"206":[{"selector":".p","matched":1,"values":{"padding-top":"8px","margin-left":"2px","font-size":"14px"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":true}],
+"207":[{"selector":".f","matched":1,"values":{"color":"red"},"box":{"x":10,"y":1500,"w":50,"h":50},"top":null,"inView":false,"container":false}],
+"208":[{"selector":".g","matched":1,"values":{"color":"red"},"box":{"x":10,"y":10,"w":50,"h":50},"top":null,"inView":true,"container":false}],
+"209":[{"selector":".off","matched":1,"values":{"color":"red"},"box":{"x":5000,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}],
+"210":[{"selector":".l","matched":1,"values":{"display":"grid","grid-template-columns":"1fr 1fr"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}],
+"211":[{"selector":".leaf","matched":1,"values":{"background-color":"rgb(0, 0, 0)"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}],
+"212":[{"selector":".z2","matched":1,"values":{"z-index":"5"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}],
+"213":[{"selector":".m","matched":1,"values":{"max-width":"10px"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false},{"selector":".m2","matched":1,"values":{"content":"x"},"box":{"x":10,"y":10,"w":50,"h":50},"top":true,"inView":true,"container":false}]
+},"probes":[]}'
+apply_with_page "$ROOT" ap2 "$PORT" "$BLOCKS" "$REPORT"
+SHOTS="$(printf '%s\n' "$APPLY_OUT" | grep '^SHOT ' | tr '\n' '|')"
+assert_eq "exactly the flagged keys, with their reasons" "SHOT 201 stacking|SHOT 202 covered|SHOT 203 drawn content|SHOT 204 zero-size|SHOT 205 matched nothing|SHOT 207 out of view|SHOT 209 off-screen|SHOT 210 layout|SHOT 212 stacking|SHOT 213 layout, drawn content|" "$SHOTS"
+assert_contains_literal "a covered rule names what covers it" "202 .card x1 box 10,10 50x50 covered by div.cover: color red" "$APPLY_OUT"
+assert_contains_literal "a rule that matched nothing is one short line" "205 .gone x0" "$APPLY_OUT"
+assert_contains_literal "out of view is the visibility word" "207 .f x1 box 10,1500 50x50 out of view: color red" "$APPLY_OUT"
+assert_contains_literal "an element that cannot be hit-tested says so" "208 .g x1 box 10,10 50x50 not checked: color red" "$APPLY_OUT"
+assert_contains_literal "plain values list every property" "206 .p x1 box 10,10 50x50 visible: padding-top 8px; margin-left 2px; font-size 14px" "$APPLY_OUT"
+SHOT_LINES="$(printf '%s\n' "$APPLY_OUT" | grep -n '^SHOT ' | head -1 | cut -d: -f1)"
+LAST_RULE="$(printf '%s\n' "$APPLY_OUT" | grep -n '^213 ' | tail -1 | cut -d: -f1)"
+assert_eq "SHOT lines follow every rule line" "True" "$([ "$SHOT_LINES" -gt "$LAST_RULE" ] && echo True || echo False)"
+
+begin_test "apply cuts a measured value at 120 characters"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap3
+LONG="$(python3 -c 'print("v" * 300)')"
+apply_with_page "$ROOT" ap3 "$PORT" $'/* annotate-key 1 */\n.a{color:red}\n' \
+  '{"id":"__ID__",'"$PAGE_X"',"blocks":{"1":[{"selector":".a","matched":1,"values":{"font-family":"'"$LONG"'"},"box":{"x":0,"y":0,"w":10,"h":10},"top":true,"inView":true,"container":false}]},"probes":[]}'
+assert_eq "the value is 120 characters" "120" "$(printf '%s\n' "$APPLY_OUT" | sed -n 2p | sed 's/.*font-family //' | tr -d '\n' | wc -c | tr -d ' ')"
+
+begin_test "apply with no listening page prints PASTE and a literal that decodes to session.css"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap4
+D="$ROOT/.craft/annotations/ap4"
+OUT="$(printf '/* annotate-key 9 */\n.a{content:"caf\xc3\xa9";}\n' | run_in "$ROOT" apply --session ap4)"
+assert_eq "line 1 is PASTE" "PASTE" "$(printf '%s\n' "$OUT" | sed -n 1p)"
+assert_eq "two lines" "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+assert_eq "line 2 is the sheet function" "() => {" "$(printf '%s\n' "$OUT" | sed -n 2p | cut -c1-7)"
+LINE2="$(printf '%s\n' "$OUT" | sed -n 2p)"
+cmp -s <(sheet_literal "$LINE2") "$D/session.css" && echo "  PASS: the literal equals the file" && PASS=$((PASS + 1)) || { echo "  FAIL: the literal differs from the file"; FAIL=$((FAIL + 1)); }
+assert_eq "identical to what sheet prints" "$(run_in "$ROOT" sheet --session ap4)" "$LINE2"
+
+begin_test "apply falls to PASTE when the page reports an error, and exits 0"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap5
+apply_with_page "$ROOT" ap5 "$PORT" $'/* annotate-key 1 */\n.a{color:red}\n' \
+  '{"id":"__ID__","page":"http://localhost/x","error":"fetch failed","blocks":{},"probes":[]}'
+assert_eq "PASTE first" "PASTE" "$(printf '%s\n' "$APPLY_OUT" | sed -n 1p)"
+set +e
+printf '' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" apply --session ap5 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "an outcome without a page exits 0" "0" "$RC"
+
+begin_test "apply takes several keyed blocks and drops in one call; refused input leaves the file untouched"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap6
+D="$ROOT/.craft/annotations/ap6"
+printf '.old{color:red}\n' | run_in "$ROOT" sheet --session ap6 --add --key 5 >/dev/null
+printf '.keep{color:blue}\n' | run_in "$ROOT" sheet --session ap6 --add --key 6 >/dev/null
+apply_with_page "$ROOT" ap6 "$PORT" $'/* annotate-key 7 */\n.a{color:red}\n/* annotate-key 8 */\n.b{color:green}\n' \
+  '{"id":"__ID__",'"$PAGE_X"',"blocks":{},"probes":[]}' --drop 5 --drop 99
+printf '%s\n' "$APPLY_OUT" > "$ROOT/out6"
+assert_eq "drops removed, blocks appended in order" $'/* annotate-key 6 */\n.keep{color:blue}\n/* annotate-key 7 */\n.a{color:red}\n/* annotate-key 8 */\n.b{color:green}' "$(cat "$D/session.css")"
+assert_contains_literal "each drop is reported" "5 dropped" "$(cat "$ROOT/out6")"
+assert_contains_literal "a drop of an absent key is reported too" "99 dropped" "$(cat "$ROOT/out6")"
+printf '/* annotate-key 7 */\n.a{color:black}\n' | run_in "$ROOT" apply --session ap6 >/dev/null
+assert_eq "an existing key is replaced in place" $'/* annotate-key 6 */\n.keep{color:blue}\n/* annotate-key 7 */\n.a{color:black}\n/* annotate-key 8 */\n.b{color:green}' "$(cat "$D/session.css")"
+BEFORE="$(cat "$D/session.css")"
+set +e
+printf 'stray text\n/* annotate-key 9 */\n.x{}\n' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" apply --session ap6 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "text before the first header exits 1" "1" "$RC"
+assert_eq "and the file is untouched" "$BEFORE" "$(cat "$D/session.css")"
+set +e
+printf '/* annotate-key bad key */\n.x{}\n' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" apply --session ap6 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "an invalid key exits 1" "1" "$RC"
+assert_eq "the file is untouched again" "$BEFORE" "$(cat "$D/session.css")"
+set +e
+printf '' | CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" apply --session ap6 --drop 'bad key' >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "an invalid drop key exits 1" "1" "$RC"
+
+begin_test "apply --target maps the pin to the ancestor's resolution"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ap7
+D="$ROOT/.craft/annotations/ap7"
+http POST "$PORT" /pins "[$(cpin 111 http://localhost:5173/ x)]" >/dev/null
+apply_with_page "$ROOT" ap7 "$PORT" $'/* annotate-key 111 */\n.card{color:red}\n' \
+  '{"id":"__ID__","page":"http://localhost:5173/",'"$(printf '%s' '"view":{"x":0,"y":0,"w":800,"h":600},"pageSize":{"w":800,"h":600}')"',"blocks":{"111":[{"selector":".card","matched":1,"values":{"color":"red"},"box":{"x":0,"y":0,"w":10,"h":10},"top":true,"inView":true,"container":false}]},"probes":[{"page":"http://localhost:5173/","ts":111,"selector":".card","found":true,"component":null,"inline":false,"blocked":[],"rules":[]}]}' \
+  --target "111=.card"
+assert_eq "the pin maps to the ancestor" ".card" "$(json_get "$D/resolutions.json" 'd["pins"]["http://localhost:5173/"]["111"]')"
+assert_not_contains "nothing about the resolution is printed" 'resolv' "$APPLY_OUT"
+
+begin_test "loader --run stamps the run id before the install check; without it the line is unchanged"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ld2
+run_in "$ROOT" begin --session ld2 --subject t >/dev/null
+RUNID="$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("%d@%s" % (r["start_seq"], r["started_at"]))' "$ROOT/.craft/annotations/ld2/run.json")"
+PLAIN="$(run_in "$ROOT" loader --session ld2 --page http://localhost:3000/)"
+STAMPED="$(run_in "$ROOT" loader --run --session ld2 --page http://localhost:3000/)"
+assert_eq "the plain line carries no run stamp" "0" "$(printf '%s' "$PLAIN" | grep -c '__craftAnnotateRun' || true)"
+assert_contains_literal "the plain line is the dial line" "async () => { window.__craftAnnotatePort = $PORT; if (window.__craftAnnotateInstalled) return 'LOADED'; try {" "$PLAIN"
+assert_contains_literal "the stamp follows the port stamp" "window.__craftAnnotatePort = $PORT; window.__craftAnnotateRun = \"$RUNID\"; if (window.__craftAnnotateInstalled)" "$STAMPED"
+assert_eq "removing the stamp gives the plain line" "$PLAIN" "$(printf '%s' "$STAMPED" | sed "s/window.__craftAnnotateRun = \"$RUNID\"; //")"
+assert_eq "still one line" "1" "$(printf '%s\n' "$STAMPED" | wc -l | tr -d ' ')"
+rm -f "$ROOT/.craft/annotations/ld2/run.json"
+set +e
+CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" loader --run --session ld2 --page http://localhost:3000/ >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "--run with no run.json exits 1" "1" "$RC"
+
+begin_test "stamp prints both stamps; begin removes probes.json"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session st1
+D="$ROOT/.craft/annotations/st1"
+set +e
+CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" stamp --session st1 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "stamp without run.json exits 1" "1" "$RC"
+run_in "$ROOT" begin --session st1 --subject t >/dev/null
+RUNID="$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("%d@%s" % (r["start_seq"], r["started_at"]))' "$D/run.json")"
+assert_eq "the stamp function" "() => { window.__craftAnnotatePort = $PORT; window.__craftAnnotateRun = \"$RUNID\"; return 'STAMPED'; }" "$(run_in "$ROOT" stamp --session st1)"
+echo '{}' > "$D/probes.json"
+run_in "$ROOT" begin --session st1 --subject t >/dev/null
+assert_file_not_exists "begin removed the earlier run's probes" "$D/probes.json"
+
+# ---------------------------------------------------------------------------
+# watch: changes from a saved position
+
+# start_watch <root> <sid> <out-file> [extra args...] - sets WATCH_PID; the pid is recorded for cleanup
+start_watch() {
+  local root="$1" sid="$2" out="$3"
+  shift 3
+  CRAFT_PROJECT_ROOT="$root" bash "$RUN" watch --session "$sid" "$@" >"$out" 2>/dev/null &
+  WATCH_PID=$!
+  TMP_PIDS+=("$WATCH_PID")
+}
+
+# wait_lines <file> <count> - bounded poll until the file holds that many lines
+wait_lines() {
+  local i=0
+  while [ "$(wc -l < "$1" 2>/dev/null | tr -d ' ')" -lt "$2" ] && [ "$i" -lt 40 ]; do
+    sleep 0.25; i=$((i + 1))
+  done
+  [ "$(wc -l < "$1" 2>/dev/null | tr -d ' ')" -ge "$2" ]
+}
+
+# cursor_of <dir> - the saved position, or MISSING
+cursor_of() { rd "$1/watch.cursor" | tr -d '\n'; }
+
+# size_of <file> - byte size, 0 when absent
+size_of() { wc -c < "$1" 2>/dev/null | tr -d ' ' || echo 0; }
+
+# probe_item <ts> <page> <selector> - one probe item for the pin's ts
+probe_item() {
+  printf '{"page":"%s","ts":%s,"selector":"%s","found":true,"component":null,"inline":false,"blocked":[],"rules":[]}' "$2" "$1" "$3"
+}
+
+begin_test "a change written while no watch runs is delivered when the watch restarts, and never twice"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt1
+D="$ROOT/.craft/annotations/wt1"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt1 --subject t >/dev/null
+assert_eq "begin saves the log's end as the position" "0" "$(cursor_of "$D")"
+start_watch "$ROOT" wt1 "$ROOT/w1.out"; W1="$WATCH_PID"
+sleep 0.5
+http POST "$PORT" /pins "[$(cpin 1 $A first)]" >/dev/null
+if wait_lines "$ROOT/w1.out" 1; then echo "  PASS: pin A arrived"; PASS=$((PASS + 1)); else echo "  FAIL: pin A never arrived"; FAIL=$((FAIL + 1)); fi
+assert_contains_literal "the line names the pin" 'ADDED 1 #1 "first" at "div.a" near "n" source ' "$(cat "$ROOT/w1.out")"
+sleep 0.6
+assert_eq "the position moved to the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+stop_job "$W1"
+http POST "$PORT" /pins "[$(cpin 1 $A first),$(cpin 2 $A second)]" >/dev/null
+start_watch "$ROOT" wt1 "$ROOT/w2.out"; W2="$WATCH_PID"
+if wait_lines "$ROOT/w2.out" 1; then echo "  PASS: pin B arrived on re-arm"; PASS=$((PASS + 1)); else echo "  FAIL: pin B was lost"; FAIL=$((FAIL + 1)); fi
+sleep 1
+assert_eq "only the missed pin printed" "1" "$(wc -l < "$ROOT/w2.out" | tr -d ' ')"
+assert_contains_literal "it is pin B" 'ADDED 2 #1 "second"' "$(cat "$ROOT/w2.out")"
+assert_not_contains "pin A was not printed again" '"first"' "$(cat "$ROOT/w2.out")"
+stop_job "$W2"
+
+begin_test "watch --once prints a batch written before launch at once and exits; a batch written while it blocks wakes it; the position moves once per run; a silent batch does not end it"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt2
+D="$ROOT/.craft/annotations/wt2"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt2 --subject t >/dev/null
+http POST "$PORT" /pins "[$(cpin 1 $A one)]" >/dev/null
+START="$SECONDS"
+set +e
+OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" watch --once --session wt2 2>/dev/null)"
+RC=$?
+set -e
+assert_exit_code "the one-shot exits 0" "0" "$RC"
+assert_contains_literal "the waiting batch printed" 'ADDED 1 #1 "one"' "$OUT"
+assert_eq "it was quick" "True" "$([ $((SECONDS - START)) -le 3 ] && echo True || echo False)"
+assert_eq "the position is the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+start_watch "$ROOT" wt2 "$ROOT/o2.out" --once; W="$WATCH_PID"
+sleep 1
+assert_eq "with nothing waiting it blocks" "yes" "$(is_running "$W" && echo yes || echo no)"
+BEFORE="$(cursor_of "$D")"
+http POST "$PORT" /pins "[$(cpin 1 $A one),$(cpin 2 $A two)]" >/dev/null
+wait_dead "$W" || true
+assert_eq "a batch written while it blocked woke it" "no" "$(is_running "$W" && echo yes || echo no)"
+assert_contains_literal "it printed the new pin" 'ADDED 2 #1 "two"' "$(cat "$ROOT/o2.out")"
+assert_eq "one line" "1" "$(wc -l < "$ROOT/o2.out" | tr -d ' ')"
+assert_not_eq "the position moved" "$BEFORE" "$(cursor_of "$D")"
+assert_eq "to the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+start_watch "$ROOT" wt2 "$ROOT/o3.out" --once; W="$WATCH_PID"
+sleep 0.6
+http POST "$PORT" /clear >/dev/null
+sleep 1.2
+assert_eq "a silent batch (cleared) does not end the one-shot" "yes" "$(is_running "$W" && echo yes || echo no)"
+assert_eq "it printed nothing" "0" "$(wc -c < "$ROOT/o3.out" | tr -d ' ')"
+assert_eq "the position moved past the silent batch" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+http POST "$PORT" /pins "[$(cpin 3 $A three)]" >/dev/null
+wait_dead "$W" || true
+assert_contains_literal "a printed batch ends it" 'ADDED 3 #1 "three"' "$(cat "$ROOT/o3.out")"
+assert_eq "and the position is the end again" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+
+begin_test "DELETE-then-SEND drops the block and prints UNDONE; CLEAR prints nothing and leaves session.css byte-identical"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt3
+D="$ROOT/.craft/annotations/wt3"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt3 --subject t >/dev/null
+printf '/* annotate-key 555 */\n.a{color:red}\n' | run_in "$ROOT" apply --session wt3 >/dev/null
+start_watch "$ROOT" wt3 "$ROOT/u.out"; W="$WATCH_PID"
+sleep 0.5
+http POST "$PORT" /pins "[$(cpin 555 $A drop)]" >/dev/null
+wait_lines "$ROOT/u.out" 1 || true
+http POST "$PORT" /pins '{"pins":[],"deleted":[555]}' >/dev/null
+wait_lines "$ROOT/u.out" 2 || true
+assert_eq "the UNDONE line says the page did not confirm" 'UNDONE 555 page did not confirm' "$(sed -n 2p "$ROOT/u.out")"
+assert_eq "the block is gone from session.css" "" "$(cat "$D/session.css")"
+printf '/* annotate-key 556 */\n.b{color:blue}\n' | run_in "$ROOT" apply --session wt3 >/dev/null
+cp "$D/session.css" "$ROOT/sheet.before"
+http POST "$PORT" /clear >/dev/null
+sleep 1.2
+assert_eq "CLEAR printed nothing" "2" "$(wc -l < "$ROOT/u.out" | tr -d ' ')"
+assert_eq "the position reached the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+assert_eq "session.css is byte-identical" "" "$(cmp "$ROOT/sheet.before" "$D/session.css" 2>&1 || true)"
+http POST "$PORT" /pins "[$(cpin 777 $A late)]" >/dev/null
+http POST "$PORT" /pins '{"pins":[],"deleted":[777]}' >/dev/null
+sleep 1.2
+assert_not_contains "a delete of a pin with no block prints nothing" 'UNDONE 777' "$(cat "$ROOT/u.out")"
+stop_job "$W"
+
+begin_test "a page that confirms the drop gets UNDONE with page confirmed"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt3b
+D="$ROOT/.craft/annotations/wt3b"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt3b --subject t >/dev/null
+printf '/* annotate-key 9 */\n.a{color:red}\n' | run_in "$ROOT" apply --session wt3b >/dev/null
+http POST "$PORT" /pins "[$(cpin 9 $A x)]" >/dev/null
+start_watch "$ROOT" wt3b "$ROOT/uc.out" --once; W="$WATCH_PID"
+open_changes "$PORT" "$ROOT/uc"; CPID="$STREAM_PID"
+wait_for_text "$ROOT/uc.body" ": connected" >/dev/null || true
+wait_dead "$W" || true
+http POST "$PORT" /pins '{"pins":[],"deleted":[9]}' >/dev/null
+start_watch "$ROOT" wt3b "$ROOT/uc2.out" --once; W="$WATCH_PID"
+if wait_for_text "$ROOT/uc.body" "event: sheet"; then
+  JID="$(sed -n 's/^data: .*"id": "\([^"]*\)".*/\1/p' "$ROOT/uc.body" | head -1)"
+  http POST "$PORT" /applied '{"id":"'"$JID"'","page":"http://localhost/a","view":{"x":0,"y":0,"w":800,"h":600},"pageSize":{"w":800,"h":600},"blocks":{},"probes":[]}' >/dev/null
+fi
+wait_dead "$W" || true
+assert_eq "the confirmed drop" "UNDONE 9 page confirmed" "$(cat "$ROOT/uc2.out")"
+stop_job "$CPID"
+
+begin_test "one SEND's changes print as adjacent lines after one resolve call; a pin text holding a newline stays one line"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt4
+D="$ROOT/.craft/annotations/wt4"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt4 --subject t >/dev/null
+SPY="$ROOT/spy"
+mkdir -p "$SPY"
+start_watch "$ROOT" wt4 "$ROOT/n.out"; W="$WATCH_PID"
+sleep 0.5
+http POST "$PORT" /pins '{"pins":[{"n":1,"text":"a\nb","x":1,"y":2,"selector":"div.a","nearText":"n","ts":31,"page":"'"$A"'"},{"n":2,"text":"two","x":1,"y":2,"selector":"div.b","nearText":"m","ts":32,"page":"'"$A"'"}],"probes":['"$(probe_item 31 $A div.a)"','"$(probe_item 32 $A div.b)"']}' >/dev/null
+wait_lines "$ROOT/n.out" 2 || true
+sleep 0.5
+assert_eq "two lines, one per pin" "2" "$(wc -l < "$ROOT/n.out" | tr -d ' ')"
+assert_contains_literal "the newline is escaped inside the JSON string" 'ADDED 31 #1 "a\nb" at "div.a"' "$(sed -n 1p "$ROOT/n.out")"
+assert_contains_literal "the second pin follows at once" 'ADDED 32 #2 "two" at "div.b"' "$(sed -n 2p "$ROOT/n.out")"
+assert_eq "both pins mapped by the one call" "True" "$(json_get "$D/resolutions.json" '"31" in d["pins"]["http://localhost/a"] and "32" in d["pins"]["http://localhost/a"]')"
+stop_job "$W"
+
+begin_test "the source is the page's probe; a pin with no probe says not probed; a pin absent from current.json still resolves"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt5
+D="$ROOT/.craft/annotations/wt5"
+A="http://localhost/a"
+run_in "$ROOT" begin --session wt5 --subject t >/dev/null
+start_watch "$ROOT" wt5 "$ROOT/s.out"; W="$WATCH_PID"
+sleep 0.5
+http POST "$PORT" /pins '{"pins":['"$(cpin 41 $A probed)"'],"probes":['"$(probe_item 41 $A div.a)"']}' >/dev/null
+wait_lines "$ROOT/s.out" 1 || true
+assert_contains_literal "a probed pin names its source" 'source "no component name; no stylesheet rule' "$(sed -n 1p "$ROOT/s.out")"
+http POST "$PORT" /pins "[$(cpin 41 $A probed),$(cpin 42 $A unprobed)]" >/dev/null
+wait_lines "$ROOT/s.out" 2 || true
+assert_contains_literal "an unprobed pin says so" 'ADDED 42 #1 "unprobed" at "div.a" near "n" source "not probed"' "$(sed -n 2p "$ROOT/s.out")"
+http POST "$PORT" /pins '{"pins":['"$(cpin 43 http://localhost/b routed)"'],"probes":['"$(probe_item 43 http://localhost/b div.a)"']}' >/dev/null
+wait_lines "$ROOT/s.out" 3 || true
+http POST "$PORT" /pins '{"pins":['"$(cpin 44 http://localhost/b routed2)"'],"probes":['"$(probe_item 44 http://localhost/b div.a)"']}' >/dev/null
+wait_lines "$ROOT/s.out" 4 || true
+assert_eq "pin 41 is no longer in current.json and still reads its cache" "True" "$(json_get "$D/resolutions.json" '"41" in d["pins"]["http://localhost/a"]')"
+stop_job "$W"
+
+begin_test "a second watch supersedes the first; removing run.json ends the watch silently; a changed run id ends it; begin moves the position to the log's end"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt6
+D="$ROOT/.craft/annotations/wt6"
+A="http://localhost/a"
+set +e
+CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" watch --session wt6 >/dev/null 2>&1
+RC=$?
+set -e
+assert_exit_code "no run.json is exit 1" "1" "$RC"
+run_in "$ROOT" begin --session wt6 --subject t >/dev/null
+start_watch "$ROOT" wt6 "$ROOT/p1.out"; W1="$WATCH_PID"
+sleep 0.6
+start_watch "$ROOT" wt6 "$ROOT/p2.out"; W2="$WATCH_PID"
+wait_dead "$W1" || true
+assert_eq "the older watch left" "no" "$(is_running "$W1" && echo yes || echo no)"
+assert_eq "the newer watch stays" "yes" "$(is_running "$W2" && echo yes || echo no)"
+assert_eq "watch.pid names the newer one" "$W2" "$(cat "$D/watch.pid")"
+rm -f "$D/run.json"
+wait_dead "$W2" || true
+assert_eq "removing run.json ends the watch" "no" "$(is_running "$W2" && echo yes || echo no)"
+assert_eq "silently" "0" "$(wc -c < "$ROOT/p2.out" | tr -d ' ')"
+run_in "$ROOT" begin --session wt6 --subject t >/dev/null
+start_watch "$ROOT" wt6 "$ROOT/p3.out"; W3="$WATCH_PID"
+sleep 1.2
+run_in "$ROOT" begin --session wt6 --subject again >/dev/null
+wait_dead "$W3" || true
+assert_eq "a new run id ends the old watch" "no" "$(is_running "$W3" && echo yes || echo no)"
+http POST "$PORT" /pins "[$(cpin 1 $A x)]" >/dev/null
+run_in "$ROOT" begin --session wt6 --subject once-more >/dev/null
+assert_eq "begin moves the position to the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
+assert_eq "which is not zero" "True" "$([ "$(cursor_of "$D")" -gt 0 ] && echo True || echo False)"
+
+begin_test "UNREACHABLE prints once when the listener dies, and again only after it recovered"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt7
+D="$ROOT/.craft/annotations/wt7"
+run_in "$ROOT" begin --session wt7 --subject t >/dev/null
+start_watch "$ROOT" wt7 "$ROOT/x.out"; W="$WATCH_PID"
+sleep 0.6
+LP="$(cat "$D/listener.pid")"
+kill "$LP" 2>/dev/null || true
+wait_dead "$LP" || true
+wait_lines "$ROOT/x.out" 1 || true
+sleep 3
+assert_eq "one UNREACHABLE for the outage" "UNREACHABLE" "$(cat "$ROOT/x.out")"
+assert_eq "the watch keeps running" "yes" "$(is_running "$W" && echo yes || echo no)"
+run_in "$ROOT" ensure --session wt7 >/dev/null
+sleep 3
+LP="$(cat "$D/listener.pid")"
+kill "$LP" 2>/dev/null || true
+wait_dead "$LP" || true
+wait_lines "$ROOT/x.out" 2 || true
+sleep 1
+assert_eq "a second outage after recovery prints again" "UNREACHABLE
+UNREACHABLE" "$(cat "$ROOT/x.out")"
+stop_job "$W"
+
+begin_test "wait prints the payload JSON as before"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt8
+http POST "$PORT" /pins "[$(cpin 1 http://localhost/a x)]" >/dev/null
+OUT="$(run_in "$ROOT" wait --session wt8 --timeout 1 --since 0)"
+assert_eq "the current payload" "1" "$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["seq"])')"
+
 finish_tests "test-annotate-channel"

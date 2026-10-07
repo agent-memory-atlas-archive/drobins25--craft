@@ -149,6 +149,8 @@ PIN_FIELDS = ("selector", "nearText", "candidate", "page", "box", "component", "
 order = []
 latest = {}
 seq_to = start_seq
+withdrawn = set()
+entries = []
 for line in read_text("history.jsonl").splitlines():
     try:
         entry = json.loads(line)
@@ -156,6 +158,12 @@ for line in read_text("history.jsonl").splitlines():
         continue
     if not isinstance(entry, dict) or as_seq(entry.get("seq")) <= start_seq:
         continue
+    entries.append(entry)
+    gone = entry.get("deleted")
+    if isinstance(gone, list):
+        withdrawn.update(str(ts) for ts in gone)
+
+for entry in entries:
     seq = as_seq(entry.get("seq"))
     seq_to = max(seq_to, seq)
     pins = entry.get("pins")
@@ -164,6 +172,8 @@ for line in read_text("history.jsonl").splitlines():
     dicts = [pin for pin in pins if isinstance(pin, dict)]
     dicts.sort(key=lambda pin: as_seq(pin.get("n")))
     for pin in dicts:
+        if pin.get("ts") is not None and str(pin.get("ts")) in withdrawn:
+            continue
         if pin.get("ts") is not None:
             key = (pin.get("page"), pin.get("ts"))
         else:
@@ -298,7 +308,7 @@ lines += [
     "",
     "## Sheet",
     "",
-    "`session.css` beside this file holds every change injected live, keyed by pin, and is normative.",
+    "`session.css` beside this file holds every change shown live, one keyed block per pin. Its look ports verbatim; a block that stands in for content graduates as a requirement quoting the pin.",
     "",
 ]
 

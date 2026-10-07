@@ -139,6 +139,37 @@ assert_eq "the pre-run pin text never appears" "a2" "$(pins_json "$OUT" 'p[0]["t
 assert_eq "seq_from is the start seq" "1" "$(fm "$OUT" seq_from)"
 assert_eq "seq_to is the last window seq" "2" "$(fm "$OUT" seq_to)"
 
+begin_test "a pin withdrawn by DELETE-then-SEND is left out of the record"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "withdrawn pin"
+hist "$LIVE" "$S2"
+hist "$LIVE" '{"seq":3,"pins":[{"n":1,"text":"a2","x":1,"y":2,"selector":"div.a","nearText":"near a","ts":1,"page":"http://x/p"}],"deleted":[2],"sent_at":"2026-10-04T10:03:00Z"}'
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "only the kept pin is filed" "1" "$(pins_json "$OUT" 'len(p)')"
+assert_eq "the kept pin is pin 1" "a2" "$(pins_json "$OUT" 'p[0]["text"]')"
+assert_eq "pin_count counts the kept pin" "1" "$(fm "$OUT" pin_count)"
+assert_eq "the key set is unchanged" "True" "$(pins_json "$OUT" 'all(set(x) == {"n","seq","sent_at","text","selector","nearText","candidate","page","box","component","ts","x","y","resolved"} for x in p)')"
+assert_not_contains "the reading list drops it" '"b"' "$(sed -n '/^## Pins/,/^## Pin Data/p' "$OUT")"
+
+begin_test "a deleted ts given as a string withdraws the pin, and a clear alone withdraws nothing"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "string ts"
+hist "$LIVE" "$S2"
+hist "$LIVE" '{"seq":3,"pins":[],"deleted":["1"],"sent_at":"t3"}'
+hist "$LIVE" '{"seq":4,"cleared":true,"pins":[]}'
+file_rec "$ROOT" s1 nothing
+assert_eq "pin 1 is withdrawn, pin 2 stays" "b" "$(pins_json "$OUT" 'p[0]["text"]')"
+assert_eq "one pin remains" "1" "$(pins_json "$OUT" 'len(p)')"
+
+begin_test "the new Sheet sentence is written on new records"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "sheet sentence"
+hist "$LIVE" "$S1"
+file_rec "$ROOT" s1 nothing
+assert_contains_literal "sentence is exact" '`session.css` beside this file holds every change shown live, one keyed block per pin. Its look ports verbatim; a block that stands in for content graduates as a requirement quoting the pin.' "$(sed -n '/^## Sheet/,$p' "$OUT")"
+assert_not_contains "the old claim is gone" 'normative' "$(rd "$OUT")"
+
 begin_test "cleared entries add nothing and remove nothing"
 new_root; ROOT="$NEW_ROOT"
 live "$ROOT" s1 0 "with a clear"

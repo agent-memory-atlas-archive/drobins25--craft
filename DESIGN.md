@@ -76,12 +76,12 @@ plugins/craft/
 │   ├── craft-workflow-design.md   ← Definition lifecycle (create/edit/archive)
 │   └── references/
 │       ├── workflow-formats.md    ← Shared schema reference (frontmatter, stage-file format)
-│       ├── annotate-inline.md     ← The raw-tab annotate flow (arm or reuse, begin, inject, background wait, show-or-ask, sheet inject, re-inject, teardown, file, exits)
+│       ├── annotate-inline.md     ← The raw-tab annotate flow (arm or reuse, begin, inject, change watch, one apply per SEND, re-inject, teardown, file, exits)
 │       ├── annotate-overlay.md    ← The comment-mode overlay source, canonical annotate clear, port stamp, channel protocol
 │       ├── dial-inject.md         ← Dial injection contract (handles, MEASURE/INJECT/TOGGLE/CLEAR, canonical clear)
 │       ├── dial-inline.md         ← The dial flow logic (single source of truth, read inline)
 │       ├── mockup-inline.md       ← The mockup funnel logic (single source of truth, read inline)
-│       ├── story-from-annotate.md ← Story ramp: pre-fill a story from an annotate record (session.css normative; selector and component are anchors)
+│       ├── story-from-annotate.md ← Story ramp: pre-fill a story from an annotate record (the look carries verbatim, content becomes scope; selector and component are anchors)
 │       └── story-from-mockup.md   ← Story ramp: pre-fill a story from a converged mockup (CSS normative)
 ├── skills/                    ← Orchestrator-context skills (11 skills)
 │   ├── approve/               ← Scoped write permission gate (AskUserQuestion + TaskCreate)
@@ -98,9 +98,9 @@ plugins/craft/
 ├── hooks/
 │   ├── hooks.json             ← Hook event definitions
 │   └── scripts/               ← 45+ bash/python hook scripts
-│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / status / wait / clear / announce / begin / sheet / kind / loader / bake / strip / ensure / send / review-clear / sweep / disarm)
+│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / status / wait / clear / announce / begin / watch / sheet / apply / stamp / kind / loader / bake / strip / ensure / send / review-clear / sweep / disarm)
 │       ├── devtools-launch.cjs    ← Browser server launcher: pinned chrome-devtools-mcp, statistics off, shared profile or isolated window decided at the first browser call
-│       ├── annotate-resolve.sh    ← Pin to source: probe / resolve / where - maps the page's matched rules and the component name to project files, honest about bundles, cached per run in resolutions.json
+│       ├── annotate-resolve.sh    ← Pin to source: probe / resolve / where - the probe runs in the page at SEND; maps the page's matched rules and the component name to project files, honest about bundles, cached per run in resolutions.json
 │       ├── annotate-record.sh     ← Files a run as .craft/annotations/<date>-<slug>/ (record.md + session.css) and graduates it; the sweep and the next begin file orphaned runs
 │       └── annotate-channel.py    ← Per-session capture listener (dynamic port, serves the overlay at /overlay.js, replace-the-set / tombstone, history.jsonl ledger, CORS, SSE stream, client registry)
 ├── templates/                 ← File templates for craft init and scaffolding

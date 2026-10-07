@@ -1,6 +1,6 @@
 ---
 name: annotate
-description: "Point at anything in a live browser tab - each pin you SEND lands as a live change on the page, the session keeps one record of the run, and a pin the page cannot show is quoted back and asked about."
+description: "Point at anything in a live browser tab - every pin gets a live attempt on the page the moment you SEND it, and the session keeps one record of the run."
 when_to_use: |
   Use when the user wants to point at something on a page they are looking
   at: "let me point at something", "annotate this page", "mark up what I'm
@@ -16,7 +16,7 @@ argument-hint: "[what you are pointing at]"
 
 # Annotate
 
-Put a comment-mode sheet on a live tab, let the user click anything and leave notes, and read those notes the moment they press SEND TO CLAUDE. Each note that a stylesheet can express lands on the page live, and the run is kept as a record when it ends. The page is left pristine. This is the one flow that waits: standing by the page is the whole job.
+Put a comment-mode sheet on a live tab, let the user click anything and leave notes, and read those notes the moment they press SEND TO CLAUDE. Every pin gets a live attempt on the page, and the run is kept as a record when it ends. The page is left pristine. This is the one flow that waits: standing by the page is the whole job.
 
 This shell owns only routing. The flow lives in one reference file.
 

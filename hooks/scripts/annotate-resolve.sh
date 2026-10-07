@@ -6,10 +6,11 @@
 #   annotate-resolve.sh resolve [--root R] --session ID [--target TS=SELECTOR]...   (the probe's result on stdin)
 #   annotate-resolve.sh where   [--root R] --session ID --ts TS
 #
-# probe prints ONE line, a function for evaluate_script, that reports for each
-# project-page pin of the session's current.json the rules the browser matched
-# on the element and the stylesheet each came from - or prints nothing when
-# there is nothing to ask the page. It writes nothing. A pin on an external page
+# probe prints ONE line, a function for evaluate_script, that calls the
+# overlay's own walker (window.__craftAnnotateProbe) for each project-page pin
+# of the session's current.json: the rules the browser matched on the element
+# and the stylesheet each came from - or prints nothing when there is nothing
+# to ask the page. It writes nothing. A pin on an external page
 # (annotate-run.sh kind) is never probed.
 #
 # resolve reads the probe's return value on stdin, maps each rule to a project
@@ -434,58 +435,6 @@ def resolution_of(item):
 
 # ---- verbs -----------------------------------------------------------------
 
-PROBE_JS = r"""() => {
-  const T = __TARGETS__;
-  const here = location.href.split(/[?#]/)[0] + (/^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '');
-  const lastCompound = s => { let d = 0, st = 0, q = ''; for (let i = 0; i < s.length; i++) { const c = s[i];
-    if (q) { if (c === q) q = ''; } else if (c === '"' || c === "'") q = c; else if (c === '(' || c === '[') d++;
-    else if (c === ')' || c === ']') d--; else if (d === 0 && (/\s/.test(c) || '>+~'.includes(c))) st = i + 1; } return s.slice(st); };
-  const splitList = s => { const out = []; let d = 0, st = 0; for (let i = 0; i < s.length; i++) { const c = s[i];
-    if (c === '(' || c === '[') d++; else if (c === ')' || c === ']') d--; else if (c === ',' && d === 0) { out.push(s.slice(st, i)); st = i + 1; } }
-    out.push(s.slice(st)); return out.map(x => x.trim()).filter(Boolean); };
-  const sheets = [];
-  const blocked = [];
-  for (const sh of Array.from(document.styleSheets)) {
-    try { sheets.push({ sh: sh, rules: sh.cssRules }); } catch (e) { blocked.push(sh.href || 'inline'); }
-  }
-  return T.map(t => {
-    const item = { page: t.page, ts: t.ts, selector: t.selector, found: false, component: t.component, inline: false, blocked: blocked.slice(), rules: [] };
-    try {
-      if (here !== t.page) return item;
-      const el = document.querySelector(t.selector);
-      if (!el) return item;
-      item.found = true;
-      item.inline = !!el.getAttribute('style');
-      if (typeof window.__craftAnnotateComponentOf === 'function') item.component = window.__craftAnnotateComponentOf(el);
-      let order = 0;
-      const walk = (rules, sh) => {
-        for (const r of Array.from(rules)) {
-          try {
-            if (r.selectorText !== undefined && r.type === 1) {
-              order++;
-              for (const sub of splitList(r.selectorText)) {
-                if (!/[.#\[]/.test(lastCompound(sub))) continue;
-                let ok = false; try { ok = el.matches(sub); } catch (e) {}
-                if (!ok) continue;
-                const o = sh.ownerNode;
-                item.rules.push({ selector: sub, href: sh.href || null, devId: (o && o.getAttribute && o.getAttribute('data-vite-dev-id')) || null,
-                  order: order, matches: document.querySelectorAll(sub).length });
-              }
-            } else if (r.cssRules) {
-              if (r.media && !window.matchMedia(r.media.mediaText).matches) continue;
-              walk(r.cssRules, sh);
-            }
-          } catch (e) {}
-        }
-      };
-      for (const s of sheets) walk(s.rules, s.sh);
-      item.rules = item.rules.slice(-40);
-    } catch (e) {}
-    return item;
-  });
-}"""
-
-
 def cmd_probe():
     cache = load_cache()
     override = overrides()
@@ -504,7 +453,14 @@ def cmd_probe():
                        "component": pin.get("component") if isinstance(pin.get("component"), str) else None})
     if wanted:
         payload = json.dumps(wanted, ensure_ascii=True, separators=(",", ":"))
-        print(PROBE_JS.replace("__TARGETS__", payload).replace("\n", " "))
+        print("() => (typeof window.__craftAnnotateProbe === 'function' ? window.__craftAnnotateProbe(%s) : [])" % payload)
+
+
+def map_pin(cache, page, key, selector, override):
+    """A mapping, once made, stays unless a --target override names that pin."""
+    mapped = cache["pins"].setdefault(page, {})
+    if key not in mapped or key in override:
+        mapped[key] = selector
 
 
 def cmd_resolve():
@@ -525,6 +481,11 @@ def cmd_resolve():
             missed.add((page, selector))
             continue
         cache["targets"].setdefault(page, {})[selector] = resolution_of(item)
+        # The item names its own pin, so a pin no longer in current.json still
+        # maps. An override that points the pin at another element wins only
+        # when this item is that element.
+        if key not in override or override[key] == selector:
+            map_pin(cache, page, key, selector, override)
     printed = {}
     for pin in current_pins():
         page = pin.get("page")
@@ -534,7 +495,7 @@ def cmd_resolve():
             continue
         cached = (cache["targets"].get(page) or {}).get(selector)
         if cached is not None:
-            cache["pins"].setdefault(page, {})[key] = selector
+            map_pin(cache, page, key, selector, override)
             printed[key] = cached
         elif (page, selector) in missed:
             printed[key] = None

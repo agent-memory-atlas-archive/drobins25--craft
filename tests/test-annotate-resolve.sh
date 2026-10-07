@@ -69,6 +69,9 @@ PYEOF
 resolve_in() { local root="$1"; shift; bash "$RESOLVE" resolve --root "$root" --session "$SID" "$@" 2>&1; }
 where_in() { bash "$RESOLVE" where --root "$1" --session "$SID" --ts "$2" 2>&1; }
 
+# json_file <file> <expr over d> - evaluates a python expression against a parsed file
+json_file() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' "$1" "$2" 2>&1; }
+
 # pyget <json> <expr over d> - evaluates a python expression against the parsed json
 pyget() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.argv[2]))' "$1" "$2" 2>&1; }
 
@@ -193,9 +196,11 @@ new_root; R="$NEW_ROOT"
 OUT="$(bash "$RESOLVE" probe --root "$R" --session "$SID" 2>&1)"
 assert_eq "one line" "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
 assert_contains_literal "it is a function" "() =>" "$OUT"
-assert_contains_literal "it asks the overlay for the component" "__craftAnnotateComponentOf" "$OUT"
+assert_contains_literal "it is a call into the overlay's walker" "window.__craftAnnotateProbe(" "$OUT"
 assert_contains_literal "it names the pin's selector" ".toolbar > button.save" "$OUT"
-assert_contains_literal "it reads the sheets" "styleSheets" "$OUT"
+assert_not_contains "the walker body is not carried in the line" "lastCompound" "$OUT"
+assert_not_contains "the sheets are not read by the line itself" "styleSheets" "$OUT"
+assert_eq "the line stays short" "True" "$([ "${#OUT}" -lt 400 ] && echo True || echo False)"
 assert_file_not_exists "no cache is written by probe" "$R/.craft/annotations/$SID/resolutions.json"
 
 begin_test "a cached target is not probed again; a stale-run cache is ignored"
@@ -267,5 +272,37 @@ OUT="$(bash "$RESOLVE" nonsense --root "$R" --session "$SID" 2>&1 < /dev/null ||
 assert_contains_literal "unknown verb refused" "usage" "$OUT"
 OUT="$(printf 'not json' | resolve_in "$R")"
 assert_eq "garbage on stdin maps nothing" "{}" "$OUT"
+
+begin_test "receipt resolution never overwrites a mapping; an override still does"
+new_root; R="$NEW_ROOT"
+D="$R/.craft/annotations/$SID"
+item "http://localhost:5173/src/styles/toolbar.css" - ".toolbar .save" | resolve_in "$R" > /dev/null
+assert_eq "the pin maps to its own selector" ".toolbar > button.save" "$(json_file "$D/resolutions.json" 'd["pins"]["http://localhost:5173/"]["111"]')"
+python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["pins"]["http://localhost:5173/"]["111"] = ".card"
+json.dump(d, open(sys.argv[1], "w"))
+' "$D/resolutions.json"
+item "http://localhost:5173/src/styles/toolbar.css" - ".toolbar .save" | resolve_in "$R" > /dev/null
+assert_eq "a later receipt keeps the mapping" ".card" "$(json_file "$D/resolutions.json" 'd["pins"]["http://localhost:5173/"]["111"]')"
+python3 -c '
+import json
+print(json.dumps([{"page": "http://localhost:5173/", "ts": 111, "selector": ".toolbar", "found": True, "component": None, "inline": False, "blocked": [], "rules": []}]))
+' | resolve_in "$R" --target "111=.toolbar" > /dev/null
+assert_eq "an override replaces it" ".toolbar" "$(json_file "$D/resolutions.json" 'd["pins"]["http://localhost:5173/"]["111"]')"
+
+begin_test "a pin absent from current.json still maps from its own probe item"
+new_root; R="$NEW_ROOT"
+D="$R/.craft/annotations/$SID"
+write_current "$R" "http://localhost:5173/other"
+python3 -c '
+import json
+print(json.dumps([{"page": "http://localhost:5173/a", "ts": 7, "selector": ".n", "found": True, "component": "SaveButton", "inline": False, "blocked": [], "rules": [{"selector": ".toolbar .save", "href": "http://localhost:5173/src/styles/toolbar.css", "devId": None, "order": 1, "matches": 1}]}]))
+' | resolve_in "$R" > /dev/null
+assert_eq "the item's own page and ts map to its selector" ".n" "$(json_file "$D/resolutions.json" 'd["pins"]["http://localhost:5173/a"]["7"]')"
+assert_contains_literal "where finds it by ts alone" "SaveButton in src/components/SaveButton.jsx:2" "$(where_in "$R" 7)"
+printf '[{"page":"http://localhost:5173/a","ts":8,"selector":".gone","found":false,"component":null,"inline":false,"blocked":[],"rules":[]}]' | resolve_in "$R" > /dev/null
+assert_eq "a not-found item maps nothing" "False" "$(json_file "$D/resolutions.json" '"8" in d["pins"].get("http://localhost:5173/a", {})')"
 
 finish_tests "test-annotate-resolve"

@@ -79,3 +79,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/ci/browser-check.sh
+      - run: bash scripts/ci/annotate-check.sh

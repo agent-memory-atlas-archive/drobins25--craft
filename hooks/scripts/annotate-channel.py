@@ -18,6 +18,18 @@ Beside current.json the listener keeps history.jsonl, an append-only ledger of
 every state it wrote (sets and tombstones, one JSON line each, in seq order).
 Only the record writer reads it; wait, mockup and dial read current.json alone.
 
+changes.jsonl is the change log, also append-only: each write appends one line
+per pin added, edited or deleted (and one per clear), decided once against what
+the log already holds, so a resent set adds nothing and a restarted listener
+rebuilds that memory by folding the log. A SEND body may be the plain array or
+{pins, deleted, probes}; probes are merged into probes.json before any state is
+written so a reader woken by the log finds them.
+
+GET /changes holds a stream like /events, in a registry of its own: /health does
+not count it and /announce never reaches it. POST /sheet pushes a sheet-changed
+event down it; the page answers with POST /applied, and GET /applied long-polls
+for that report. GET /session.css serves the session's sheet.
+
 GET /overlay.js serves the overlay script. The listener holds no copy of it:
 every request reads the one fence in commands/references/annotate-overlay.md,
 so an edit or a plugin update is served on the next load.
@@ -43,8 +55,10 @@ import select
 import socket
 import sys
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 MAX_BODY_BYTES = 1024 * 1024
 
@@ -55,6 +69,14 @@ ALLOW_METHODS = "POST, OPTIONS"
 # How often a held stream checks its queue and whether the page went away.
 STREAM_POLL_SECONDS = 0.25
 RELOAD_EVENT = b"event: reload\ndata: reload\n\n"
+
+# Page reports held for a command that asks after them, and how long it may wait.
+MAX_HELD_REPORTS = 32
+DEFAULT_REPORT_WAIT = 5.0
+MAX_REPORT_WAIT = 10.0
+
+# A (page, ts) entry whose pin was withdrawn; it never produces another change.
+DELETED = object()
 
 
 OVERLAY_FENCE_OPEN = "```overlay-source"
@@ -142,6 +164,105 @@ def terminate_torn_line(path):
             fh.write(b"\n")
 
 
+def ts_key(value):
+    """A pin's ts as the string every reader keys it by: an integral float
+    becomes an int first, so 5, 5.0 and "5" meet. None when unusable."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value) if isinstance(value, (int, str)) and str(value) != "" else None
+
+
+def compute_changes(latest, seq, pins, deleted):
+    """The changes one write makes against what was already logged.
+
+    latest maps (page, ts_key) to the last logged text, or DELETED, and is
+    updated in place. A pin not seen before is added, a different text is
+    edited, an equal text is nothing; a deleted ts that names a live entry on
+    any page is deleted once. The label n renumbers when a pin is deleted, so
+    only the text decides an edit.
+    """
+    changes = []
+    for pin in pins:
+        if not isinstance(pin, dict) or not isinstance(pin.get("page"), str):
+            continue
+        key = ts_key(pin.get("ts"))
+        if key is None:
+            continue
+        entry = (pin["page"], key)
+        text = pin.get("text")
+        if entry not in latest:
+            kind = "added"
+        elif latest[entry] is DELETED or latest[entry] == text:
+            continue
+        else:
+            kind = "edited"
+        latest[entry] = text
+        changes.append({"seq": seq, "kind": kind, "page": pin["page"], "ts": key, "pin": pin})
+    for raw in deleted:
+        key = ts_key(raw)
+        if key is None:
+            continue
+        for entry in [e for e in latest if e[1] == key and latest[e] is not DELETED]:
+            latest[entry] = DELETED
+            changes.append({"seq": seq, "kind": "deleted", "page": entry[0], "ts": key})
+    return changes
+
+
+def fold_changes(path):
+    """Rebuilds the latest-text map from the change log, in order; a line that
+    does not parse is skipped."""
+    latest = {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    change = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(change, dict) or not isinstance(change.get("page"), str):
+                    continue
+                entry = (change["page"], change.get("ts"))
+                if change.get("kind") in ("added", "edited") and isinstance(change.get("pin"), dict):
+                    latest[entry] = change["pin"].get("text")
+                elif change.get("kind") == "deleted":
+                    latest[entry] = DELETED
+    except OSError:
+        pass
+    return latest
+
+
+class Registry:
+    """The held streams of one kind: a set of queues, one per page connection."""
+
+    def __init__(self):
+        self.members = set()
+        self.lock = threading.Lock()
+
+    def add(self):
+        events = queue.Queue()
+        with self.lock:
+            self.members.add(events)
+        return events
+
+    def remove(self, events):
+        with self.lock:
+            self.members.discard(events)
+
+    def count(self):
+        with self.lock:
+            return len(self.members)
+
+    def broadcast(self, event):
+        """Queues the event for every member; returns how many got it."""
+        with self.lock:
+            targets = list(self.members)
+        for events in targets:
+            events.put(event)
+        return len(targets)
+
+
 class Channel(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -150,44 +271,76 @@ class Channel(ThreadingHTTPServer):
         self.session_dir = session_dir
         self.current_path = os.path.join(session_dir, "current.json")
         self.history_path = os.path.join(session_dir, "history.jsonl")
+        self.changes_path = os.path.join(session_dir, "changes.jsonl")
+        self.probes_path = os.path.join(session_dir, "probes.json")
         terminate_torn_line(self.history_path)
+        terminate_torn_line(self.changes_path)
         self.seq = max(read_last_seq(self.current_path), read_history_last_seq(self.history_path))
         self.write_lock = threading.Lock()
-        self.clients = set()
-        self.clients_lock = threading.Lock()
-
-    def register_client(self):
-        """Adds one held stream; returns the queue its handler thread drains."""
-        events = queue.Queue()
-        with self.clients_lock:
-            self.clients.add(events)
-        return events
-
-    def unregister_client(self, events):
-        with self.clients_lock:
-            self.clients.discard(events)
+        self.latest = fold_changes(self.changes_path)
+        self.events = Registry()
+        self.change_streams = Registry()
+        self.probes_lock = threading.Lock()
+        self.reports = OrderedDict()
+        self.reports_ready = threading.Condition()
 
     def client_count(self):
-        with self.clients_lock:
-            return len(self.clients)
+        return self.events.count()
 
     def broadcast(self, event):
-        """Queues the event for every held stream; returns how many got it."""
-        with self.clients_lock:
-            targets = list(self.clients)
-        for events in targets:
-            events.put(event)
-        return len(targets)
+        """Queues the event for every held /events stream; returns how many got it."""
+        return self.events.broadcast(event)
 
-    def replace_state(self, cleared, pins, sent_at=None):
+    def merge_probes(self, items):
+        """Merges probe items into probes.json keyed by ts; an incoming item
+        replaces what that ts held. Written whole through a temp file."""
+        with self.probes_lock:
+            try:
+                with open(self.probes_path, "r", encoding="utf-8") as fh:
+                    held = json.load(fh)
+            except (OSError, ValueError):
+                held = {}
+            if not isinstance(held, dict):
+                held = {}
+            for item in items:
+                key = ts_key(item.get("ts")) if isinstance(item, dict) else None
+                if key is not None:
+                    held[key] = item
+            tmp_path = self.probes_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                json.dump(held, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, self.probes_path)
+
+    def hold_report(self, report):
+        """Keeps a page report by id; the first for an id wins and only the
+        newest MAX_HELD_REPORTS are kept."""
+        with self.reports_ready:
+            if report["id"] not in self.reports:
+                self.reports[report["id"]] = report
+                while len(self.reports) > MAX_HELD_REPORTS:
+                    self.reports.popitem(last=False)
+            self.reports_ready.notify_all()
+
+    def wait_report(self, report_id, seconds):
+        """The held report for the id, waiting up to seconds for it to arrive."""
+        with self.reports_ready:
+            self.reports_ready.wait_for(lambda: report_id in self.reports, timeout=seconds)
+            return self.reports.get(report_id)
+
+    def replace_state(self, cleared, pins, sent_at=None, deleted=None):
         """The only write path: append to the history, then temp file in the same
-        directory and os.replace for current.json. The history is only ever
-        opened for append, so no restart or write can shorten it."""
+        directory and os.replace for current.json, then append the changes this
+        write makes to the change log. The history and the change log are only
+        ever opened for append, so no restart or write can shorten them."""
         with self.write_lock:
             self.seq += 1
             state = {"seq": self.seq, "cleared": cleared, "pins": pins}
             if sent_at is not None:
                 state["sent_at"] = sent_at
+            if deleted:
+                state["deleted"] = deleted
             with open(self.history_path, "a", encoding="utf-8") as ledger:
                 ledger.write(json.dumps(state) + "\n")
                 ledger.flush()
@@ -198,6 +351,15 @@ class Channel(ThreadingHTTPServer):
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp_path, self.current_path)
+            if cleared:
+                changes = [{"seq": self.seq, "kind": "cleared"}]
+            else:
+                changes = compute_changes(self.latest, self.seq, pins, deleted or [])
+            if changes:
+                with open(self.changes_path, "a", encoding="utf-8") as log:
+                    log.write("".join(json.dumps(c) + "\n" for c in changes))
+                    log.flush()
+                    os.fsync(log.fileno())
             return self.seq
 
 
@@ -252,8 +414,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"%x\r\n" % len(data) + data + b"\r\n")
         self.wfile.flush()
 
-    def _serve_stream(self):
-        """Holds the connection open, writing each queued event and flushing it."""
+    def _serve_stream(self, registry):
+        """Holds the connection open, writing each event queued on a member of
+        the registry and flushing it."""
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
         self.send_header("Content-Type", "text/event-stream")
@@ -261,7 +424,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
         self.close_connection = True
-        events = self.server.register_client()
+        events = registry.add()
         try:
             self._write_chunk(b": connected\n\n")
             while True:
@@ -275,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, ValueError):
             return
         finally:
-            self.server.unregister_client(events)
+            registry.remove(events)
 
     def _serve_overlay(self):
         """The overlay fence as a script. Reads the reference per request and
@@ -293,8 +456,43 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _serve_session_css(self):
+        """The session's sheet, read per request; an absent sheet is empty."""
+        try:
+            with open(os.path.join(self.server.session_dir, "session.css"), "rb") as fh:
+                body = fh.read()
+        except OSError:
+            body = b""
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _serve_applied(self, query):
+        """Long-polls for the page report of one sheet job."""
+        params = parse_qs(query)
+        report_id = (params.get("id") or [""])[0]
+        try:
+            seconds = float((params.get("wait") or [DEFAULT_REPORT_WAIT])[0])
+        except ValueError:
+            seconds = DEFAULT_REPORT_WAIT
+        seconds = min(max(seconds, 0.0), MAX_REPORT_WAIT)
+        report = self.server.wait_report(report_id, seconds)
+        if report is None:
+            self._send(404, {"ok": False, "error": "no report"})
+        else:
+            self._send(200, report)
+
     def do_GET(self):
-        if self.path == "/overlay.js":
+        route = urlsplit(self.path)
+        if route.path == "/applied":
+            self._serve_applied(route.query)
+        elif self.path == "/overlay.js":
             self._serve_overlay()
         elif self.path == "/health":
             self._send(200, {
@@ -302,10 +500,26 @@ class Handler(BaseHTTPRequestHandler):
                 "port": self.server.server_address[1],
                 "clients": self.server.client_count(),
             })
+        elif self.path == "/session.css":
+            self._serve_session_css()
         elif self.path == "/events":
-            self._serve_stream()
+            self._serve_stream(self.server.events)
+        elif self.path == "/changes":
+            self._serve_stream(self.server.change_streams)
         else:
             self._send(404, {"ok": False, "error": "not found"})
+
+    def _json_object_with_id(self, body):
+        """The body as a dict with a string id, or None after answering 400."""
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send(400, {"ok": False, "error": "body is not JSON"})
+            return None
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("id"), str):
+            self._send(400, {"ok": False, "error": "body must be an object with a string id"})
+            return None
+        return parsed
 
     def do_POST(self):
         body = self._read_body()
@@ -317,12 +531,31 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, UnicodeDecodeError):
                 self._send(400, {"ok": False, "error": "body is not JSON"})
                 return
-            if not isinstance(pins, list):
-                self._send(400, {"ok": False, "error": "body must be a JSON array of pins"})
+            deleted, probes = [], []
+            if isinstance(pins, dict) and isinstance(pins.get("pins"), list):
+                body = pins
+                pins = body["pins"]
+                deleted = body["deleted"] if isinstance(body.get("deleted"), list) else []
+                probes = body["probes"] if isinstance(body.get("probes"), list) else []
+            elif not isinstance(pins, list):
+                self._send(400, {"ok": False, "error": "body must be a JSON array of pins or an object with a pins array"})
                 return
+            if probes:
+                self.server.merge_probes(probes)
             sent_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            seq = self.server.replace_state(False, pins, sent_at)
+            seq = self.server.replace_state(False, pins, sent_at, deleted)
             self._send(200, {"ok": True, "seq": seq, "count": len(pins)})
+        elif self.path == "/sheet":
+            job = self._json_object_with_id(body)
+            if job is not None:
+                delivered = self.server.change_streams.broadcast(
+                    b"event: sheet\ndata: " + json.dumps(job).encode("utf-8") + b"\n\n")
+                self._send(200, {"ok": True, "delivered": delivered})
+        elif self.path == "/applied":
+            report = self._json_object_with_id(body)
+            if report is not None:
+                self.server.hold_report(report)
+                self._send(200, {"ok": True})
         elif self.path == "/clear":
             seq = self.server.replace_state(True, [])
             self._send(200, {"ok": True, "seq": seq, "cleared": True})

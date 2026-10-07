@@ -22,7 +22,7 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Placement.** The style element goes in `head`; the sheet and strip go in `body` as the last children. Framework re-renders reconcile only their own root, so anything appended inside it is eventually eaten. Pins are inserted just before the strip so the strip stays last.
 - **Namespaced handles.** `ca-style`, `ca-sheet`, `ca-strip` are ids; every other real node carries `data-craft-annotate-injected`. The canonical clear is total by construction because of that attribute. The overlay never sets the marker owned by the dial flow, because dial's clear runs unconditionally on arrival, while review flows clear annotate only through `review-clear`, which leaves the page alone during an open run.
 - **No port in the source.** The channel base is `'http://127.0.0.1:' + window.__craftAnnotatePort`. Each session's listener has its own OS-assigned port, stamped into its own pages. A literal in shared source would point every page at one session. An absent stamp means SEND shows `NOT ARMED - no craft session listening` while everything else keeps working locally. A stamp that is present but a request the browser refuses to send (a page policy that does not allow 127.0.0.1) shows `BLOCKED BY PAGE - ask Claude to read pins directly`: the pins are still in the page's local storage, and the session reads them from there.
-- **Inert until asked.** An injected page makes no network request before a user gesture. The loader's one script request is the delivery itself, made by the flow and never by the overlay. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. A dropped stream retries quietly with a bounded backoff. There is no polling.
+- **Inert until asked.** An injected page makes no network request before a user gesture. The loader's one script request is the delivery itself, made by the flow and never by the overlay. Only a page stamped as baked opens the event stream, exactly once at load, and reloads itself on the `reload` event. One exception: a page stamped with a run id (see [The stamps](#the-stamps)) fetches the session sheet and holds the change stream from install, because the flow's own injection is the ask. Dial and pasted pages without that stamp stay inert. A dropped stream retries quietly with a bounded backoff, and a change stream that never opened gives up after a few tries. There is no polling.
 - **Honest confirmation.** `RETURNED` is stamped only inside the resolved-200 branch of the SEND post, and every pin in the delivered set then gains a visible sent-stamp. A non-200 reply shows `NOT ARMED - no craft session listening` and stamps nothing. A request the browser rejects outright, with the port stamped, is a refusal by the page or the browser, never a listener state: it shows `BLOCKED BY PAGE - ask Claude to read pins directly` and stamps nothing. Every other channel failure is quiet; SEND alone is loud. A stamp written from a swallowed error is a lie the user acts on.
 - **Send-only.** The only request carrying pins is the one inside the SEND handler. Unsent pins live in the page and in local storage and nowhere else, so a pin the user never sent can never reach the channel.
 - **SEND commits first.** An open comment box is saved through the normal save path before the set is collected, so a comment mid-typing is never dropped from the set it visibly belongs to.
@@ -31,7 +31,10 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Detached pins.** A pin whose anchor no longer resolves after a live edit docks above the strip in a flagged detached state, keeping its number and comment. Pins are re-checked when the page changes, not only on the next overlay event. A comment never silently vanishes.
 - **Text, never markup.** Comments are written with `textContent`. A comment containing `<` must render as typed, not execute.
 - **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path, plus the hash route when the app routes with the hash: a fragment that starts with `#/` or `#!/` is a route, its own query cut off; any other fragment is an in-page anchor and changes nothing. The pin's `page` carries the same hash route, so a pin names the route it was made on. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. The key is read from the path and hash route at every access, so it follows client-side navigation, by path or by hash: the old path's pins are hidden and wait in storage until the user returns, and the new path's pins show without a click. Storage is best-effort: unavailable storage means memory-only pins and no error.
-- **One component lookup.** The source sets `window.__craftAnnotateComponentOf = componentOf;` right after defining it, so the pin-to-source probe asks the page for the component of any element, an ancestor included, instead of carrying a second copy of the fiber walk that would drift. The annotate clear does not delete it: the next install overwrites it.
+- **One component lookup.** The source sets `window.__craftAnnotateComponentOf = componentOf;` right after defining it, so the pin-to-source probe asks the page for the component of any element, an ancestor included, instead of carrying a second copy of the fiber walk that would drift. The rule walker is the same: the source sets `window.__craftAnnotateProbe` to the one walker that finds the stylesheet rules matching a pin's element, and the resolver's probe line only calls it, so the walk lives once. The annotate clear deletes neither: the next install overwrites them.
+- **Measure, never guess.** On a sheet event a run-stamped page re-fetches the session sheet, then reports to the channel what the page itself measured for each changed block: the computed values, the first matching element's box in document coordinates, the view and the page size, whether that element's center is inside the view, and what is painted on top of it. The hit test skips the overlay's own nodes, so a pin dropped where the user clicked never reads as covering the element. An element with `pointer-events: none` is not hit-tested, and a center outside the view is reported as such rather than tested. The page never scrolls to measure: the user's view is theirs.
+- **Undo is explicit.** Deleting a pin that was sent in this run puts its timestamp on an undo list kept in local storage, posted with the next SEND so its change is withdrawn. Clearing pins empties the list and adds nothing, so a clear can never read as "undo everything". The readout names pending undos until the next SEND.
+- **Stale sent pins drop.** A page stamped with a run id discards stored pins that were sent in another run, or in none; unsent pins always stay. A page without the stamp drops nothing.
 - **Total teardown.** Every document-level handler, the page-change observer and the stream stop themselves the moment the strip is no longer attached, so a clear followed by a re-install never leaves a ghost handler creating pins.
 - **Self-styled strip.** The host page's reset is hostile by default. The strip pins `position: fixed` at `z-index: 2147483000` and sets its own font, size, line height, colour, background, and box sizing.
 - **Motion.** The sheet fades in over 200ms and out over 120ms; a pin settles in 150ms; the send button lifts 4px while the request is in flight. Under `prefers-reduced-motion: reduce` every duration is 0 and the stamps still show.
@@ -63,6 +66,8 @@ The whole block is one self-invoking expression: served as a script it runs as i
   const MARK = 'data-craft-annotate-injected';
   const NOT_ARMED = 'NOT ARMED - no craft session listening';
   const BLOCKED_BY_PAGE = 'BLOCKED BY PAGE - ask Claude to read pins directly';
+  // The overlay's own nodes: the clear fence's list. Measurement never counts them.
+  const OWN = '#ca-style,#ca-sheet,#ca-strip,[' + MARK + '],.ca-pin,.ca-popover,.ca-box';
 
   const css = [
     '#ca-sheet{position:fixed;top:0;left:0;right:0;bottom:0;box-sizing:border-box;border:' + CA.proofBorder + ';pointer-events:none;opacity:0;transition:opacity 120ms ease;z-index:2147482990}',
@@ -140,20 +145,42 @@ The whole block is one self-invoking expression: served as a script it runs as i
   let openPop = null;
   let stream = null;
   let retryTimer = null;
+  let undo = [];
 
   const base = () => window.__craftAnnotatePort ? 'http://127.0.0.1:' + window.__craftAnnotatePort : null;
   const say = text => { status.textContent = text; };
-  const paintReadout = () => { readout.textContent = 'MARKUP - ' + entries.length + ' marks'; };
+  const paintReadout = () => {
+    readout.textContent = 'MARKUP - ' + entries.length + ' marks' + (undo.length ? ' - ' + undo.length + ' to undo' : '');
+  };
 
   // A fragment that starts with #/ or #!/ is a client-side route (its own query cut off);
   // any other fragment is an in-page anchor and does not change which pins show.
   const hashRoute = () => /^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '';
   const storeKey = () => 'ca-annotations:' + location.pathname + hashRoute();
+  const undoKey = () => 'ca-undo:' + location.pathname + hashRoute();
+  // The page address a pin names: path plus hash route, never query or anchor.
+  const pageNow = () => location.href.split(/[?#]/)[0] + hashRoute();
+  // The run this page was injected for, read live; absent on dial and baked pages.
+  const runId = () => window.__craftAnnotateRun || null;
 
   const persist = () => {
     try {
-      localStorage.setItem(storeKey(), JSON.stringify(entries.map(en => Object.assign({}, en.d, { sent: en.sent }))));
+      localStorage.setItem(storeKey(), JSON.stringify(entries.map(en => Object.assign({}, en.d, { sent: en.sent, sentRun: en.sentRun }))));
     } catch (e) { /* storage unavailable: pins stay memory-only */ }
+  };
+
+  const readUndo = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(undoKey()) || '[]');
+      return Array.isArray(stored) ? stored.filter(t => typeof t === 'number' || typeof t === 'string') : [];
+    } catch (e) { return []; }
+  };
+
+  const persistUndo = () => {
+    try {
+      if (undo.length) localStorage.setItem(undoKey(), JSON.stringify(undo));
+      else localStorage.removeItem(undoKey());
+    } catch (e) { /* storage unavailable: the list stays in memory */ }
   };
 
   // Registers a document-level handler that unregisters itself, and stops the stream,
@@ -208,6 +235,228 @@ The whole block is one self-invoking expression: served as a script it runs as i
   };
   window.__craftAnnotateComponentOf = componentOf;
 
+  // Splits s on sep where it sits outside brackets, parentheses and quotes.
+  const splitTop = (s, sep) => {
+    const out = [];
+    let depth = 0;
+    let start = 0;
+    let quote = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quote) { if (c === quote) quote = ''; }
+      else if (c === '"' || c === "'") quote = c;
+      else if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if (c === sep && depth === 0) { out.push(s.slice(start, i)); start = i + 1; }
+    }
+    out.push(s.slice(start));
+    return out.map(x => x.trim()).filter(Boolean);
+  };
+
+  // The last compound of a selector: what the element itself must match.
+  const lastCompound = s => {
+    let depth = 0;
+    let start = 0;
+    let quote = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quote) { if (c === quote) quote = ''; }
+      else if (c === '"' || c === "'") quote = c;
+      else if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if (depth === 0 && (/\s/.test(c) || '>+~'.includes(c))) start = i + 1;
+    }
+    return s.slice(start);
+  };
+
+  // For each target, the rules in the page's own stylesheets that match its element.
+  // Never throws; a sheet the page will not let us read is named in blocked.
+  const probeTargets = targets => {
+    const here = pageNow();
+    const sheets = [];
+    const blocked = [];
+    for (const sh of Array.from(document.styleSheets)) {
+      const owner = sh.ownerNode;
+      if (owner && owner.getAttribute && (owner.id === 'ca-style' || owner.hasAttribute(MARK))) continue;
+      try { sheets.push({ sh: sh, rules: sh.cssRules }); } catch (e) { blocked.push(sh.href || 'inline'); }
+    }
+    return targets.map(t => {
+      const item = { page: t.page, ts: t.ts, selector: t.selector, found: false, component: t.component, inline: false, blocked: blocked.slice(), rules: [] };
+      try {
+        if (here !== t.page) return item;
+        const el = document.querySelector(t.selector);
+        if (!el) return item;
+        item.found = true;
+        item.inline = !!el.getAttribute('style');
+        item.component = componentOf(el);
+        let order = 0;
+        const walk = (rules, sh) => {
+          for (const r of Array.from(rules)) {
+            try {
+              if (r.selectorText !== undefined && r.type === 1) {
+                order++;
+                for (const sub of splitTop(r.selectorText, ',')) {
+                  if (!/[.#\[]/.test(lastCompound(sub))) continue;
+                  let ok = false;
+                  try { ok = el.matches(sub); } catch (e) {}
+                  if (!ok) continue;
+                  const o = sh.ownerNode;
+                  item.rules.push({ selector: sub, href: sh.href || null, devId: (o && o.getAttribute && o.getAttribute('data-vite-dev-id')) || null,
+                    order: order, matches: document.querySelectorAll(sub).length });
+                }
+              } else if (r.cssRules) {
+                if (r.media && !window.matchMedia(r.media.mediaText).matches) continue;
+                walk(r.cssRules, sh);
+              }
+            } catch (e) {}
+          }
+        };
+        for (const s of sheets) walk(s.rules, s.sh);
+        item.rules = item.rules.slice(-40);
+      } catch (e) {}
+      return item;
+    });
+  };
+  window.__craftAnnotateProbe = probeTargets;
+
+  // The session's style element: one per page, kept last in head so it outranks the app's own sheets.
+  const sessionStyle = () => {
+    let el = document.getElementById('ca-session-css');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'ca-session-css';
+      el.setAttribute(MARK, '');
+    }
+    document.head.appendChild(el);
+    return el;
+  };
+
+  const fetchSheet = () => {
+    const root = base();
+    if (!root || !runId()) return Promise.reject(new Error('page is not stamped'));
+    return fetch(root + '/session.css', { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error('sheet ' + res.status);
+        return res.text();
+      })
+      .then(text => {
+        sessionStyle().textContent = text;
+        return text;
+      });
+  };
+
+  // The sheet is a run of blocks, each opened by its own header line; returns {key: css}.
+  const splitBlocks = text => {
+    const out = {};
+    let key = null;
+    text.split('\n').forEach(line => {
+      const m = /^\/\* annotate-key ([A-Za-z0-9_-]+) \*\/$/.exec(line);
+      if (m) { key = m[1]; out[key] = ''; }
+      else if (key !== null) out[key] += line + '\n';
+    });
+    return out;
+  };
+
+  const label = el => {
+    let s = el.tagName.toLowerCase();
+    if (el.id) s += '#' + el.id;
+    if (el.classList && el.classList.length) s += '.' + [...el.classList].slice(0, 2).join('.');
+    return s.slice(0, 60);
+  };
+
+  const PSEUDO_ELEMENT = /::?(?:before|after|first-line|first-letter|marker|placeholder|selection)\s*$/i;
+  const STATE = '(?::hover|:focus-visible|:focus-within|:focus|:active|:visited)';
+  const BARE_STATE = new RegExp('(^|[\\s>+~])' + STATE, 'gi');
+  const ANY_STATE = new RegExp(STATE, 'gi');
+
+  // Measures one selector from a session block on its first matching element.
+  // Facts only: values the browser computed, where the element sits, and what is on top of it.
+  const measureRule = (selector, names) => {
+    const found = PSEUDO_ELEMENT.exec(selector);
+    const pseudo = found ? found[0].trim() : null;
+    const target = (found ? selector.slice(0, found.index) : selector)
+      .replace(BARE_STATE, '$1*').replace(ANY_STATE, '').trim() || '*';
+    let list = [];
+    try { list = Array.from(document.querySelectorAll(target)).filter(n => !n.closest(OWN)); } catch (e) { list = []; }
+    const out = { selector: selector, matched: list.length, values: {} };
+    const el = list[0];
+    if (!el) return out;
+    const cs = getComputedStyle(el, pseudo);
+    names.forEach(n => { out.values[n] = cs.getPropertyValue(n).slice(0, 120); });
+    const r = el.getBoundingClientRect();
+    out.box = { x: Math.round(r.left + window.scrollX), y: Math.round(r.top + window.scrollY), w: Math.round(r.width), h: Math.round(r.height) };
+    out.container = el.childElementCount > 0;
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    out.inView = cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight;
+    out.top = null;
+    if (!out.inView || getComputedStyle(el).pointerEvents === 'none') return out;
+    const hit = document.elementsFromPoint(cx, cy).find(n => !n.closest(OWN));
+    out.top = !!hit && (hit === el || el.contains(hit));
+    if (!out.top && hit) out.coveredBy = label(hit);
+    return out;
+  };
+
+  // Every rule of one block's css, measured. Property names come from the rule's own
+  // serialization, so a shorthand the browser keeps stays a shorthand.
+  const measureBlock = css => {
+    const parsed = new CSSStyleSheet();
+    parsed.replaceSync(css);
+    const out = [];
+    const walkRules = rules => {
+      Array.from(rules).forEach(rule => {
+        if (rule.selectorText !== undefined && rule.style) {
+          const names = splitTop(rule.style.cssText, ';').map(d => d.slice(0, d.indexOf(':')).trim()).filter(Boolean);
+          splitTop(rule.selectorText, ',').forEach(sel => out.push(measureRule(sel, names)));
+        } else if (rule.cssRules && (!rule.media || window.matchMedia(rule.media.mediaText).matches)) {
+          walkRules(rule.cssRules);
+        }
+      });
+    };
+    walkRules(parsed.cssRules);
+    return out;
+  };
+
+  // Answers one sheet event: what the page measured for each changed key, plus the walker's
+  // result for the targets the command named. Posted once per event, even with nothing to measure.
+  const report = (job, text, error) => {
+    const root = base();
+    if (!root || !runId()) return;
+    const de = document.documentElement;
+    const body = {
+      id: job.id,
+      page: pageNow(),
+      view: { x: Math.round(window.scrollX), y: Math.round(window.scrollY), w: window.innerWidth, h: window.innerHeight },
+      pageSize: { w: Math.max(de.scrollWidth, document.body.scrollWidth), h: Math.max(de.scrollHeight, document.body.scrollHeight) },
+      blocks: {},
+      probes: []
+    };
+    if (error) body.error = error;
+    else {
+      const blocks = splitBlocks(text);
+      (job.measure || []).forEach(key => {
+        try {
+          body.blocks[key] = Object.prototype.hasOwnProperty.call(blocks, key) ? measureBlock(blocks[key]) : [];
+        } catch (e) { body.blocks[key] = []; }
+      });
+    }
+    try {
+      body.probes = probeTargets((job.targets || []).map(t => ({ page: pageNow(), ts: t.ts, selector: t.selector, component: null })));
+    } catch (e) { body.probes = []; }
+    fetch(root + '/applied', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).catch(() => {});
+  };
+
+  const onSheet = ev => {
+    let job = null;
+    try { job = JSON.parse(ev.data); } catch (e) { return; }
+    if (!job || typeof job.id !== 'string') return;
+    fetchSheet().then(text => report(job, text, null), () => report(job, '', 'sheet fetch failed'));
+  };
+
   const boxOf = el => {
     const r = el.getBoundingClientRect();
     return {
@@ -227,7 +476,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
       selector: cssPath(target),
       nearText: (target.textContent || '').trim().slice(0, 60),
       ts: Date.now(),
-      page: location.href.split(/[?#]/)[0] + hashRoute(),
+      page: pageNow(),
       box: boxOf(target),
       component: componentOf(target)
     };
@@ -275,6 +524,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   };
 
   const removeEntry = en => {
+    if (runId() && en.sentRun === runId()) { undo.push(en.d.ts); persistUndo(); }
     closePopover();
     en.node.remove();
     entries = entries.filter(other => other !== en);
@@ -412,9 +662,19 @@ The whole block is one self-invoking expression: served as a script it runs as i
   const currentSet = () => entries.map(en => Object.assign({}, en.d));
 
   const markSent = () => {
-    entries.forEach(en => { en.sent = true; });
+    entries.forEach(en => {
+      en.sent = true;
+      if (runId()) en.sentRun = runId();
+    });
     persist();
     settle();
+  };
+
+  // The page's own probe of the pins not yet sent, so a pin's source resolves from the page itself.
+  const probeUnsent = () => {
+    try {
+      return probeTargets(entries.filter(en => !en.sent).map(en => ({ page: en.d.page, ts: en.d.ts, selector: en.d.selector, component: en.d.component || null })));
+    } catch (e) { return []; }
   };
 
   const send = () => {
@@ -422,20 +682,26 @@ The whole block is one self-invoking expression: served as a script it runs as i
     commitOpenBox();
     settle();
     const set = currentSet();
-    if (!set.length) { say('NOTHING TO SEND'); return; }
+    const stamped = !!runId();
+    if (!set.length && !(stamped && undo.length)) { say('NOTHING TO SEND'); return; }
     const root = base();
     if (!root) { say(NOT_ARMED); return; }
     sending = true;
     sendBtn.classList.add('ca-lift');
+    const sentUndo = stamped ? undo.slice() : [];
+    const body = stamped ? { pins: set, deleted: sentUndo, probes: probeUnsent() } : set;
     fetch(root + '/pins', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(set)
+      body: JSON.stringify(body)
     }).then(res => {
       sending = false;
       sendBtn.classList.remove('ca-lift');
       if (!res.ok) { say(NOT_ARMED); return; }
       markSent();
+      undo = undo.filter(t => sentUndo.indexOf(t) < 0);
+      persistUndo();
+      paintReadout();
       say('RETURNED');
     }).catch(() => {
       sending = false;
@@ -456,23 +722,32 @@ The whole block is one self-invoking expression: served as a script it runs as i
     entries = [];
     seq = 0;
     try { localStorage.removeItem(storeKey()); } catch (e) { /* storage unavailable */ }
+    undo = [];
+    persistUndo();
     paintReadout();
     say('CLEARED');
   };
 
   // Loads the pins stored under the current path; runs at install and after a path change.
+  // A stamped page drops stored pins that were sent in another run; unsent pins always stay.
   const rehydrate = () => {
+    undo = runId() ? readUndo() : [];
     try {
       const stored = JSON.parse(localStorage.getItem(storeKey()) || '[]');
       if (Array.isArray(stored)) {
+        let dropped = 0;
         stored.forEach(a => {
           if (!a || typeof a.n !== 'number' || typeof a.x !== 'number' || typeof a.y !== 'number') return;
           const sent = a.sent === true;
+          if (runId() && sent && a.sentRun !== runId()) { dropped++; return; }
           const d = Object.assign({}, a);
           delete d.sent;
-          adopt(d, sent, buildPin(d.n, d.x, d.y));
+          delete d.sentRun;
+          const en = adopt(d, sent, buildPin(d.n, d.x, d.y));
+          if (typeof a.sentRun === 'string') en.sentRun = a.sentRun;
         });
         renumber();
+        if (dropped) persist();
       }
     } catch (e) { /* unreadable storage: start empty */ }
   };
@@ -498,6 +773,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   rehydrate();
   settle();
   paintReadout();
+  if (runId() && base()) fetchSheet().catch(() => {});
 
   toggle.addEventListener('click', e => { e.stopPropagation(); setMode(!mode); });
   sendBtn.addEventListener('click', e => { e.stopPropagation(); send(); });
@@ -533,15 +809,23 @@ The whole block is one self-invoking expression: served as a script it runs as i
   });
   watcher.observe(document.body, { childList: true, subtree: true });
 
-  if (window.__craftAnnotateBaked && base()) {
+  // A baked page holds the reload stream; a page injected for a run holds the change stream;
+  // any other page holds none.
+  const streamKind = window.__craftAnnotateBaked ? 'baked' : (window.__craftAnnotateRun ? 'run' : null);
+  if (streamKind && base()) {
+    const path = streamKind === 'baked' ? '/events' : '/changes';
     let delay = 1000;
+    let opened = false;
+    let tries = 0;
     const connect = () => {
-      if (!strip.isConnected) return;
-      stream = new EventSource(base() + '/events');
-      stream.addEventListener('open', () => { delay = 1000; });
-      stream.addEventListener('reload', () => { location.reload(); });
+      if (!strip.isConnected || !base()) return;
+      stream = new EventSource(base() + path);
+      stream.addEventListener('open', () => { delay = 1000; opened = true; tries = 0; });
+      if (streamKind === 'baked') stream.addEventListener('reload', () => { location.reload(); });
+      else stream.addEventListener('sheet', onSheet);
       stream.onerror = () => {
         stopStream();
+        if (streamKind === 'run' && !opened && ++tries >= 6) return;
         retryTimer = setTimeout(connect, delay);
         delay = Math.min(delay * 2, 30000);
       };
@@ -580,10 +864,12 @@ The delivering flow writes these before the overlay source runs. The port is the
 window.__craftAnnotatePort = <port>;
 window.__craftAnnotateBaked = true;
 window.__craftAnnotateContext = '<candidate letter>';
+window.__craftAnnotateRun = '<run id>';
 ```
 
 - `__craftAnnotatePort` is stamped by every delivery. Without it the overlay still annotates locally and SEND reports `NOT ARMED - no craft session listening`. With it, a page whose policy blocks the request reports `BLOCKED BY PAGE - ask Claude to read pins directly`, and the pins wait in local storage under `ca-annotations:<pathname>` for the session to read.
 - `__craftAnnotateBaked` is stamped only by a mockup round written to disk. It is the single switch that makes the page hold the event stream open. Raw-tab and dial injections never stamp it.
+- `__craftAnnotateRun` is the run id, `<start_seq>@<started_at>`, stamped by the loader line on a project page for an open run. Without it the overlay behaves as it always has: no sheet fetch, no change stream, an array SEND body, no stale-pin drop, no undo list. With it, install fetches `GET /session.css`, the page holds `GET /changes`, SEND posts the object body, and pins sent in another run are dropped. Dial and baked pages never carry it.
 - `__craftAnnotateContext` is optional and owned by the dial flow: the bare candidate letter string (for example `"B"`), never an object. Each pin copies it verbatim into a `candidate` field.
 
 On a project page the loader line stamps the port itself and never stamps the baked flag or a context. For a raw tab pasted as the fallback, run the stamp and the source in one injection, in that order. A baked page's stamps are the first two lines of the one `ca-overlay` script element that `annotate-run.sh bake` writes; the overlay source follows them in that same element, and no flow writes them by hand.
@@ -594,13 +880,18 @@ The channel is a per-session listener on `127.0.0.1`. Pages reach it from any or
 
 | Request | Meaning | Body | Answer |
 |---|---|---|---|
-| `POST /pins` | replace the working set with exactly this array | JSON array of pin objects | 200 with `{ok, seq, count}` |
+| `POST /pins` | replace the working set with exactly this array | JSON array of pin objects, or from a run-stamped page `{pins, deleted, probes}`: the pin array, the timestamps of pins withdrawn since the last SEND, and the page's own probe of the pins not yet sent | 200 with `{ok, seq, count}` |
 | `POST /clear` | void the working set (tombstone) | none | 200 with `{ok, seq, cleared}` |
 | `GET /events` | hold a stream open; the listener pushes `event: reload` with `data: reload` when a new round is written | none | `text/event-stream` |
 | `GET /overlay.js` | the overlay fence, read from this file on every request | none | 200 `text/javascript` (404 JSON when the fence is missing) |
 | `GET /health` | liveness and connection count | none | `{ok, port, clients}` |
+| `GET /session.css` | the session's style sheet, fetched by a run-stamped page at install and on every sheet event | none | 200 `text/css`, empty when no sheet exists yet |
+| `GET /changes` | hold a stream open for a run-stamped page; the listener pushes `event: sheet` when the sheet changed. Never counted in `/health`, never sent `reload` | none | `text/event-stream` |
+| `POST /sheet` | tell the held `/changes` streams the sheet changed | `{id, measure, targets}`: the report id, the block keys to measure, the pins to probe | 200 with `{ok, delivered}` |
+| `POST /applied` | the page's report for one sheet event: `{id, page, error?, view, pageSize, blocks, probes}`, where each block holds, per rule, `selector`, `matched`, `values`, `box`, `top`, `inView`, `coveredBy` and `container` | the report | 200 with `{ok}` |
+| `GET /applied` | the command that wrote the sheet waits here for the page's report by id | query `id`, `wait` seconds | the report, or 404 after the wait |
 
-A pin object is `{n, text, x, y, selector, nearText, ts, page, box, component}` (`page` is the address without query or hash, `box` the target's rounded rect in document coordinates, `component` the nearest framework component name or null) plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses only `POST /pins`, `POST /clear` and `GET /events`; `GET /overlay.js` is requested by the loader the flow injects, and `GET /health` exists for the flows, which check it before opening a browser.
+A pin object is `{n, text, x, y, selector, nearText, ts, page, box, component}` (`page` is the address without query or hash, `box` the target's rounded rect in document coordinates, `component` the nearest framework component name or null) plus `candidate` when the context stamp is present. `n` is a display label that changes when a pin is deleted; the channel treats the whole array as one atomic set and never merges it with a previous one. The overlay uses `POST /pins`, `POST /clear` and `GET /events` on every page, and on a run-stamped page also `GET /session.css`, `GET /changes` and `POST /applied`. `GET /overlay.js` is requested by the loader the flow injects, `POST /sheet` and `GET /applied` belong to the command that writes the sheet, and `GET /health` exists for the flows, which check it before opening a browser.
 
 ## Reading pins back
 

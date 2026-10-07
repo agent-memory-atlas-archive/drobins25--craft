@@ -93,7 +93,7 @@ options:
   - label: "From mockup"   (only if mockup records matched)
     description: "Build this story from a converged mockup. Spark, Visual Direction, and binding table pre-fill from the record; the mockup's CSS is normative."
   - label: "From annotate"   (only if annotate records matched)
-    description: "Build this story from an annotate run. The pins become the Spark; the page changes the user approved become the binding table, with session.css normative."
+    description: "Build this story from an annotate run. The pins become the Spark; the look of the changes the user approved becomes the binding table, and content stand-ins become requirements quoting the pin."
   - label: "Freeform"
     description: "Build a fresh story without planning context. Continue with the standard flow."
 ```

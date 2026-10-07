@@ -2,7 +2,7 @@
 
 Transforms an annotate record into a story. The annotate run IS the extraction - no Explore agent, no gap-fill interview. The user pointed at a live page, watched changes land on it, and approved what they saw. Scope and data shape still go through the normal story machinery (content-spark and alignment run on the created story like any other).
 
-**The record's `session.css` is NORMATIVE.** It holds every change that was injected live, one keyed block per pin, and it is exactly what the user saw on the page. Rule: session.css values port verbatim - implementers never reinterpret from the pin's wording or from appearance. Pin selectors are anchors for finding the element, never ported as structural selectors: a selector like `div.toolbar > button.save` breaks the moment the markup shifts, while the rule's values stay true.
+**The record's `session.css` holds every change shown live, one keyed block per pin, and it is exactly what the user saw on the page.** Rule: session.css values port verbatim for how things look - implementers never reinterpret a look from appearance. A block that stands in for content (text swapped through `content:`, a new piece drawn in CSS) is not a look: it graduates as a Scope requirement quoting the pin, with what was shown live, never as a binding row or ported CSS. Read the CSS to tell which blocks those are; there is no list of kinds. Pin selectors are anchors for finding the element, never ported as structural selectors: a selector like `div.toolbar > button.save` breaks the moment the markup shifts, while the rule's values stay true.
 
 This flow asks no questions through a widget - there is no AskUserQuestion anywhere in it, because the annotate story exit reads it inline from a flow that forbids widgets. Where a choice is needed, ask in plain conversation.
 
@@ -40,7 +40,7 @@ Type is almost always `ui`: `type: ui`. Set `alignment: pending` - the alignment
 
 - **`## Spark`** - from the record's `subject` plus the pins' text quoted verbatim. The user's own words on the page are the best spark material there is; quote them, never paraphrase.
 
-- **Element Binding Table** - one row per `annotate-key` block in `session.css`. The Value/Source cell names the block and its rule, and the anchors ride the same cell:
+- **Element Binding Table** - one row per `annotate-key` block that carries the look. A content stand-in gets no row (see Scope). The Value/Source cell names the block and its rule, and the anchors ride the same cell:
   ```markdown
   | Part | Role/State | Token | Value/Source |
   |------|------------|-------|--------------|
@@ -48,7 +48,7 @@ Type is almost always `ui`: `type: ui`. Set `alignment: pending` - the alignment
   ```
   The Value/Source cell still names the session.css rule; the resolved location goes in Reference Materials, never in this cell. The source is the rule, never the selector. Selector and component are anchors that help the implementer find the element in source; a null component is simply omitted. Planning validation requires every non-TBD row bound by a `[visual-source:]` contract, so partial adoption of the sheet becomes a blocked plan, not a silent omission.
 
-- **`## Scope`** - pins with no block in `session.css` (a direction ask, new scope, a question, a copy or behavior change, or a change the user undid) become scope lines, quoted verbatim, each with one clause on why it is not in the sheet. They are requirements the page could not show, so the story must still carry them.
+- **`## Scope`** - pins with no block in `session.css` (a direction ask, new scope, a question, a copy or behavior change, or a change the user undid) become scope lines, quoted verbatim, each with one clause on why it is not in the sheet. A content stand-in joins them: one requirement quoting the pin, with what was shown live (for example `"Show the full name here"` - shown live as the name "Ada Lovelace" in place of the original), so the story carries the words and the implementer builds them the project's way instead of copying the CSS trick. A pin the user withdrew is not in the record, so it appears nowhere. These are requirements the page could not truly show, so the story must still carry them.
 
 - **`## Reference Materials`** - an "Annotation files:" category (anchor conventions per story-from-planning):
   ```markdown
@@ -56,7 +56,7 @@ Type is almost always `ui`: `type: ui`. Set `alignment: pending` - the alignment
   - [absolute path]/record.md (`## Pins`, `## Pin Data`)
   - [absolute path]/session.css (`annotate-key` blocks, one per pin)
   ```
-  Then a "**Pin source (resolved during the run):**" category with one entry per `annotate-key` block, matched to the pin whose `str(ts)` equals the key and read from that pin's `resolved` in `## Pin Data`. Paths are the project root plus the stored relative path, absolute:
+  Then a "**Pin source (resolved during the run):**" category with one entry per `annotate-key` block (a content stand-in's block included, so its requirement says where the element lives), matched to the pin whose `str(ts)` equals the key and read from that pin's `resolved` in `## Pin Data`. Paths are the project root plus the stored relative path, absolute:
   ```markdown
   **Pin source (resolved during the run):**
   - `annotate-key 1728000000000`: [absolute path]/src/SaveButton.tsx (`SaveButton`, line 12); [absolute path]/src/styles/toolbar.css (`line 3`, `.toolbar .save`)
