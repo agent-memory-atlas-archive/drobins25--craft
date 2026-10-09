@@ -79,7 +79,7 @@ assert_contains() {
 # Literal contains (grep -qF) — no regex interpretation
 assert_contains_literal() {
   local desc="$1" needle="$2" haystack="$3"
-  if echo "$haystack" | grep -qF -- "$needle"; then
+  if grep -qF -- "$needle" <<< "$haystack"; then
     echo "  PASS: $desc"
     PASS=$((PASS + 1))
   else
@@ -92,7 +92,7 @@ assert_contains_literal() {
 
 assert_not_contains() {
   local desc="$1" needle="$2" haystack="$3"
-  if ! echo "$haystack" | grep -q "$needle"; then
+  if ! grep -q "$needle" <<< "$haystack"; then
     echo "  PASS: $desc"
     PASS=$((PASS + 1))
   else
