@@ -122,6 +122,14 @@ assert_eq "exactly one token line after the re-bake" "1" "$(grep -c '^window.__c
 run_in "$ROOT" bake --session bk1 --file "$PAGE" >/dev/null
 assert_eq "still one token line after another bake" "1" "$(grep -c '^window.__craftAnnotateToken = ' "$PAGE")"
 
+begin_test "the token a baked page holds is accepted by the live listener, and refused removed or changed"
+# Read back out of the page, never from the token file, so a bake that stamps a stale token fails here.
+BAKED_TK="$(sed -n 's/^window\.__craftAnnotateToken = "\([^"]*\)";$/\1/p' "$PAGE" | head -1)"
+health_status() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$PORT/health$1" 2>/dev/null || true; }
+assert_eq "the baked token is accepted" "200" "$(health_status "?token=$BAKED_TK")"
+assert_eq "the same request with the token removed is refused" "403" "$(health_status "")"
+assert_eq "the same request with the token changed is refused" "403" "$(health_status "?token=$(echo "$BAKED_TK" | tr '0-9a-f' '1-9a-f0')")"
+
 begin_test "bake then strip restores the original bytes"
 printf '%s\n' '<html>' '<body>' '<p>x</p>' '</body>' '</html>' > "$PAGE"
 cp "$PAGE" "$ROOT/orig.html"

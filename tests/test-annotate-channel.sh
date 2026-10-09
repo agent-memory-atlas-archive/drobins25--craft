@@ -1998,6 +1998,46 @@ assert_eq "the host check comes before the transfer-encoding check" "403" "$(sta
 RESP="$(raw POST "$PORT" /pins -H 'Transfer-Encoding: chunked' --data 'x')"
 assert_eq "the transfer-encoding check comes before the token check" "411" "$(status_of "$RESP")"
 
+# ---------------------------------------------------------------------------
+# Each surface that carries the token: what it produces is accepted by the live
+# listener, and the same request with that token removed or changed is refused.
+# The token is read back out of what the surface printed, never from the file,
+# so a surface that stamps a stale token fails the accepted half.
+
+# stamped_token <text> - the value a surface stamped into window.__craftAnnotateToken
+stamped_token() { echo "$1" | sed -n 's/.*window\.__craftAnnotateToken = "\([^"]*\)".*/\1/p' | head -1; }
+# changed_token <token> - the same length, every hex digit moved one along
+changed_token() { echo "$1" | tr '0-9a-f' '1-9a-f0'; }
+# prove_carrier <surface> <stamped token> - accepted as stamped, refused without it or changed
+prove_carrier() {
+  local surface="$1" tk="$2"
+  assert_eq "$surface: the stamped token is accepted" "200" "$(status_of "$(raw GET "$PORT" "/health?token=$tk")")"
+  assert_eq "$surface: the same request with the token removed is refused" "403" "$(status_of "$(raw GET "$PORT" "/health")")"
+  assert_eq "$surface: the same request with the token changed is refused" "403" "$(status_of "$(raw GET "$PORT" "/health?token=$(changed_token "$tk")")")"
+}
+
+begin_test "loader, stamp, stamp --no-run and status: each one's token is accepted, and refused removed or changed"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session cr1
+run_in "$ROOT" begin --session cr1 --subject t >/dev/null
+LOADER="$(run_in "$ROOT" loader --run --session cr1 --page http://localhost:3000/)"
+prove_carrier "loader" "$(stamped_token "$LOADER")"
+SRC="$(echo "$LOADER" | sed -n "s|.*el\.src = '\([^']*\)'.*|\1|p")"
+assert_eq "loader: its overlay script URL is accepted" "200" "$(status_of "$(curl -s -i --max-time 5 "$SRC" 2>/dev/null || true)")"
+assert_eq "loader: the same URL with the token removed is refused" "403" "$(status_of "$(curl -s -i --max-time 5 "${SRC%%\?*}" 2>/dev/null || true)")"
+SRC_TK="${SRC##*token=}"
+assert_eq "loader: the same URL with the token changed is refused" "403" "$(status_of "$(curl -s -i --max-time 5 "${SRC%%token=*}token=$(changed_token "$SRC_TK")" 2>/dev/null || true)")"
+prove_carrier "stamp" "$(stamped_token "$(run_in "$ROOT" stamp --session cr1)")"
+prove_carrier "stamp --no-run" "$(stamped_token "$(run_in "$ROOT" stamp --session cr1 --no-run)")"
+assert_contains "status: its call carries the token and is accepted" "CLIENTS [0-9][0-9]*$" "$(run_in "$ROOT" status --session cr1)"
+CR_FILE="$ROOT/.craft/annotations/cr1/token"
+CR_TOKEN="$(tr -d '\n' < "$CR_FILE")"
+changed_token "$CR_TOKEN" > "$CR_FILE"
+assert_contains "status: the same call with the token changed is refused" "CLIENTS unreachable$" "$(run_in "$ROOT" status --session cr1)"
+rm -f "$CR_FILE"
+assert_contains "status: the same call with the token removed is refused" "CLIENTS unreachable$" "$(run_in "$ROOT" status --session cr1)"
+echo "$CR_TOKEN" > "$CR_FILE"
+
 begin_test "a stalled client is disconnected within the socket timeout"
 STALL="$(mktemp -d)"; TMP_ROOTS+=("$STALL")
 python3 "$CHANNEL" --dir "$STALL/sess" --socket-timeout 1 > "$STALL/log" 2>&1 < /dev/null &

@@ -16,7 +16,7 @@
 
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const [chromeBin, profileDir, chromePidFile, runSh, channelPy, root, session, pageUrl] = process.argv.slice(2);
@@ -151,6 +151,15 @@ const healthClients = async () => (await (await fetch(listenerBase() + withToken
 const postSheet = async id => (await (await fetch(listenerBase() + withToken('/sheet'), {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, measure: [], targets: [] })
 })).json()).delivered;
+// The flow's in-page listener check, read out of the flow's own text so the probe runs exactly what the flow sends.
+const inPageCheck = () => {
+  const doc = readFileSync(join(dirname(runSh), '..', '..', 'commands', 'references', 'annotate-inline.md'), 'utf8').split('\n');
+  const at = doc.findIndex(l => l.startsWith('Then probe the listener FROM THE PAGE'));
+  const open = doc.findIndex((l, i) => at >= 0 && i > at && l === '```js');
+  const close = doc.findIndex((l, i) => open >= 0 && i > open && l === '```');
+  if (close < 0) throw new Error('the flow has no in-page listener check');
+  return doc.slice(open + 1, close).join('\n');
+};
 const readJson = name => { try { return JSON.parse(readFileSync(join(sessionDir, name), 'utf8')); } catch (e) { return null; } };
 const readText = name => { try { return readFileSync(join(sessionDir, name), 'utf8'); } catch (e) { return ''; } };
 const logSize = () => { try { return statSync(join(sessionDir, 'changes.jsonl')).size; } catch (e) { return 0; } };
@@ -520,22 +529,32 @@ try {
   });
 
   // 16. the listener refuses a page that does not hold the session's token
-  await step(16, 'the listener refused a request without the token and the strip said NOT ARMED for a stale one', async () => {
+  await step(16, "the listener refused a request without the token, the flow's in-page check was accepted with the page's token and refused with it changed or removed, and the strip said NOT ARMED for a stale one", async () => {
     if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
     const probeHealth = query => evaluate(`fetch('http://127.0.0.1:' + window.__craftAnnotatePort + '/health${query}')
       .then(async res => ({ status: res.status, body: await res.text() })).catch(e => ({ error: String(e) }))`);
     const bare = await probeHealth('');
     const stamped = await probeHealth('?token=' + sessionToken());
-    await makePin('.name', null, 'refused pin');
     const realToken = await evaluate('window.__craftAnnotateToken');
+    const check = inPageCheck();
+    const runCheck = () => evaluate(`(() => { ${check} })()`).catch(e => 'rejected: ' + e.message);
+    const own = await runCheck();
+    const changed = String(realToken).replace(/[0-9a-f]/g, c => '0123456789abcdef'[(parseInt(c, 16) + 1) % 16]);
+    await evaluate(`window.__craftAnnotateToken = ${JSON.stringify(changed)}`);
+    const withChanged = await runCheck();
+    await evaluate(`delete window.__craftAnnotateToken`);
+    const withRemoved = await runCheck();
+    await evaluate(`window.__craftAnnotateToken = ${JSON.stringify(realToken)}`);
+    await makePin('.name', null, 'refused pin');
     await evaluate(`window.__craftAnnotateToken = 'stale'; document.getElementById('ca-status').textContent = ''`);
     await clickEl('#ca-send');
     const shown = await waitFor(`document.getElementById('ca-status').textContent !== ''`, 5000);
     const strip = await evaluate(`document.getElementById('ca-status').textContent`);
     await evaluate(`window.__craftAnnotateToken = ${JSON.stringify(realToken)}`);
     return { ok: bare.status === 403 && /"forbidden"/.test(bare.body || '') && stamped.status === 200 && realToken === sessionToken()
+        && own === 200 && withChanged === 403 && withRemoved === 403
         && shown >= 0 && strip === 'NOT ARMED - no craft session listening',
-      detail: `without the token ${JSON.stringify(bare)}; with it ${stamped.status}; stale-token SEND showed "${strip}"` };
+      detail: `without the token ${JSON.stringify(bare)}; with it ${stamped.status}; the in-page check answered ${own} with the page's token, ${withChanged} with it changed, ${withRemoved} with it removed; stale-token SEND showed "${strip}"` };
   });
 
   // 17. a page file baked by `bake`, opened over file://, holds its stream and a SEND returns RETURNED
