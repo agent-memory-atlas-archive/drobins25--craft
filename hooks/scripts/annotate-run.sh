@@ -126,20 +126,33 @@ resolve_root() {
 # opener skips the proxy environment, so http_proxy cannot make a healthy
 # loopback listener look dead, and every request carries the session token as
 # a query parameter. The token is read from the session's token file (a
-# missing file reads as empty), never taken from a command line.
+# missing file reads as empty), never taken from a command line. A long-lived
+# caller (the watch) keeps the token with the file's identity and reads the file
+# again only when a stat shows a different one, so a re-arm that writes a new
+# token reaches its next request.
 read -r -d '' LOCAL_OPENER_PY <<'PYEOF' || true
+import os
 import urllib.parse
 import urllib.request
 
 LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+TOKEN_CACHE = {}
 
 
 def read_token(token_file):
     try:
+        info = os.stat(token_file)
+        identity = (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_size)
+        cached = TOKEN_CACHE.get(token_file)
+        if cached is not None and cached[0] == identity:
+            return cached[1]
         with open(token_file, "r", encoding="utf-8") as handle:
-            return handle.read().strip()
+            token = handle.read().strip()
     except OSError:
+        TOKEN_CACHE.pop(token_file, None)
         return ""
+    TOKEN_CACHE[token_file] = (identity, token)
+    return token
 
 
 def local_url(port, path, token_file):

@@ -1700,6 +1700,97 @@ assert_eq "the watch is still running" "yes" "$(is_running "$PXW" && echo yes ||
 assert_eq "no UNREACHABLE was printed" "" "$(cat "$ROOT/px.out")"
 stop_job "$PXW"
 
+# write_request_probe <dir> - a sitecustomize.py that, for a python started with
+# <dir> on PYTHONPATH and CRAFT_TEST_PROBE_LOG set, logs "OPEN <name>" for every
+# open of a session token or port file and "REQ <path> <token> <status>" for
+# every listener request
+write_request_probe() {
+  mkdir -p "$1"
+  cat > "$1/sitecustomize.py" <<'PYEOF'
+import builtins
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+
+LOG = os.environ.get("CRAFT_TEST_PROBE_LOG")
+if LOG:
+    real_open = builtins.open
+    real_request = urllib.request.OpenerDirector.open
+
+    def note(line):
+        with real_open(LOG, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+    def probed_open(file, *args, **kwargs):
+        if os.path.basename(str(file)) in ("token", "port"):
+            note("OPEN " + os.path.basename(str(file)))
+        return real_open(file, *args, **kwargs)
+
+    def probed_request(self, fullurl, *args, **kwargs):
+        url = urllib.parse.urlsplit(fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl)
+        sent = (urllib.parse.parse_qs(url.query).get("token") or [""])[0]
+        try:
+            response = real_request(self, fullurl, *args, **kwargs)
+        except urllib.error.HTTPError as error:
+            note("REQ %s %s %s" % (url.path, sent, error.code))
+            raise
+        except Exception:
+            note("REQ %s %s ERR" % (url.path, sent))
+            raise
+        note("REQ %s %s %s" % (url.path, sent, response.status))
+        return response
+
+    builtins.open = probed_open
+    urllib.request.OpenerDirector.open = probed_request
+PYEOF
+}
+
+# probe_count <log> <regex> - lines of the probe log matching the regex, 0 before the log exists
+probe_count() {
+  [ -f "$1" ] || { echo 0; return 0; }
+  grep -c "$2" "$1" || true
+}
+
+# wait_probe <log> <regex> <n> <seconds> - poll until n lines match, bounded
+wait_probe() {
+  local i=0
+  while [ "$(probe_count "$1" "$2")" -lt "$3" ] && [ "$i" -lt $(($4 * 10)) ]; do
+    sleep 0.1; i=$((i + 1))
+  done
+}
+
+begin_test "a watch reads the token file once across several health checks"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session tc1
+run_in "$ROOT" begin --session tc1 --subject t >/dev/null
+TCK="$(token_of "$ROOT" tc1)"
+write_request_probe "$ROOT/probe"
+TCLOG="$ROOT/probe.log"
+CRAFT_PROJECT_ROOT="$ROOT" PYTHONPATH="$ROOT/probe" CRAFT_TEST_PROBE_LOG="$TCLOG" \
+  bash "$RUN" watch --session tc1 >"$ROOT/tc.out" 2>/dev/null &
+TCW=$!
+TMP_PIDS+=("$TCW")
+wait_probe "$TCLOG" '^REQ /health ' 3 30
+assert_eq "three health checks ran, each with the session token and answered 200" "3" "$(probe_count "$TCLOG" "^REQ /health $TCK 200$")"
+assert_eq "the token file was read once" "1" "$(probe_count "$TCLOG" '^OPEN token$')"
+assert_eq "the port file is still read on every check" "yes" "$([ "$(probe_count "$TCLOG" '^OPEN port$')" -ge 3 ] && echo yes || echo no)"
+
+begin_test "after a re-arm writes a new token mid-watch, the watch's next health check carries it and is accepted"
+TCP="$(cat "$ROOT/.craft/annotations/tc1/listener.pid")"
+kill "$TCP" 2>/dev/null || true
+wait_dead "$TCP" || true
+rm -f "$ROOT/.craft/annotations/tc1/token"
+assert_contains_literal "the listener was re-armed" "REARMED" "$(run_in "$ROOT" ensure --session tc1)"
+TCK2="$(token_of "$ROOT" tc1)"
+assert_contains "the re-arm wrote a well-formed token" '^[0-9a-f]\{32\}$' "$TCK2"
+assert_not_eq "the token is new" "$TCK" "$TCK2"
+wait_probe "$TCLOG" "^REQ /health $TCK2 " 1 15
+assert_eq "a health check carried the new token and got 200" "yes" "$([ "$(probe_count "$TCLOG" "^REQ /health $TCK2 200$")" -ge 1 ] && echo yes || echo no)"
+assert_eq "no request was refused" "0" "$(probe_count "$TCLOG" ' 403$')"
+assert_eq "the watch is still running" "yes" "$(is_running "$TCW" && echo yes || echo no)"
+stop_job "$TCW"
+
 begin_test "arm leaves a 32-hex token with mode 600; a re-arm after the listener is killed keeps the same token"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT" --session tk1
