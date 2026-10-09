@@ -199,6 +199,22 @@ done
 assert_eq "take_screenshot fullPage inline" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_screenshot '{"fullPage":true,"format":"png"}')")"
 assert_eq "take_snapshot verbose inline" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_snapshot '{"verbose":true}')")"
 
+begin_test "external session, no lift: evaluate_script that saves to a filePath is denied even for craft's own page script, inline calls behave as before"
+fake_session f2
+EF_STYLE="$(bash "$RS" style --selector a --props color)"
+assert_contains_literal "style printed its line" "getComputedStyle(el)" "$EF_STYLE"
+for prefix in mcp__plugin_craft_chrome-devtools__ mcp__chrome-devtools__; do
+  ef() { verdict "$(pre "${prefix}evaluate_script" "$(jq -n --arg f "$1" --arg p "$2" '{function: $f, filePath: $p}')")"; }
+  assert_eq "$prefix: craft's page script with filePath" "deny" "$(ef "$EF_STYLE" /Users/x/.zshrc)"
+  assert_eq "$prefix: craft's page script with a relative filePath" "deny" "$(ef "$EF_STYLE" notes.txt)"
+  assert_eq "$prefix: another script with filePath" "deny" "$(ef '() => 1' /Users/x/.zshrc)"
+  assert_eq "$prefix: craft's page script without filePath" "silent" "$(es "$EF_STYLE" p1 "$prefix")"
+  assert_eq "$prefix: craft's page script with an empty filePath" "silent" "$(ef "$EF_STYLE" '')"
+  assert_eq "$prefix: another script without filePath" "deny" "$(es '() => 1' p1 "$prefix")"
+done
+prompt 'yes, save it' pef >/dev/null
+assert_eq "a typed turn still lifts evaluate_script with filePath" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__evaluate_script '{"function":"() => 1","filePath":"/Users/x/.zshrc"}' pef)")"
+
 begin_test "grammar attacks are denied: ; rm, && curl, \$(...), backticks, unquoted heredoc, text after the terminator, bake --file, clear, Read outside the plugin root"
 fake_session g1
 attack() { assert_eq "$1" "deny" "$(verdict "$(bash_call "$2")")"; }

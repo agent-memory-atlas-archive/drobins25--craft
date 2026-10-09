@@ -54,9 +54,10 @@ DENY_REASON = (
 
 BROWSER_PREFIXES = ("mcp__plugin_craft_chrome-devtools__", "mcp__chrome-devtools__")
 BROWSER_TOOLS = {"evaluate_script", "take_screenshot", "take_snapshot", "list_pages", "wait_for"}
-# These two save their output to any path named in filePath instead of returning it,
-# so they run on their own only when the result comes back inline.
-BROWSER_FILE_WRITERS = {"take_screenshot", "take_snapshot"}
+# These save their output to any path named in filePath instead of returning it,
+# so they run on their own only when the result comes back inline. The filePath
+# check runs first, so even craft's own page script waits when it names a file.
+BROWSER_FILE_WRITERS = {"evaluate_script", "take_screenshot", "take_snapshot"}
 # evaluate_script runs code in the page, so it runs on its own only when its
 # function is one of craft's own page scripts (page_script_allowed below).
 PAGE_SCRIPT_TOOL = "evaluate_script"
