@@ -238,7 +238,7 @@ assert_eq "cleared is false" "False" "$(json_get "$F" 'd["cleared"]')"
 assert_eq "seq advanced by one" "$((SEQ1 + 1))" "$(json_get "$F" 'd["seq"]')"
 assert_not_contains "no trace of pin 1 text" 'first' "$(cat "$F")"
 assert_not_contains "no trace of pin 2 text" 'second' "$(cat "$F")"
-assert_eq "no temp file left behind" "0" "$(ls "$ROOT/.craft/annotations/$SID" | grep -c 'current.json.tmp' || true)"
+assert_eq "no temp file left behind" "0" "$(ls "$ROOT/.craft/annotations/$SID" | grep -c '^current\.json\.[A-Za-z0-9_]\{1,\}\.tmp$' || true)"
 assert_contains "file carries sent_at" '"sent_at"' "$(cat "$F")"
 
 begin_test "POST /clear writes a tombstone, not an unlink"
