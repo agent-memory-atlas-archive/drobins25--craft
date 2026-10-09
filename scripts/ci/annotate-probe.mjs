@@ -509,23 +509,39 @@ try {
       detail: `selector ${pin.selector}; resolves with comment mode off ${offResolves}; after reload loader ${reloaded}, pin ${JSON.stringify(state)}` };
   });
 
-  // 15. a pin saved while a SEND is in flight is not marked sent
-  await step(15, 'a pin saved while a SEND was in flight was not marked sent', async () => {
+  // 15. a pin saved, and a pin edited, while a SEND is in flight are not marked sent
+  await step(15, 'a pin saved and a pin edited while a SEND was in flight were not marked sent', async () => {
     if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
     await evaluate(`(() => { const real = window.fetch; window.fetch = (url, opts) => { const out = real.call(window, url, opts);
-      return String(url).includes('/pins') ? out.then(res => new Promise(done => setTimeout(() => done(res), 1500))) : out; }; })()`);
+      return String(url).includes('/pins') ? out.then(res => new Promise(done => setTimeout(() => done(res), 3000))) : out; }; })()`);
     await makePin('.name', null, 'in flight A');
+    const listed = await makePin('.badge', [100, 4], 'listed before the send');
     await evaluate(`document.getElementById('ca-status').textContent = ''`);
     await clickEl('#ca-send');
     await makePin('.badge', [4, 4], 'saved in flight B');
+    // Edit the already-listed pin through its own popover while the request is still out.
+    await clickEl(`.ca-pin[title="listed before the send"]`);
+    if ((await waitFor(`!!document.querySelector('.ca-popover')`, 3000)) < 0) return { ok: false, detail: 'the pin popover did not open' };
+    await clickText('.ca-popover', 'EDIT');
+    if ((await waitFor(`!!document.querySelector('.ca-popover textarea')`, 3000)) < 0) return { ok: false, detail: 'EDIT opened no text box' };
+    await evaluate(`document.querySelector('.ca-popover textarea').select()`);
+    await send('Input.insertText', { text: 'edited in flight' });
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+    const edited = await waitFor(`!!document.querySelector('.ca-pin[title="edited in flight"]')`, 3000);
+    // Both changes must land before the reply, or the step proves nothing.
+    const inFlight = await evaluate(`document.getElementById('ca-send').classList.contains('ca-lift') && document.getElementById('ca-status').textContent !== 'RETURNED'`);
     const returned = await waitFor(`document.getElementById('ca-status').textContent === 'RETURNED'`, 8000);
     const stored = await storedPins();
     const a = stored.find(p => p.text === 'in flight A');
     const b = stored.find(p => p.text === 'saved in flight B');
+    const e = stored.find(p => p.ts === listed.ts);
     const nodeA = await pinState('in flight A');
     const nodeB = await pinState('saved in flight B');
-    return { ok: returned >= 0 && !!a && a.sent === true && !!nodeA && nodeA.sent && !!b && !b.sent && !!nodeB && !nodeB.sent,
-      detail: `RETURNED ${returned >= 0}; stored A sent ${a && a.sent}, stored B sent ${b && b.sent}; nodes A ${JSON.stringify(nodeA)} B ${JSON.stringify(nodeB)}` };
+    const nodeE = await pinState('edited in flight');
+    return { ok: returned >= 0 && edited >= 0 && inFlight === true && !!a && a.sent === true && !!nodeA && nodeA.sent && !!b && !b.sent && !!nodeB && !nodeB.sent
+        && !!e && e.text === 'edited in flight' && !e.sent && !!nodeE && !nodeE.sent,
+      detail: `RETURNED ${returned >= 0}; edit saved ${edited >= 0}; both changes landed while the SEND was in flight ${inFlight}; stored A sent ${a && a.sent}, stored B sent ${b && b.sent}, stored edited pin ${JSON.stringify(e ? { text: e.text, sent: e.sent } : null)}; nodes A ${JSON.stringify(nodeA)} B ${JSON.stringify(nodeB)} edited ${JSON.stringify(nodeE)}` };
   });
 
   // 16. the listener refuses a page that does not hold the session's token
