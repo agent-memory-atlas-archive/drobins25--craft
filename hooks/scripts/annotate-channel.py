@@ -50,7 +50,8 @@ it is how the bake command reads the fence without a second parser.
 reads the canonical clear through the one fence reader.
 
 Binds 127.0.0.1 on an OS-assigned port and prints "PORT <n>" to stdout once
-it is listening. Python 3.9, standard library only.
+it is listening. Python 3.9, standard library only, plus annotate_write.py
+beside this file (the one atomic write the annotate scripts share).
 """
 
 import argparse
@@ -63,12 +64,15 @@ import secrets
 import select
 import socket
 import sys
-import tempfile
 import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import annotate_write  # found by this file's own directory
+del sys.path[0]
 
 MAX_BODY_BYTES = 1024 * 1024
 DEFAULT_SOCKET_TIMEOUT = 10.0
@@ -176,22 +180,11 @@ def terminate_torn_line(path):
 
 
 def replace_json(path, data):
-    """Writes data as JSON through a temp file of this writer's own in the same
-    folder, synced, then os.replace: a reader never sees it half written, and a
-    second process writing the same file never shares the temp."""
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp_path, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    """Writes data as JSON through the shared atomic write, synced: a temp file
+    of this writer's own in the same folder, then os.replace, so a reader never
+    sees it half written and a second process writing the same file never
+    shares the temp."""
+    annotate_write.write_atomic(path, json.dumps(data), sync=True)
 
 
 def ts_key(value):
@@ -695,22 +688,11 @@ def load_or_create_token(session_dir):
         except OSError:
             replace = True
         token = secrets.token_hex(16)
-        fd, temp = tempfile.mkstemp(dir=session_dir, prefix=TOKEN_FILE + ".", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(token + "\n")
-            if replace:
-                os.replace(temp, path)
-            else:
-                # The exclusive create: a link fails when another caller put
-                # its token there first, and the loop then reads that one.
-                try:
-                    os.link(temp, path)
-                except FileExistsError:
-                    continue
-        finally:
-            if os.path.exists(temp):
-                os.unlink(temp)
+        # A malformed file is replaced; a missing one gets the exclusive create,
+        # which returns False when another caller put its token there first,
+        # and the loop then reads that one.
+        if not annotate_write.write_atomic(path, token + "\n", exclusive=not replace):
+            continue
         return token
     raise OSError("could not settle the session token file")
 

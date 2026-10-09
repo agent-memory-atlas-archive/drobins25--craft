@@ -880,6 +880,7 @@ begin_test "a listener with no reference answers 404 and --print-overlay exits 1
 ISO="$(mktemp -d)"; TMP_ROOTS+=("$ISO")
 mkdir -p "$ISO/hooks/scripts" "$ISO/sess"
 cp "$CHANNEL" "$ISO/hooks/scripts/annotate-channel.py"
+cp "$SCRIPTS_DIR/annotate_write.py" "$ISO/hooks/scripts/annotate_write.py"
 python3 "$ISO/hooks/scripts/annotate-channel.py" --dir "$ISO/sess" > "$ISO/log" 2>&1 < /dev/null &
 ISO_PID=$!
 TMP_PIDS+=("$ISO_PID")

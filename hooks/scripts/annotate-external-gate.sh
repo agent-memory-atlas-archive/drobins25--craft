@@ -41,7 +41,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 
 STALE_AFTER_SECONDS = 12 * 3600
@@ -251,15 +250,13 @@ def read_lift(owner):
 
 
 def write_lift(owner, prompt_id):
-    folder = boundary_dir()
-    fd, tmp = tempfile.mkstemp(dir=folder, prefix=owner + ".lift.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(prompt_id)
-        os.replace(tmp, os.path.join(folder, owner + ".lift"))
-    except BaseException:
-        remove(tmp)
-        raise
+    # The shared atomic write, annotate_write.py beside this script, is imported
+    # here and never at the top: this program runs on every tool call, and only
+    # a typed prompt's lift ever writes.
+    sys.path.insert(0, os.path.join(os.environ["CRAFT_GATE_PLUGIN_ROOT"], "hooks", "scripts"))
+    import annotate_write
+    del sys.path[0]
+    annotate_write.write_atomic(os.path.join(boundary_dir(), owner + ".lift"), prompt_id)
 
 
 def is_typed(prompt):

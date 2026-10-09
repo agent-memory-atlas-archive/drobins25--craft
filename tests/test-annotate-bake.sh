@@ -204,6 +204,7 @@ ISO="$(mktemp -d)"; TMP_ROOTS+=("$ISO")
 mkdir -p "$ISO/hooks/scripts" "$ISO/root/.craft/annotations/bk3"
 cp "$RUN" "$ISO/hooks/scripts/annotate-run.sh"
 cp "$CHANNEL" "$ISO/hooks/scripts/annotate-channel.py"
+cp "$SCRIPTS_DIR/annotate_write.py" "$ISO/hooks/scripts/annotate_write.py"
 echo 4242 > "$ISO/root/.craft/annotations/bk3/port"
 printf '%s' "$PAGE_HTML" > "$ISO/page.html"
 set +e

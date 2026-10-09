@@ -120,7 +120,7 @@ assert_exit_code "function output exits 0" "0" "$RC2"
 begin_test "a missing fence exits 1 with one stderr line"
 COPY="$(mktemp -d)"; TMP_DIRS+=("$COPY")
 mkdir -p "$COPY/hooks/scripts" "$COPY/commands/references"
-cp "$SCRIPTS_DIR/annotate-run.sh" "$SCRIPTS_DIR/annotate-channel.py" "$COPY/hooks/scripts/"
+cp "$SCRIPTS_DIR/annotate-run.sh" "$SCRIPTS_DIR/annotate-channel.py" "$SCRIPTS_DIR/annotate_write.py" "$COPY/hooks/scripts/"
 grep -v '^```annotate-clear' "$PLUGIN_ROOT/$REF_REL" > "$COPY/$REF_REL"
 set +e
 ERR="$(CRAFT_PROJECT_ROOT="$EMPTY" bash "$COPY/hooks/scripts/annotate-run.sh" review-clear 2>&1 >/dev/null)"

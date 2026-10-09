@@ -35,6 +35,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Where the graduate program finds annotate_write.py, the one atomic write:
+# this script's own folder, set here so an inherited value never counts.
+export CRAFT_ANNOTATE_SCRIPTS_DIR="$SCRIPT_DIR"
 
 die() {
   echo "annotate-record: $*" >&2
@@ -350,7 +353,10 @@ import json
 import os
 import re
 import sys
-import tempfile
+
+sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
+import annotate_write
+del sys.path[0]
 
 path, destination, outcome = sys.argv[1:4]
 with open(path, "r", encoding="utf-8") as handle:
@@ -385,18 +391,7 @@ for index, line in enumerate(lines):
 # gets the mode a newly created file gets, the mode the filer gave record.md.
 umask = os.umask(0)
 os.umask(umask)
-fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix="record.md.", suffix=".tmp")
-try:
-    os.fchmod(fd, 0o666 & ~umask)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines))
-    os.replace(tmp_path, path)
-except BaseException:
-    try:
-        os.unlink(tmp_path)
-    except OSError:
-        pass
-    raise
+annotate_write.write_atomic(path, "\n".join(lines), mode=0o666 & ~umask)
 print(path)
 PYEOF
 }

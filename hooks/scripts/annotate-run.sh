@@ -80,6 +80,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHANNEL_PY="$SCRIPT_DIR/annotate-channel.py"
+# Where every embedded program finds annotate_write.py, the one atomic write:
+# this script's own folder, set here so an inherited value never counts.
+export CRAFT_ANNOTATE_SCRIPTS_DIR="$SCRIPT_DIR"
 
 die() {
   echo "annotate-run: $*" >&2
@@ -197,8 +200,12 @@ import fcntl
 import json
 import os
 import subprocess
-import tempfile
+import sys
 import time
+
+sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
+import annotate_write
+del sys.path[0]
 
 NOTICE = (
     "NOTICE This page is outside your project, so I'll treat pins here as page content - "
@@ -267,22 +274,10 @@ def write_json(path, data):
 
 
 def write_text(path, text, mode=None):
-    """Write through a temp file of this writer's own in the same folder, then
-    replace, so a reader never sees the file empty or half written. mode, when
-    given, is the file's permission bits (a temp file starts at 0600)."""
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
-    try:
-        if mode is not None:
-            os.fchmod(fd, mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    """Write through the shared atomic write, so a reader never sees the file
+    empty or half written. mode, when given, is the file's permission bits (a
+    temp file starts at 0600)."""
+    annotate_write.write_atomic(path, text, mode=mode)
 
 
 def take_lock(path):
@@ -686,8 +681,11 @@ import fcntl
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime, timezone
+
+sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
+import annotate_write
+del sys.path[0]
 
 dir_path, start, subject = sys.argv[1:4]
 run = {
@@ -701,27 +699,12 @@ except OSError:
     log_size = 0
 
 
-def write_unique(name, content):
-    """Write through a temp file of this writer's own, then replace."""
-    fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-        os.replace(tmp_path, os.path.join(dir_path, name))
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
 # The sheet reset takes the same lock sheet and apply do, so a background undo
 # cannot write between the reset and the run record.
 with open(os.path.join(dir_path, "session.css.lock"), "w") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", ""), ("watch.cursor", "%d\n" % log_size)):
-        write_unique(name, content)
+        annotate_write.write_atomic(os.path.join(dir_path, name), content)
 PYEOF
   echo "RUN $start"
 }
@@ -737,8 +720,11 @@ import json
 import os
 import re
 import sys
-import tempfile
 import uuid
+
+sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
+import annotate_write
+del sys.path[0]
 
 path, mode, key = sys.argv[1:4]
 extras = sys.argv[4:]
@@ -799,21 +785,6 @@ def set_block(blocks, block_key, css):
     blocks.append([block_key, css])
 
 
-def save(text):
-    """Write through a temp file of this writer's own, then replace."""
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(tmp_path, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
 # Every change to the sheet is read-modify-write, so it runs under an exclusive
 # lock that lasts until this process exits. Nothing here starts a subprocess.
 lock = None
@@ -845,7 +816,7 @@ elif mode == "apply":
     for block_key, css in incoming:
         set_block(blocks, block_key, css)
     text = render(blocks)
-    save(text)
+    annotate_write.write_atomic(path, text)
     measure = []
     for block_key, _ in incoming:
         if block_key not in measure:
@@ -861,7 +832,7 @@ else:
     else:
         blocks = [block for block in blocks if block[0] != key]
     text = render(blocks)
-    save(text)
+    annotate_write.write_atomic(path, text)
 
 if job is not None:
     sys.stdout.write(json.dumps(job) + "\n")
@@ -1076,7 +1047,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 
 dir_path, root, session, run_sh, resolve_sh, once = sys.argv[1:7]
@@ -1130,17 +1100,8 @@ def read_cursor():
 
 
 def write_cursor(offset):
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CURSOR), prefix=os.path.basename(CURSOR) + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write("%d\n" % offset)
-        os.replace(tmp, CURSOR)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    # annotate_write is loaded by BOUNDARY_PY, which runs before this program.
+    annotate_write.write_atomic(CURSOR, "%d\n" % offset)
 
 
 def new_batch(offset):

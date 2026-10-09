@@ -33,6 +33,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Where the program finds annotate_write.py, the one atomic write: this
+# script's own folder, set here so an inherited value never counts.
+export CRAFT_ANNOTATE_SCRIPTS_DIR="$SCRIPT_DIR"
 
 die() {
   echo "annotate-resolve: $*" >&2
@@ -99,7 +102,10 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
+
+sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
+import annotate_write
+del sys.path[0]
 
 verb, root, session_dir, run_sh, ts_arg = sys.argv[1:6]
 target_args = sys.argv[6:]
@@ -159,20 +165,8 @@ def load_cache():
 
 
 def save_cache(cache):
-    """Write through a temp file of this writer's own, then replace."""
-    path = os.path.join(session_dir, "resolutions.json")
-    fd, tmp = tempfile.mkstemp(dir=session_dir, prefix="resolutions.json.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(cache, handle)
-            handle.write("\n")
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    """Write through the shared atomic write: a temp of this writer's own, then replace."""
+    annotate_write.write_atomic(os.path.join(session_dir, "resolutions.json"), json.dumps(cache) + "\n")
 
 
 class cache_lock:
