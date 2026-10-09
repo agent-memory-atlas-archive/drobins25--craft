@@ -1,13 +1,14 @@
 """Per-record summary extraction: one card-ready line per record type.
 
-Eleven record types, seven distinct source shapes, one fallback: story reads
-`## Spark`; cycle reads the `target:` field (cycle.yaml has no body); fix
-reads `## Symptom`, falling back to `trigger:` for records predating the
-heading; tweak reads `## Request`, falling back to the first body paragraph
-for the legacy shape; mockup reads `## Brief`; annotation reads the first line of `## Pins`; notebook has no headings, so
-its summary is the paragraph after the title line the parser already takes;
-dial, riff and planning have no per-type heading, so the summary is the
-first body paragraph, skipping a leading H1 where one exists.
+Eleven record types: story reads `## Spark`; cycle reads the `target:`
+field (cycle.yaml has no body); fix reads `## Symptom`, falling back to
+`trigger:` for records predating the heading; tweak reads `## Request`,
+falling back to the first body paragraph for the legacy shape; mockup reads
+`## Brief`; annotation reads the first line of `## Pins`; bug reads
+`## Consequences`, falling back to `## What happened`; notebook has no
+headings, so its summary is the paragraph after the title line the parser
+already takes; dial, riff and planning have no per-type heading, so the
+summary is the first body paragraph, skipping a leading H1 where one exists.
 
 The panel renders this through `textContent`, so inline markdown syntax
 would show its own punctuation on the card - it is reduced to plain text.
