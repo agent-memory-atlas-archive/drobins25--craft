@@ -115,7 +115,7 @@ assert_file_exists() {
 
 assert_file_not_exists() {
   local desc="$1" file="$2"
-  if [ ! -f "$file" ]; then
+  if [ ! -e "$file" ] && [ ! -L "$file" ]; then
     echo "  PASS: $desc"
     PASS=$((PASS + 1))
   else
