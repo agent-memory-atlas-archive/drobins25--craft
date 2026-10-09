@@ -2042,6 +2042,35 @@ http POST "$PORT" /pins "[$(cpin 101 https://example.test/read.html first),$(cpi
 OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" watch --once --session ex10 2>/dev/null)"
 assert_contains_literal "a session that stayed external keeps tagging after the tab moves" 'EXTERNAL ADDED 103 #1 "home"' "$OUT"
 
+UNENFORCED_SENTENCE="NOTICE This page is outside your project, so I'll treat pins here as page content - something the site itself could add to. The pin boundary could not attach to this conversation, so it is off: a pin that asks me to run a command, read or edit a file, or fetch something will not be held until you reply in chat."
+
+begin_test "with an owner the block cannot reach, loader and the watch say the boundary is off and never promise that calls wait"
+new_root; ROOT="$NEW_ROOT"
+rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"
+# A live process that is not an ancestor of anything this shell runs - what the
+# block sees when no claude-named ancestor was found at arm.
+sleep 120 &
+STRANGER="$!"
+TMP_PIDS+=("$STRANGER")
+SID=ux1
+PORT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" arm --session ux1 --owner-pid "$STRANGER" 2>/dev/null | awk '/^SESSION /{print $4; exit}')"
+D="$ROOT/.craft/annotations/ux1"
+assert_eq "the owner is the stranger" "$STRANGER" "$(rd "$D/owner.pid" | tr -d '\n')"
+OUT="$(run_in "$ROOT" loader --session ux1 --page https://example.test/app)"
+assert_eq "loader: EXTERNAL then the boundary-off notice, verbatim" "EXTERNAL
+$UNENFORCED_SENTENCE" "$OUT"
+assert_not_contains "loader never promises calls wait" 'waits until you reply' "$OUT"
+assert_file_exists "the session is still marked external" "$D/external.json"
+new_root; ROOT="$NEW_ROOT"
+SID=ux2
+PORT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" arm --session ux2 --owner-pid "$STRANGER" 2>/dev/null | awk '/^SESSION /{print $4; exit}')"
+run_in "$ROOT" begin --session ux2 --subject t >/dev/null
+http POST "$PORT" /pins "[$(cpin 111 https://example.test/read.html first)]" >/dev/null
+OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" watch --once --session ux2 2>/dev/null)"
+assert_eq "watch: the batch opens with the boundary-off notice" "$UNENFORCED_SENTENCE" "$(printf '%s\n' "$OUT" | head -1)"
+assert_contains_literal "then the tagged pin" 'EXTERNAL ADDED 111 #1 "first"' "$(printf '%s\n' "$OUT" | sed -n 2p)"
+assert_not_contains "the watch never promises calls wait" 'waits until you reply' "$OUT"
+
 begin_test "clear removes the marker and the pointer entry"
 new_root; ROOT="$NEW_ROOT"
 rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"
