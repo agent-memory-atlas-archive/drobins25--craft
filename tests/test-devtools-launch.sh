@@ -144,6 +144,14 @@ expect_eq "a garbage marker reads NONE" "$(status_for s5)" "NONE"
 write_marker 4242 isolated $$
 expect_eq "status falls back to CLAUDE_PID" "$(CLAUDE_PID=4242 node "$LAUNCH" status)" "ISOLATED"
 
+# keys from the environment never reach outside the state folder
+mkdir -p "$TMP/outside"
+printf '{"mode":"isolated","launcher_pid":%s,"version":"1.10.1","at":"x"}' $$ > "$TMP/outside/m.json"
+expect_eq "a CRAFT_DEVTOOLS_KEY with a path is never read" "$(CRAFT_DEVTOOLS_KEY=../outside/m node "$LAUNCH" status)" "NONE"
+expect_eq "a CLAUDE_PID with a path is never read" "$(CLAUDE_PID=../outside/m node "$LAUNCH" status)" "NONE"
+expect_eq "a rejected CRAFT_DEVTOOLS_KEY still lets CLAUDE_PID through" "$(CRAFT_DEVTOOLS_KEY=../outside/m CLAUDE_PID=4242 node "$LAUNCH" status)" "ISOLATED"
+expect_eq "a key with dots and dashes is still a key" "$(write_marker k.e-y_1 shared $$; CRAFT_DEVTOOLS_KEY=k.e-y_1 node "$LAUNCH" status)" "SHARED"
+
 # notice: once for isolated, then nothing
 FIRST="$(notice_for s2)"; SECOND="$(notice_for s2)"
 expect_eq "notice prints the copy the first time for isolated" "$FIRST" "$COPY"
@@ -292,6 +300,14 @@ wait_for 50 bash -c "[ -f '$S/state/$KEY.json' ]" || true
 expect_eq "dead markers are pruned at start" "$([ -f "$S/state/stale.json" ] && echo kept || echo pruned)" "pruned"
 expect_eq "a live launcher's own marker survives the prune" "$([ -f "$S/state/$KEY.json" ] && echo yes || echo no)" "yes"
 expect_eq "a dead launcher's notice flag is pruned at start" "$([ -e "$S/tmp/craft-devtools-noticed-$DEAD2" ] && echo kept || echo pruned)" "pruned"
+end_session
+
+# --- a launcher given a key with a path writes its marker inside the state folder ---
+start_session CRAFT_DEVTOOLS_KEY=../esc/m
+mkdir -p "$S/state/.../esc" "$S/esc"
+handshake; send "$CALL"; wait_for 100 has_id 3 || true
+expect_eq "a path in CRAFT_DEVTOOLS_KEY never writes outside the state folder" "$([ -e "$S/esc/m.json" ] && echo escaped || echo inside)" "inside"
+expect_eq "the launcher still writes its marker inside the state folder" "$(ls "$S/state" | grep -c '\.json$' || true)" "1"
 end_session
 
 # --- notice flags: a reused pid starts unsaid, live launchers keep theirs ---

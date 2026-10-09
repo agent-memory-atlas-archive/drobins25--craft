@@ -98,8 +98,14 @@ function stateDir() {
   return process.env.CRAFT_DEVTOOLS_STATE_DIR || path.join(os.homedir(), '.cache', 'craft', 'devtools');
 }
 
+// A key becomes a file name in the state folder, so one from the environment is
+// used only when it is a plain name; anything with a path in it is ignored.
+function safeKey(key) {
+  return typeof key === 'string' && /^[\w.-]+$/.test(key) ? key : null;
+}
+
 function markerKey() {
-  return process.env.CRAFT_DEVTOOLS_KEY || String(process.ppid);
+  return safeKey(process.env.CRAFT_DEVTOOLS_KEY) || String(process.ppid);
 }
 
 function writeMarker(mode, key = markerKey()) {
@@ -143,7 +149,7 @@ function parentPid(pid) {
 }
 
 function findMarker() {
-  const keys = [process.env.CRAFT_DEVTOOLS_KEY, process.env.CLAUDE_PID].filter(Boolean);
+  const keys = [process.env.CRAFT_DEVTOOLS_KEY, process.env.CLAUDE_PID].map(safeKey).filter(Boolean);
   for (const key of keys) {
     const m = readMarker(key);
     if (m) return m;
