@@ -1967,6 +1967,41 @@ assert_eq "the session is still listed" "$ROOT/.craft/annotations/ex7" "$(json_g
 assert_eq "the pointer was refreshed, not dropped" "True" "$(json_get "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json" "d['updated'] >= $BEFORE_UPDATED")"
 wait_dead "$W" || true
 
+begin_test "a lift written while the watch is still matching sources is gone when the external pin prints"
+new_root; ROOT="$NEW_ROOT"
+rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"
+arm_session "$ROOT" --session ex7b
+D="$ROOT/.craft/annotations/ex7b"
+run_in "$ROOT" begin --session ex7b --subject t >/dev/null
+run_in "$ROOT" loader --session ex7b --page https://example.test/app >/dev/null
+# A copy of the scripts whose resolver marks that source matching began, then takes two seconds.
+SLOW="$ROOT/slow-scripts"
+cp -R "$SCRIPTS_DIR" "$SLOW"
+cat > "$SLOW/annotate-resolve.sh" <<'STUB'
+#!/bin/bash
+if [ "${1:-}" = "resolve" ]; then
+  cat >/dev/null
+  touch "$(dirname "${BASH_SOURCE[0]}")/resolve.started"
+  sleep 2
+fi
+exit 0
+STUB
+printf '{"72": %s}' "$(probe_item 72 https://example.test/app div.a)" > "$D/probes.json"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$SLOW/annotate-run.sh" watch --once --session ex7b >"$ROOT/ex7b.out" 2>/dev/null &
+W="$!"
+TMP_PIDS+=("$W")
+sleep 0.5
+http POST "$PORT" /pins "[$(cpin 72 https://example.test/app slow)]" >/dev/null
+i=0
+while [ ! -f "$SLOW/resolve.started" ] && [ "$i" -lt 40 ]; do sleep 0.25; i=$((i + 1)); done
+assert_file_exists "source matching began" "$SLOW/resolve.started"
+# What the prompt hook does when the user types a message during source matching.
+echo "p9" > "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift"
+wait_lines "$ROOT/ex7b.out" 1 || true
+assert_contains_literal "the pin printed with its external tag" 'EXTERNAL ADDED 72 #1 "slow"' "$(cat "$ROOT/ex7b.out")"
+assert_eq "the lift written during source matching is gone" "MISSING" "$(rd "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift")"
+wait_dead "$W" || true
+
 begin_test "send removes the lift for an external session and for an external pin; not for a project session"
 new_root; ROOT="$NEW_ROOT"
 rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"

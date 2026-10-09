@@ -1223,6 +1223,10 @@ try:
                 lines.insert(0, notice)
             if not still_mine():
                 break
+            # Source matching can take seconds, and a message typed meanwhile
+            # writes a new lift; remove it again with nothing slow before the print.
+            if any(line.startswith("EXTERNAL ") for line in lines):
+                revoke_lift(dir_path)
             if lines:
                 emit(lines)
             write_cursor(end)
