@@ -422,6 +422,18 @@ assert_eq "the block is silent" "" "$OUT"
 assert_file_not_exists "and starts no Python" "$ROOT/py.ran"
 rm -rf "$BD"
 
+begin_test "a run inside a set-up project with no --root and no CRAFT_PROJECT_ROOT finds the project root"
+new_root; ROOT="$NEW_ROOT"
+touch "$ROOT/.craft/project.md"
+mkdir -p "$ROOT/sub"
+WS_ERR="$( (cd "$ROOT/sub" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT bash "$RUN" status --session nosuch) 2>&1 >/dev/null)" || true
+assert_contains "status gets past the root and reports the missing session" "no such session: nosuch" "$WS_ERR"
+assert_not_contains "and never says there is no project root" "no craft project root" "$WS_ERR"
+WS_OUT="$( (cd "$ROOT/sub" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT bash "$RUN" arm --session ws1 --owner-pid "$$") 2>/dev/null)" || true
+assert_contains "arm with no root given prints its session" "SESSION ws1 PORT " "$WS_OUT"
+assert_file_exists "and creates it under the project found from the folder" "$ROOT/.craft/annotations/ws1/port"
+run_in "$ROOT" disarm --session ws1 >/dev/null
+
 begin_test "arm seeds .gitignore only on the creating run"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"

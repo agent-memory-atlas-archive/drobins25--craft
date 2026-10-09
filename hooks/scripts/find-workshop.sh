@@ -105,10 +105,10 @@ _find_active_sub_project() {
 }
 
 # Main resolution
-if [ -z "$PROJECT_ROOT" ]; then
+if [ -z "${PROJECT_ROOT:-}" ]; then
 
   # 1. Check CRAFT_PROJECT_ROOT env var (session-pinned)
-  if [ -n "$CRAFT_PROJECT_ROOT" ]; then
+  if [ -n "${CRAFT_PROJECT_ROOT:-}" ]; then
     local_root="${CRAFT_PROJECT_ROOT%/}/"
     if [ -d "${local_root}.craft" ]; then
       PROJECT_ROOT="$local_root"
@@ -120,7 +120,7 @@ if [ -z "$PROJECT_ROOT" ]; then
   fi
 
   # 2. Walk up from PWD
-  if [ -z "$PROJECT_ROOT" ]; then
+  if [ -z "${PROJECT_ROOT:-}" ]; then
     nearest=$(_find_nearest_craft) || true
 
     if [ -n "$nearest" ]; then
@@ -159,7 +159,7 @@ if [ -z "$PROJECT_ROOT" ]; then
   fi
 
   # 3. Final fallback — error if nothing found
-  if [ -z "$PROJECT_ROOT" ]; then
+  if [ -z "${PROJECT_ROOT:-}" ]; then
     # Return silently instead of erroring — hooks should exit 0, not crash
     return 1 2>/dev/null || exit 1
   fi
