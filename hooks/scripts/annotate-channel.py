@@ -677,7 +677,11 @@ def load_or_create_token(session_dir):
 
     The file is 32 lowercase hex characters, mode 0600, and lives as long as
     the session folder, so a re-armed listener keeps the token that pages and
-    baked mockups already carry. A malformed file is replaced atomically."""
+    baked mockups already carry. A malformed file is replaced atomically.
+
+    A new token is written to a temp file first and only then put at the
+    path, so the path never exists half-written: a reader racing a creator
+    sees no file or the whole token, never an empty file it would replace."""
     path = os.path.join(session_dir, TOKEN_FILE)
     for _ in range(3):
         try:
@@ -691,23 +695,22 @@ def load_or_create_token(session_dir):
         except OSError:
             replace = True
         token = secrets.token_hex(16)
-        if not replace:
-            try:
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            except FileExistsError:
-                continue
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(token + "\n")
-            return token
         fd, temp = tempfile.mkstemp(dir=session_dir, prefix=TOKEN_FILE + ".", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(token + "\n")
-            os.replace(temp, path)
-        except OSError:
+            if replace:
+                os.replace(temp, path)
+            else:
+                # The exclusive create: a link fails when another caller put
+                # its token there first, and the loop then reads that one.
+                try:
+                    os.link(temp, path)
+                except FileExistsError:
+                    continue
+        finally:
             if os.path.exists(temp):
                 os.unlink(temp)
-            raise
         return token
     raise OSError("could not settle the session token file")
 

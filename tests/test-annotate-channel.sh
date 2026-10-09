@@ -1729,6 +1729,58 @@ begin_test "the token is absent from the listener's ps command line"
 TKP="$(cat "$ROOT/.craft/annotations/tk1/listener.pid")"
 assert_not_contains "no token in argv" "$TK2" "$(ps -o command= -p "$TKP" 2>/dev/null)"
 
+begin_test "two first-time token creations at once return the file's token to both callers"
+# The first caller is held inside its token write while the second runs to the
+# end, the window where a half-made token file used to read as malformed.
+new_root; ROOT="$NEW_ROOT"
+mkdir -p "$ROOT/sess"
+OUT="$(python3 - "$CHANNEL" "$ROOT/sess" "$ROOT" <<'PYEOF'
+import importlib.util, os, sys, time
+spec = importlib.util.spec_from_file_location("annotate_channel", sys.argv[1])
+channel = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(channel)
+sess, work = sys.argv[2], sys.argv[3]
+held, go, first_out = (os.path.join(work, n) for n in ("held", "go", "first"))
+
+def wait_for(p):
+    end = time.time() + 10
+    while not os.path.exists(p) and time.time() < end:
+        time.sleep(0.01)
+
+pid = os.fork()
+if pid == 0:
+    real_fdopen = os.fdopen
+    class Held:
+        def __init__(self, handle): self.handle = handle
+        def __enter__(self): self.handle.__enter__(); return self
+        def __exit__(self, *exc): return self.handle.__exit__(*exc)
+        def write(self, text):
+            open(held, "w").close()
+            wait_for(go)
+            return self.handle.write(text)
+    os.fdopen = lambda *a, **k: Held(real_fdopen(*a, **k))
+    try:
+        token = channel.load_or_create_token(sess)
+    except Exception as exc:
+        token = "ERROR %s" % exc
+    with open(first_out, "w") as f:
+        f.write(token)
+    os._exit(0)
+wait_for(held)
+second = channel.load_or_create_token(sess)
+open(go, "w").close()
+os.waitpid(pid, 0)
+first = open(first_out).read() if os.path.exists(first_out) else "MISSING"
+on_disk = open(os.path.join(sess, "token")).read().strip()
+print("held" if os.path.exists(held) else "not-held")
+print("same" if first == second == on_disk else "first=%s second=%s file=%s" % (first, second, on_disk))
+PYEOF
+)"
+assert_contains "the first caller was held inside its write" "^held$" "$OUT"
+assert_contains "both callers return the token the file holds" "^same$" "$OUT"
+assert_eq "the file is mode 600" "600" "$(stat -f '%Lp' "$ROOT/sess/token" 2>/dev/null || stat -c '%a' "$ROOT/sess/token")"
+assert_eq "no temp file is left" "0" "$(ls "$ROOT/sess" | grep -c '\.tmp$' || true)"
+
 begin_test "loader, stamp and stamp --no-run carry the token right after the port; stamp --no-run works with no run.json"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT" --session tk2
