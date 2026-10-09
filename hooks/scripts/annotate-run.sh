@@ -1320,7 +1320,10 @@ print('external' if page_is_external(sys.argv[1]) else 'project')" "$1"
 
 # cmd_loader - the one line that loads the served overlay. It is an async
 # function because evaluate_script awaits a function's return value but only
-# runs an immediately invoked expression while building its handle.
+# runs an immediately invoked expression while building its handle. The session
+# is resolved before the page kind on purpose: an external page is marked in its
+# session folder and listed under that folder's owner, so a missing session dies
+# here like every session verb rather than print EXTERNAL with nothing marked.
 cmd_loader() {
   local dir port source stamp=""
   [ -n "$PAGE" ] || die "--page <url> is required"
