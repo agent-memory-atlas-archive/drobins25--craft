@@ -478,6 +478,20 @@ assert_contains_literal "announce fires when the round is written" "round is wri
 assert_contains_literal "never at SEND" "never at SEND" "$SHEET"
 assert_contains_literal "the page reloads itself" "reloads itself" "$SHEET"
 
+begin_test "mockup: the registry read and announce pass the cold path's root, and the read names the line status prints"
+# The cold path has no CRAFT_PROJECT_ROOT, so status and announce find the
+# session only through --root. The note follows the status fence.
+STATUS_NOTE="$(printf '%s\n' "$SHEET" | awk '/annotate-run.sh" status --session "<id>"$/ {f = 1; next} f && $0 != "" && $0 != "```" {print; exit}')"
+assert_contains_literal "the registry read adds the cold path's root" '--root "$MOCKUP_ROOT"' "$STATUS_NOTE"
+ANNOUNCE_LINES="$(printf '%s\n' "$SHEET" | grep -F 'annotate-run.sh" announce --session "<id>"' || true)"
+assert_not_eq "the announce command is in the proof sheet" "" "$ANNOUNCE_LINES"
+assert_eq "every announce command adds the cold path's root" \
+  "$(printf '%s\n' "$ANNOUNCE_LINES" | grep -c . || true)" \
+  "$(printf '%s\n' "$ANNOUNCE_LINES" | grep -cF -- '--root "$MOCKUP_ROOT"' || true)"
+assert_contains_literal "the registry read names the full status line" 'SESSION <id> PORT <port> PID <pid> CLIENTS <n>' "$STATUS_NOTE"
+assert_contains_literal "and that is the line status prints" \
+  'echo "SESSION $SESSION PORT ${port:-none} PID ${pid:-none} CLIENTS $clients"' "$(cat "$REPO/hooks/scripts/annotate-run.sh")"
+
 begin_test "mockup: delivered == 0 means the page is gone, whatever the pre-check said"
 assert_contains_literal "the delivered count decides" "delivered == 0" "$SHEET"
 assert_contains_literal "the pre-check is not trusted alone" "never trusted alone" "$SHEET"

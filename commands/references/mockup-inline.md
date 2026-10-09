@@ -147,9 +147,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/annotate-overlay.md` ONCE per mo
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" status --session "<id>"
 ```
 
-It prints `CLIENTS <n>` or `CLIENTS unreachable`.
+On the cold path add `--root "$MOCKUP_ROOT"`. It prints one line, `SESSION <id> PORT <port> PID <pid> CLIENTS <n>`; read the word after `CLIENTS`, a count, or `unreachable` when the listener does not answer.
 
-- **`CLIENTS <n>` with n >= 1:** a page is connected. Run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" announce --session "<id>"` and the page reloads itself. The flow never opens a browser while a page is connected.
+- **`CLIENTS <n>` with n >= 1:** a page is connected. Run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" announce --session "<id>"` (on the cold path add `--root "$MOCKUP_ROOT"`) and the page reloads itself. The flow never opens a browser while a page is connected.
 - **`CLIENTS 0`, or `CLIENTS unreachable`:** no page is listening. Re-run `arm --session "<id>"` if the listener did not answer, then open the page once. The first time the flow opens the page in a session, run `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/devtools-launch.cjs" notice` right after that first browser call; a printed line is said to the user verbatim, and nothing printed means nothing said.
 - **The pre-check is never trusted alone.** The registry prunes a closed tab only when a write to it fails, so a closed tab can still read `clients >= 1`. The authority is the `delivered` count that `announce` prints: `delivered == 0` means the page is gone, so open the page on the spot. No round's reload is ever silently lost.
 
