@@ -122,7 +122,7 @@ W="$(node -e "const m=require('$LAUNCH');process.stdout.write([m.serverArgv({iso
 expect_eq "win32 argv uses a shell, others do not" "$W" "true,false,false"
 
 EXPORTS="$(node -e "const m=require('$LAUNCH');process.stdout.write(Object.keys(m).sort().join(','))")"
-expect_eq "module exports the contracted names" "$EXPORTS" "FALLBACK_NOTICE,PINNED_VERSION,lockState,serverArgv"
+expect_eq "module exports the contracted names" "$EXPORTS" "FALLBACK_NOTICE,PINNED_VERSION,lockState,pruneNoticeFlags,serverArgv"
 
 # --- marker, status, notice ---
 COPY='Another session has the browser open, so this one gets a fresh window - you may need to sign in there.'
@@ -196,6 +196,7 @@ start_session() {
   mkfifo "$S/in"
   if [ -n "${PRESEED_DEAD_PID:-}" ]; then
     printf '{"mode":"isolated","launcher_pid":%s,"version":"1.10.1","at":"x"}' "$PRESEED_DEAD_PID" > "$S/state/stale.json"
+    : > "$S/tmp/craft-devtools-noticed-$PRESEED_DEAD_PID"
   fi
   # cat bridges the FIFO to a real pipe: node on macOS never sees EOF on a FIFO stdin.
   cat "$S/in" | env CRAFT_DEVTOOLS_KEY="$KEY" CRAFT_DEVTOOLS_STATE_DIR="$S/state" CRAFT_DEVTOOLS_PROFILE_DIR="$S/profile" \
@@ -290,7 +291,33 @@ PRESEED_DEAD_PID="$DEAD2" start_session
 wait_for 50 bash -c "[ -f '$S/state/$KEY.json' ]" || true
 expect_eq "dead markers are pruned at start" "$([ -f "$S/state/stale.json" ] && echo kept || echo pruned)" "pruned"
 expect_eq "a live launcher's own marker survives the prune" "$([ -f "$S/state/$KEY.json" ] && echo yes || echo no)" "yes"
+expect_eq "a dead launcher's notice flag is pruned at start" "$([ -e "$S/tmp/craft-devtools-noticed-$DEAD2" ] && echo kept || echo pruned)" "pruned"
 end_session
+
+# --- notice flags: a reused pid starts unsaid, live launchers keep theirs ---
+FLAGS="$TMP/flags"; mkdir -p "$FLAGS"
+sleep 0 & DEAD3=$!; wait "$DEAD3" 2>/dev/null || true
+sleep 30 & OTHER=$!
+: > "$FLAGS/craft-devtools-noticed-$$"
+: > "$FLAGS/craft-devtools-noticed-$DEAD3"
+: > "$FLAGS/craft-devtools-noticed-$OTHER"
+: > "$FLAGS/unrelated-file"
+TMPDIR="$FLAGS" node -e "require('$LAUNCH').pruneNoticeFlags($$)"
+expect_eq "a flag carrying the starting launcher's own (reused) pid is removed" "$([ -e "$FLAGS/craft-devtools-noticed-$$" ] && echo kept || echo removed)" "removed"
+expect_eq "a dead launcher's flag is removed" "$([ -e "$FLAGS/craft-devtools-noticed-$DEAD3" ] && echo kept || echo removed)" "removed"
+expect_eq "another live launcher's flag is kept" "$([ -e "$FLAGS/craft-devtools-noticed-$OTHER" ] && echo kept || echo removed)" "kept"
+expect_eq "files that are not notice flags are left alone" "$([ -e "$FLAGS/unrelated-file" ] && echo kept || echo removed)" "kept"
+kill "$OTHER" 2>/dev/null || true; wait "$OTHER" 2>/dev/null || true
+RC=0; TMPDIR="$TMP/does-not-exist" node -e "require('$LAUNCH').pruneNoticeFlags($$)" || RC=$?
+expect_eq "pruning a missing temp dir never throws" "$RC" "0"
+
+# after a reused-pid flag is pruned, the next launcher's notice prints again
+write_marker s8 isolated $$
+: > "$TMPDIR/craft-devtools-noticed-$$"
+expect_eq "a leftover flag for the same pid silences the notice" "$(notice_for s8)" ""
+node -e "require('$LAUNCH').pruneNoticeFlags($$)"
+expect_eq "after the start-up prune the notice prints again" "$(notice_for s8)" "$COPY"
+rm -f "$TMPDIR/craft-devtools-noticed-$$"
 
 # --- an outstanding tools/list during the switch is still answered ---
 start_session FAKE_LIST_DELAY_MS=400; hold_lock

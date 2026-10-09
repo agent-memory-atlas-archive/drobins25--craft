@@ -281,6 +281,29 @@ function pruneDeadMarkers() {
   }
 }
 
+// A notice flag is keyed by the launcher's pid and outlives it. At start-up no
+// notice has been said for this launcher, so a flag carrying its own pid was left
+// by an earlier launcher the OS gave the same pid; that one and every flag of a
+// dead launcher go, so a reused pid never silences the next notice.
+function pruneNoticeFlags(ownPid = process.pid) {
+  try {
+    const dir = os.tmpdir();
+    for (const name of fs.readdirSync(dir)) {
+      const hit = /^craft-devtools-noticed-(\d+)$/.exec(name);
+      if (!hit) continue;
+      const pid = Number(hit[1]);
+      if (pid !== ownPid && defaultProbe.isAlive(pid)) continue;
+      try {
+        fs.unlinkSync(path.join(dir, name));
+      } catch {
+        // Already gone.
+      }
+    }
+  } catch {
+    // Pruning is housekeeping.
+  }
+}
+
 function serve() {
   const stdin = process.stdin;
   const stdout = process.stdout;
@@ -620,6 +643,7 @@ function serve() {
   });
 
   pruneDeadMarkers();
+  pruneNoticeFlags();
   sharedChild = startChild(false, 'shared child');
   active = sharedChild;
   writeMarker('pending');
@@ -640,4 +664,4 @@ if (require.main === module) {
   main(process.argv.slice(2));
 }
 
-module.exports = { PINNED_VERSION, FALLBACK_NOTICE, serverArgv, lockState };
+module.exports = { PINNED_VERSION, FALLBACK_NOTICE, serverArgv, lockState, pruneNoticeFlags };
