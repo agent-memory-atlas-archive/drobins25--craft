@@ -205,4 +205,62 @@ set -e
 assert_exit_code "exits 1" "1" "$RC"
 assert_eq "file untouched" "$PAGE_HTML" "$(cat "$ISO/page.html")"
 
+begin_test "bake and strip never touch a temp file another writer left beside the page"
+# A temp name shared by every writer lets one bake rename or delete another's
+# temp mid-flight. Each writer must use a name of its own, so a file already
+# sitting at any fixed name beside the page is left exactly as it was.
+new_root; ROOT4="$NEW_ROOT"
+arm_session "$ROOT4" --session bk4
+P4="$ROOT4/page.html"
+printf '%s' "$PAGE_HTML" > "$P4"
+for NAME in page.html.bake-tmp page.html.strip-tmp page.html.tmp; do printf 'another writer\n' > "$ROOT4/$NAME"; done
+OUT="$(run_in "$ROOT4" bake --session bk4 --file "$P4")"
+assert_eq "bake succeeds" "BAKED $P4 PORT $PORT" "$OUT"
+OUT="$(run_in "$ROOT4" strip --file "$P4")"
+assert_eq "strip succeeds" "STRIPPED 1" "$OUT"
+assert_eq "the page is back to its original bytes" "$PAGE_HTML" "$(cat "$P4")"
+for NAME in page.html.bake-tmp page.html.strip-tmp page.html.tmp; do
+  assert_eq "$NAME is left as it was" "another writer" "$(cat "$ROOT4/$NAME" 2>/dev/null || echo MISSING)"
+done
+assert_eq "no other file was left beside the page" "page.html page.html.bake-tmp page.html.strip-tmp page.html.tmp" "$(cd "$ROOT4" && ls | tr '\n' ' ' | sed 's/ $//')"
+
+begin_test "bake and strip leave a page with the mode a new file gets, as they always did"
+# mode_of <file> - the permission bits in octal (BSD stat, then GNU stat)
+mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+P6="$ROOT4/fresh.html"
+printf '%s' "$PAGE_HTML" > "$P6"
+NEW_MODE="$(mode_of "$P6")"
+run_in "$ROOT4" bake --session bk4 --file "$P6" >/dev/null
+assert_eq "bake leaves the mode a new file gets" "$NEW_MODE" "$(mode_of "$P6")"
+run_in "$ROOT4" strip --file "$P6" >/dev/null
+assert_eq "strip leaves the mode a new file gets" "$NEW_MODE" "$(mode_of "$P6")"
+rm -f "$P6"
+
+begin_test "two bakes, then two strips, of the same page at once all succeed, 20 rounds each"
+new_root; ROOT5="$NEW_ROOT"
+arm_session "$ROOT5" --session bk5
+P5="$ROOT5/page.html"
+printf '%s' "$PAGE_HTML" > "$P5"
+BAKE_FAILED=0
+for i in $(seq 20); do
+  CRAFT_PROJECT_ROOT="$ROOT5" bash "$RUN" bake --session bk5 --file "$P5" >/dev/null 2>&1 & A=$!
+  CRAFT_PROJECT_ROOT="$ROOT5" bash "$RUN" bake --session bk5 --file "$P5" >/dev/null 2>&1 & B=$!
+  wait "$A" || BAKE_FAILED=$((BAKE_FAILED + 1))
+  wait "$B" || BAKE_FAILED=$((BAKE_FAILED + 1))
+done
+assert_eq "no bake failed" "0 of 40" "$BAKE_FAILED of 40"
+assert_eq "the page holds exactly one overlay" "1" "$(grep -c '<script id="ca-overlay">' "$P5" || true)"
+assert_eq "no temp file is left beside the page" "page.html" "$(cd "$ROOT5" && ls | tr '\n' ' ' | sed 's/ $//')"
+STRIP_FAILED=0
+for i in $(seq 20); do
+  run_in "$ROOT5" bake --session bk5 --file "$P5" >/dev/null
+  CRAFT_PROJECT_ROOT="$ROOT5" bash "$RUN" strip --file "$P5" >/dev/null 2>&1 & A=$!
+  CRAFT_PROJECT_ROOT="$ROOT5" bash "$RUN" strip --file "$P5" >/dev/null 2>&1 & B=$!
+  wait "$A" || STRIP_FAILED=$((STRIP_FAILED + 1))
+  wait "$B" || STRIP_FAILED=$((STRIP_FAILED + 1))
+done
+assert_eq "no strip failed" "0 of 40" "$STRIP_FAILED of 40"
+assert_eq "the page holds no overlay" "$PAGE_HTML" "$(cat "$P5")"
+assert_eq "no temp file is left beside the page after the strips" "page.html" "$(cd "$ROOT5" && ls | tr '\n' ' ' | sed 's/ $//')"
+
 finish_tests "test-annotate-bake"

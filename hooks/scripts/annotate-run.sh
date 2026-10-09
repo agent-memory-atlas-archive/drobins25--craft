@@ -252,11 +252,14 @@ def write_json(path, data):
     write_text(path, json.dumps(data))
 
 
-def write_text(path, text):
+def write_text(path, text, mode=None):
     """Write through a temp file of this writer's own in the same folder, then
-    replace, so a reader never sees the file empty or half written."""
+    replace, so a reader never sees the file empty or half written. mode, when
+    given, is the file's permission bits (a temp file starts at 0600)."""
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
     try:
+        if mode is not None:
+            os.fchmod(fd, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
         os.replace(tmp, path)
@@ -1453,8 +1456,10 @@ cmd_stamp() {
 }
 
 # strip_overlay_py - Python source shared by bake and strip: removes every
-# <script id="ca-overlay"> ... </script> element plus one following newline
+# <script id="ca-overlay"> ... </script> element plus one following newline, and
+# writes the page; it rides after BOUNDARY_PY, whose write_text it calls
 read -r -d '' STRIP_PY <<'PYEOF' || true
+import os
 import re
 
 OVERLAY_ELEMENT = re.compile(r'<script id="ca-overlay">.*?</script>\n?', re.DOTALL)
@@ -1462,6 +1467,14 @@ OVERLAY_ELEMENT = re.compile(r'<script id="ca-overlay">.*?</script>\n?', re.DOTA
 
 def strip_overlay(text):
     return OVERLAY_ELEMENT.subn("", text)
+
+
+def write_page(path, text):
+    """The page through write_text: a temp of this writer's own, so two bakes or
+    strips at once never share one, and the mode a newly created file gets."""
+    umask = os.umask(0)
+    os.umask(umask)
+    write_text(path, text, 0o666 & ~umask)
 PYEOF
 
 cmd_bake() {
@@ -1476,7 +1489,8 @@ cmd_bake() {
     rm -f "$fence_file"
     die "overlay source not found"
   fi
-  if out="$(python3 -c "$STRIP_PY
+  if out="$(python3 -c "$BOUNDARY_PY
+$STRIP_PY
 $LOCAL_OPENER_PY
 import json, os, sys
 
@@ -1497,15 +1511,12 @@ element = (
     'window.__craftAnnotateToken = %s;\n'
     '%s</script>\n' % (port, json.dumps(read_token(token_file)), fence)
 )
-temp = path + '.bake-tmp'
-with open(temp, 'w', encoding='utf-8', newline='') as handle:
-    handle.write(text[:at] + element + text[at:])
-os.replace(temp, path)
+write_page(path, text[:at] + element + text[at:])
 " "$FILE" "$port" "$fence_file" "$(token_file)")"; then
     rm -f "$fence_file"
     echo "BAKED $FILE PORT $port"
   else
-    rm -f "$fence_file" "$FILE.bake-tmp"
+    rm -f "$fence_file"
     exit 1
   fi
 }
@@ -1514,18 +1525,16 @@ cmd_strip() {
   local count
   [ -n "$FILE" ] || die "--file <path> is required"
   [ -f "$FILE" ] || die "no such file: $FILE"
-  count="$(python3 -c "$STRIP_PY
-import os, sys
+  count="$(python3 -c "$BOUNDARY_PY
+$STRIP_PY
+import sys
 
 path = sys.argv[1]
 with open(path, encoding='utf-8', newline='') as handle:
     text = handle.read()
 text, count = strip_overlay(text)
 if count:
-    temp = path + '.strip-tmp'
-    with open(temp, 'w', encoding='utf-8', newline='') as handle:
-        handle.write(text)
-    os.replace(temp, path)
+    write_page(path, text)
 print(count)
 " "$FILE")" || die "could not strip $FILE"
   echo "STRIPPED $count"
