@@ -94,7 +94,7 @@ flowchart TD
     CONTENT_CREATIVE --> CREATIVE["PATH A: With Creative-Spark"]
     CONTENT_SMART --> SMART["PATH B: Skip Creative-Spark"]
 
-    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool - chain break)<br/>Generate 3-5 options + visual direction"]
+    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool - chain break)<br/>Generate 3-4 options + visual direction"]
     SPARK --> USER_PICK["Step 5: User picks option<br/>Visual direction comes from option<br/>(no separate design-vibe per-story)"]
 
     USER_PICK --> DESIGN_DECISIONS["Step 6: Capture typed design decisions<br/>AskUserQuestion: layout / component /<br/>density / visibility"]

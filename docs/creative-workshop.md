@@ -8,7 +8,7 @@ This is a how-to guide. You're in the middle of creating a story or working in t
 
 ## The Problem It Solves
 
-Standard creative-spark generates options by analyzing your story context and producing 3-5 approaches with trade-offs. That works well for most things.
+Standard creative-spark generates options by analyzing your story context and producing 3-4 approaches with trade-offs. That works well for most things.
 
 But some features need a different entry point. A stats summary screen is technically a data display problem. It's also a moment where someone finds out something about themselves. If you start from the data-display framing, you get good layouts. If you start from the identity-moment framing, you might get something users screenshot and share.
 

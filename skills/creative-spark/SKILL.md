@@ -1,6 +1,6 @@
 ---
 name: creative-spark
-description: This skill should be used when the user asks to "brainstorm", "explore options", "get creative", "what if we...", or selects "Let's get creative" during story or cycle creation. NOT for a bare vague feature idea where generating options would mean inventing the premise first - that routes to /craft:riff (riff first, options after). Generates 2-3 creative options with trade-offs, visual direction for UI stories, and wireframes.
+description: This skill should be used when the user asks to "brainstorm", "explore options", "get creative", "what if we...", or selects "Let's get creative" during story or cycle creation. NOT for a bare vague feature idea where generating options would mean inventing the premise first - that routes to /craft:riff (riff first, options after). Generates 3-4 creative options with trade-offs, visual direction for UI stories, and wireframes.
 version: 1.5.0
 allowed-tools: ["Read", "Glob", "Grep", "Task"]
 ---
@@ -218,7 +218,7 @@ Write your output preamble before options:
 
 Your options should each be a different expression of your POV and a deliberate position on the tension, not unrelated ideas thrown at a wall.
 
-### 3. Generate Options (Always 3-5)
+### 3. Generate Options (Always 3-4)
 
 Your options should span genuinely different creative territories anchored by the tension you named. A good spread:
 - One option that **leans into side A** of the tension (e.g., prioritizes density)
@@ -316,7 +316,7 @@ options:
 - **Technical options:** Architecture diagram + key rationale + trade-offs
 - **Copy/Voice options:** Tone description + sample copy examples + trade-offs
 
-**Constraints:** Markdown previews only work with single-select (not multiSelect). Max 4 options. Keep each markdown block focused — the preview pane has limited width, so prefer vertical layouts over wide ASCII art.
+**Constraints:** Markdown previews only work with single-select (not multiSelect). 3-4 options (AskUserQuestion shows at most 4). Keep each markdown block focused — the preview pane has limited width, so prefer vertical layouts over wide ASCII art.
 
 ## Motion Refinement (UI Stories Only)
 
