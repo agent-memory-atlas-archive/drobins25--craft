@@ -1612,7 +1612,16 @@ print(text or "-")
 # Reaps session dirs whose owning session process is dead. A dir with no
 # readable owner is left alone: unknown is never treated as dead.
 sweep_all() {
-  local dir owner listener
+  local dir owner listener boundary pointer
+  # Boundary pointers are per user, not per project: one whose owner is gone keeps
+  # the block's cheap path off for every session, and the block never reaches it.
+  boundary="${CRAFT_ANNOTATE_BOUNDARY_DIR:-$HOME/.cache/craft/annotate-boundary}"
+  for pointer in "$boundary"/*.json; do
+    [ -f "$pointer" ] || continue
+    owner="$(basename "$pointer" .json)"
+    is_number "$owner" || continue
+    pid_alive "$owner" || rm -f "$pointer" "$boundary/$owner.lift"
+  done
   [ -n "$ROOT" ] || return 0
   for dir in "$ROOT"/.craft/annotations/*/; do
     [ -d "$dir" ] || continue

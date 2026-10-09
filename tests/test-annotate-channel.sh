@@ -391,6 +391,37 @@ RC=$?
 set -e
 assert_exit_code "sweep with no annotations dir exits 0" "0" "$RC"
 
+begin_test "sweep removes boundary pointers whose owner is gone, keeps a live owner's, and the block's cheap path fires again"
+BD="$CRAFT_ANNOTATE_BOUNDARY_DIR"
+rm -rf "$BD"; mkdir -p "$BD"
+sleep 0.05 & GONE=$!; wait "$GONE" || true
+printf '{"sessions": ["/nowhere/gone"], "updated": %s}' "$(date +%s)" > "$BD/$GONE.json"
+echo "p1" > "$BD/$GONE.lift"
+printf '{"sessions": ["/nowhere/live"], "updated": %s}' "$(date +%s)" > "$BD/$$.json"
+echo "notes" > "$BD/readme.txt"
+new_root; ROOT="$NEW_ROOT"
+run_in "$ROOT" sweep >/dev/null
+assert_file_not_exists "the dead owner's pointer is removed" "$BD/$GONE.json"
+assert_file_not_exists "and its lift" "$BD/$GONE.lift"
+assert_file_exists "a live owner's pointer stays" "$BD/$$.json"
+assert_file_exists "a file that is not a pointer stays" "$BD/readme.txt"
+# With no project root the sweep still cleans the per-user folder.
+rm -f "$BD/$$.json"
+printf '{"sessions": ["/nowhere/gone"], "updated": %s}' "$(date +%s)" > "$BD/$GONE.json"
+NOROOT="$(mktemp -d)"; TMP_ROOTS+=("$NOROOT")
+( cd "$NOROOT" && env -u CRAFT_PROJECT_ROOT bash "$RUN" sweep >/dev/null 2>&1 ) || true
+assert_file_not_exists "a sweep with no project root removes it too" "$BD/$GONE.json"
+# Only a dead owner's pointer was left: after the sweep the block starts no Python.
+printf '{"sessions": ["/nowhere/gone"], "updated": %s}' "$(date +%s)" > "$BD/$GONE.json"
+run_in "$ROOT" sweep >/dev/null
+FAKE_BIN="$ROOT/fakebin"; mkdir -p "$FAKE_BIN"
+printf '#!/bin/sh\necho started >> "%s/py.ran"\nexit 0\n' "$ROOT" > "$FAKE_BIN/python3"
+chmod +x "$FAKE_BIN/python3"
+OUT="$(printf '%s' '{"tool_name":"Read","prompt_id":"p","tool_input":{"file_path":"/etc/hosts"}}' | PATH="$FAKE_BIN:$PATH" bash "$SCRIPTS_DIR/annotate-external-gate.sh" pre-tool)"
+assert_eq "the block is silent" "" "$OUT"
+assert_file_not_exists "and starts no Python" "$ROOT/py.ran"
+rm -rf "$BD"
+
 begin_test "arm seeds .gitignore only on the creating run"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"
