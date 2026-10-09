@@ -23,6 +23,8 @@ else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || true
   ROOT="${PROJECT_ROOT%/}"
+  # A monorepo's top level is no project: refuse before anything is written.
+  if craft_refuse_monorepo_top "a notebook entry"; then exit 1; fi
 fi
 
 # Cold fallback: no initialized project resolved. Anchor to the git toplevel

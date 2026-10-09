@@ -23,6 +23,8 @@ if [ -n "$CRAFT_PROJECT_ROOT" ]; then
 else
   source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1 || true
   ROOT="${PROJECT_ROOT%/}"
+  # A monorepo's top level is no project: refuse before anything is read or written.
+  if craft_refuse_monorepo_top "a bug"; then exit 2; fi
 fi
 
 # Cold fallback: no initialized project resolved. Anchor to the git toplevel

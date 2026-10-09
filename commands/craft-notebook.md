@@ -25,6 +25,8 @@ Low-ceremony capture for ideas and todos. The upstream of craft's compounding sy
 
 Set `PROJECT` to `${CRAFT_PROJECT_ROOT:-.}`. All `.craft/` paths resolve under this root.
 
+From a monorepo's top level with no project picked, `notebook-capture.sh` captures nothing: it exits non-zero with one line naming the projects it found, because an entry there would sit where no project's session lists it. Relay that line and stop. The user picks a project with `/craft:project`; a script or agent sets `CRAFT_PROJECT_ROOT` to the project's folder and captures again.
+
 ## Step 0: Route on First Argument
 
 Inspect the first token of `$ARGUMENTS`. Route as follows:

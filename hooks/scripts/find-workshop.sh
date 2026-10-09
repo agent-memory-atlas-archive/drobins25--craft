@@ -104,6 +104,29 @@ _find_active_sub_project() {
   return 1
 }
 
+# Capture scripts (bugs, notebook) call this after sourcing, only when no
+# CRAFT_PROJECT_ROOT was given. A monorepo's top level is not a project: a
+# record filed there - nothing resolved, or several projects and none picked -
+# sits where no project's session ever lists it. In that case this prints one
+# refusal line to stderr naming the projects found and returns 0, and the
+# caller writes nothing. Returns 1 (go ahead) otherwise, including a top level
+# that is itself a project.
+# Usage: craft_refuse_monorepo_top "<what is being filed, e.g. a bug>"
+craft_refuse_monorepo_top() {
+  local what="$1" top names
+  local fw_dir
+  fw_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  if [ -n "${PROJECT_ROOT:-}" ]; then
+    [ "${CRAFT_MULTI_PROJECT:-}" = "true" ] || return 1
+    [ "$(cd "${PROJECT_ROOT%/}" 2>/dev/null && pwd -P)" = "$(cd "$top" && pwd -P)" ] || return 1
+  fi
+  names=$(bash "$fw_dir/discover-projects.sh" 2>/dev/null | cut -d'|' -f1 | paste -sd, - | sed 's/,/, /g')
+  [ -n "$names" ] || return 1
+  echo "nothing written: $top is a monorepo's top level, and $what filed here would sit where no project's session lists it. Projects found: $names. Pick one with /craft:project, or set CRAFT_PROJECT_ROOT to the project's folder when a script or agent files it." >&2
+  return 0
+}
+
 # Main resolution
 if [ -z "${PROJECT_ROOT:-}" ]; then
 
