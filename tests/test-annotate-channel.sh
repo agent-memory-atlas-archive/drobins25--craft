@@ -2124,6 +2124,27 @@ assert_file_not_exists "ex12 marker gone" "$D12/external.json"
 assert_file_not_exists "the pointer is removed when the list empties" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json"
 assert_file_not_exists "and the lift with it" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift"
 
+begin_test "disarm of an external session drops its pointer entry, and the last one removes the pointer"
+new_root; ROOT="$NEW_ROOT"
+rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"
+arm_session "$ROOT" --session ex21
+D21="$ROOT/.craft/annotations/ex21"
+arm_session "$ROOT" --session ex22
+D22="$ROOT/.craft/annotations/ex22"
+run_in "$ROOT" loader --session ex21 --page https://example.test/a >/dev/null
+run_in "$ROOT" loader --session ex22 --page https://example.test/b >/dev/null
+assert_eq "both are listed" "2" "$(json_get "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json" 'len(d["sessions"])')"
+echo "p6" > "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift"
+run_in "$ROOT" disarm --session ex21 >/dev/null
+assert_dir_not_exists "ex21 session dir removed" "$D21"
+assert_eq "only ex22 is listed" "$D22" "$(json_get "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json" 'd["sessions"][0]')"
+assert_eq "one entry" "1" "$(json_get "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json" 'len(d["sessions"])')"
+assert_eq "the lift stays while a session remains" "p6" "$(rd "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift" | tr -d '\n')"
+run_in "$ROOT" disarm --session ex22 >/dev/null
+assert_dir_not_exists "ex22 session dir removed" "$D22"
+assert_file_not_exists "the pointer is removed when the last session is disarmed" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json"
+assert_file_not_exists "and the lift with it" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift"
+
 begin_test "two sessions marked at once keep both pointer entries"
 new_root; ROOT="$NEW_ROOT"
 for i in 1 2 3 4 5 6; do arm_session "$ROOT" --session cm$i; done

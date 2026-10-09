@@ -1575,6 +1575,12 @@ cmd_disarm() {
   if is_number "$pid"; then
     kill "$pid" 2>/dev/null || true
   fi
+  # The folder is going, so its external-page entry goes first, the way clear
+  # drops it; the owner's other sessions stay listed.
+  python3 -c "$BOUNDARY_PY
+import sys
+
+unmark_external(sys.argv[1])" "$dir"
   rm -rf "$dir"
 }
 
