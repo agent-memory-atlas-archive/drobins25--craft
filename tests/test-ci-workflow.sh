@@ -133,6 +133,13 @@ if echo "$AB" | grep -q '^    env:$' && echo "$AB" | grep -q '^      CRAFT_CI_RE
 else
   fail "annotate-browser job is missing, non-blocking, has needs, or lacks CRAFT_CI_REQUIRE_BROWSER" "$AB"
 fi
+# A required check needs a bounded runtime: without timeout-minutes a hung
+# step holds every PR on a pending check for GitHub's 360-minute default.
+if echo "$AB" | grep -qx '    timeout-minutes: 10'; then
+  pass "annotate-browser sets timeout-minutes: 10"
+else
+  fail "annotate-browser does not set timeout-minutes: 10" "$AB"
+fi
 if ! job_block browser | grep -q 'annotate-check.sh' && job_block browser | grep -q 'run: bash scripts/ci/browser-check.sh$'; then
   pass "browser no longer runs annotate-check.sh and still runs browser-check.sh"
 else
