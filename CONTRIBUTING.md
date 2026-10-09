@@ -140,7 +140,7 @@ This is contributor tooling for developing craft itself - it has no role in proj
 - If the PR implements a planned story, link the story file in the description
 - Include a brief test plan in the description if the change isn't covered by automated tests
 - The PR title follows the same conventions as commit messages
-- Seven CI checks must be green to merge: `dashboard`, `hooks`, `lifecycle`, `flows`, `misc`, `doc-drift`, `template-stamp` (the `browser` check reports but never blocks). See `docs/ci-branch-protection.md` for how they are enforced
+- Eight CI checks must be green to merge: `dashboard`, `hooks`, `lifecycle`, `flows`, `misc`, `doc-drift`, `template-stamp`, `annotate-browser` (the `browser` check reports but never blocks). See `docs/ci-branch-protection.md` for how they are enforced
 
 ## Questions
 

@@ -230,6 +230,28 @@ else
   fail "CONTRIBUTING.md does not link the runbook (or the path is dead)"
 fi
 
+# CONTRIBUTING.md's "must be green to merge" line names exactly the runbook's
+# required checks (the bulleted ids under "## The checks"), and its count word
+# matches - a contributor held by a red required check must find it named.
+RB_REQUIRED=$(awk '/^## The checks$/{f=1;next} f && /^## /{f=0} f' "$RUNBOOK" \
+  | sed -n 's/^- `\([a-z0-9_-]*\)`$/\1/p' | sort)
+MERGE_LINE=$(grep 'CI checks must be green to merge' "$ROOT/CONTRIBUTING.md" || true)
+CONTRIB_REQUIRED=$(printf '%s\n' "${MERGE_LINE%%(*}" | grep -o '`[a-z0-9_-]*`' | tr -d '`' | sort)
+if [ -n "$RB_REQUIRED" ] && [ "$CONTRIB_REQUIRED" = "$RB_REQUIRED" ]; then
+  pass "CONTRIBUTING.md names the same required checks as the runbook"
+else
+  fail "CONTRIBUTING.md's required checks differ from the runbook's" \
+    "contributing: $(echo $CONTRIB_REQUIRED) | runbook: $(echo $RB_REQUIRED)"
+fi
+N_REQ=$(printf '%s\n' "$RB_REQUIRED" | grep -c . || true)
+COUNT_WORDS="one two three four five six seven eight nine ten eleven twelve"
+COUNT_WORD=$(echo "$COUNT_WORDS" | cut -d' ' -f"$N_REQ" 2>/dev/null || true)
+if printf '%s\n' "$MERGE_LINE" | grep -qi "^- $COUNT_WORD CI checks must be green to merge"; then
+  pass "CONTRIBUTING.md states the required-check count as '$COUNT_WORD'"
+else
+  fail "CONTRIBUTING.md's required-check count is not '$COUNT_WORD'" "$MERGE_LINE"
+fi
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"
