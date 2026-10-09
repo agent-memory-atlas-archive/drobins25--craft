@@ -306,7 +306,10 @@ options:
   - label: "[Option B name]"
     description: "[1-sentence summary of the approach]"
     markdown: "[Full content block for this option]"
-  - label: "[Option C name]" (if 3 options)
+  - label: "[Option C name]"
+    description: "[1-sentence summary of the approach]"
+    markdown: "[Full content block for this option]"
+  - label: "[Option D name]" (if 4 options)
     description: "[1-sentence summary of the approach]"
     markdown: "[Full content block for this option]"
 ```
@@ -316,7 +319,7 @@ options:
 - **Technical options:** Architecture diagram + key rationale + trade-offs
 - **Copy/Voice options:** Tone description + sample copy examples + trade-offs
 
-**Constraints:** Markdown previews only work with single-select (not multiSelect). 3-4 options (AskUserQuestion shows at most 4). Keep each markdown block focused — the preview pane has limited width, so prefer vertical layouts over wide ASCII art.
+**Constraints:** Markdown previews only work with single-select (not multiSelect). 3-4 options (AskUserQuestion shows at most 4). Keep each markdown block focused - the preview pane has limited width, so prefer vertical layouts over wide ASCII art.
 
 ## Motion Refinement (UI Stories Only)
 
