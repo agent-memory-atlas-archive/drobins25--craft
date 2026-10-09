@@ -529,7 +529,7 @@ try {
   });
 
   // 16. the listener refuses a page that does not hold the session's token
-  await step(16, "the listener refused a request without the token, the flow's in-page check was accepted with the page's token and refused with it changed or removed, and the strip said NOT ARMED for a stale one", async () => {
+  await step(16, "the listener refused a request without the token, the flow's in-page check was accepted with the page's token and refused with it changed or removed, and the strip said NOT ARMED for a stale token and for none at all", async () => {
     if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
     const probeHealth = query => evaluate(`fetch('http://127.0.0.1:' + window.__craftAnnotatePort + '/health${query}')
       .then(async res => ({ status: res.status, body: await res.text() })).catch(e => ({ error: String(e) }))`);
@@ -550,11 +550,18 @@ try {
     await clickEl('#ca-send');
     const shown = await waitFor(`document.getElementById('ca-status').textContent !== ''`, 5000);
     const strip = await evaluate(`document.getElementById('ca-status').textContent`);
+    // A page baked before tokens existed: the global is gone, not set to some value.
+    await evaluate(`delete window.__craftAnnotateToken; document.getElementById('ca-status').textContent = ''`);
+    const absent = await evaluate(`!('__craftAnnotateToken' in window)`);
+    await clickEl('#ca-send');
+    const shownNone = await waitFor(`document.getElementById('ca-status').textContent !== ''`, 5000);
+    const stripNone = await evaluate(`document.getElementById('ca-status').textContent`);
     await evaluate(`window.__craftAnnotateToken = ${JSON.stringify(realToken)}`);
     return { ok: bare.status === 403 && /"forbidden"/.test(bare.body || '') && stamped.status === 200 && realToken === sessionToken()
         && own === 200 && withChanged === 403 && withRemoved === 403
-        && shown >= 0 && strip === 'NOT ARMED - no craft session listening',
-      detail: `without the token ${JSON.stringify(bare)}; with it ${stamped.status}; the in-page check answered ${own} with the page's token, ${withChanged} with it changed, ${withRemoved} with it removed; stale-token SEND showed "${strip}"` };
+        && shown >= 0 && strip === 'NOT ARMED - no craft session listening'
+        && absent && shownNone >= 0 && stripNone === 'NOT ARMED - no craft session listening',
+      detail: `without the token ${JSON.stringify(bare)}; with it ${stamped.status}; the in-page check answered ${own} with the page's token, ${withChanged} with it changed, ${withRemoved} with it removed; stale-token SEND showed "${strip}"; with no token at all (global gone ${absent}) SEND showed "${stripNone}"` };
   });
 
   // 17. a page file baked by `bake`, opened over file://, holds its stream and a SEND returns RETURNED
