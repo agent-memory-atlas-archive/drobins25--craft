@@ -1885,6 +1885,27 @@ assert_eq "run.json, session.css and the cursor exist" "3" "$(ls "$D/run.json" "
 assert_eq "no temp file is left" "0" "$(ls "$D" | grep -c '\.tmp$' || true)"
 assert_eq "no writer builds a fixed .tmp name" "0" "$(grep -c '\(name\|path\|CURSOR\) + "\.tmp"' "$RUN" || true)"
 
+begin_test "arm, ensure and watch write their session files through a unique temp and a replace, never in place"
+# An in-place write truncates first, so a crash mid-write leaves an empty port,
+# pid or streak that status and ensure then misread. Left out on purpose: the
+# listener's own log, lock files (their content is never read), the page file
+# bake and strip rewrite (not a session file), and external.json, an exclusive
+# create whose presence alone is the signal.
+IN_PLACE="$(grep -nE '>>? *"\$(dir|listener_pid_file)[/"]' "$RUN" | grep -v 'listener\.log' || true)"
+assert_eq "no shell redirect writes a session file in place" "" "$IN_PLACE"
+OPEN_W="$(grep -nE "(^|[^A-Za-z_.])open\([^)]*, *[\"'][wa]" "$RUN" | grep -vE 'lock = open\(|as lock:' | grep -vF "open(temp, 'w'" || true)"
+assert_eq "no Python open() writes a session file in place" "" "$OPEN_W"
+CREATE="$(grep -n 'O_CREAT' "$RUN" | grep -v '"external.json"' || true)"
+assert_eq "no other session file is created in place" "" "$CREATE"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session ip1
+D="$ROOT/.craft/annotations/ip1"
+run_in "$ROOT" ensure --session ip1 >/dev/null
+assert_eq "the port is written whole" "$PORT" "$(rd "$D/port" | tr -d '\n')"
+assert_eq "the owner is written whole" "$$" "$(rd "$D/owner.pid" | tr -d '\n')"
+assert_eq "the healthy ensure writes a zero streak" "0" "$(rd "$D/rearm.streak" | tr -d '\n')"
+assert_eq "no temp file is left" "0" "$(ls "$D" | grep -c '\.tmp$' || true)"
+
 # ---------------------------------------------------------------------------
 # The external-page boundary: the script marks the session, tells the user
 # once, prefixes external pins and removes any lift before they are printed.

@@ -249,10 +249,16 @@ def boundary_notice(session_dir):
 
 
 def write_json(path, data):
+    write_text(path, json.dumps(data))
+
+
+def write_text(path, text):
+    """Write through a temp file of this writer's own in the same folder, then
+    replace, so a reader never sees the file empty or half written."""
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(data, handle)
+            handle.write(text)
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -350,6 +356,17 @@ def unmark_external(session_dir):
     if owner:
         edit_pointer(owner, lambda sessions: [item for item in sessions if item != session_dir], create=False)
 PYEOF
+
+# write_session_files <path> <value> [<path> <value>]... - writes each value and a
+# newline through write_text, in order, so no session file is ever seen half written
+write_session_files() {
+  python3 -c "$BOUNDARY_PY
+import sys
+
+pairs = sys.argv[1:]
+for at in range(0, len(pairs), 2):
+    write_text(pairs[at], pairs[at + 1] + '\n')" "$@"
+}
 
 # token_file - the current session's token file, which may not exist
 token_file() {
@@ -516,8 +533,7 @@ cmd_arm() {
   fi
 
   start_listener "$dir"
-  echo "$LISTENER_PORT" > "$dir/port"
-  echo "$LISTENER_PID" > "$listener_pid_file"
+  write_session_files "$dir/port" "$LISTENER_PORT" "$listener_pid_file" "$LISTENER_PID"
 
   if [ -n "$OWNER_PID" ]; then
     is_number "$OWNER_PID" || die "--owner-pid must be a pid"
@@ -530,7 +546,7 @@ cmd_arm() {
     # then reaps only after that pid is gone - never early, only late.
     [ -n "$owner" ] || owner="$LISTENER_PID"
   fi
-  echo "$owner" > "$dir/owner.pid"
+  write_session_files "$dir/owner.pid" "$owner"
 
   echo "SESSION $sid PORT $LISTENER_PORT"
 }
@@ -1254,8 +1270,7 @@ my_run = run_id()
 if my_run is None:
     sys.stderr.write("annotate-run: no run in progress (run begin first)\n")
     sys.exit(1)
-with open(PID_FILE, "w", encoding="utf-8") as handle:
-    handle.write("%d\n" % os.getpid())
+write_text(PID_FILE, "%d\n" % os.getpid())
 
 
 def still_mine():
@@ -1531,7 +1546,7 @@ cmd_ensure() {
   fi
   port="$(read_file "$dir/port")"
   if is_number "$port" && http_call GET "$port" /health >/dev/null 2>&1; then
-    echo 0 > "$dir/rearm.streak"
+    write_session_files "$dir/rearm.streak" 0
     echo "OK PORT $port"
     return 0
   fi
@@ -1556,7 +1571,7 @@ cmd_ensure() {
   streak="$(read_file "$dir/rearm.streak")"
   is_number "$streak" || streak=0
   streak=$((streak + 1))
-  echo "$streak" > "$dir/rearm.streak"
+  write_session_files "$dir/rearm.streak" "$streak"
   echo "REARMED PORT $new_port STREAK $streak"
 }
 
