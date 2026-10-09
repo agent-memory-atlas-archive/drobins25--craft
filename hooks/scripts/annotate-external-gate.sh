@@ -101,14 +101,26 @@ def read_input():
     return data
 
 
+class ProcessListError(Exception):
+    """The process list could not be read, so no call can be matched to its owner."""
+
+
 def ancestors():
-    """This process's pid and its ancestors, nearest first."""
-    out = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5).stdout
+    """This process's pid and its ancestors, nearest first. Raises ProcessListError
+    when ps cannot run, times out, fails, or lists no entry for this process."""
+    try:
+        result = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ProcessListError("%s: %s" % (type(error).__name__, error))
+    if result.returncode != 0:
+        raise ProcessListError("ps exited %d" % result.returncode)
     parent = {}
-    for line in out.splitlines():
+    for line in result.stdout.splitlines():
         parts = line.split()
         if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
             parent[int(parts[0])] = int(parts[1])
+    if os.getpid() not in parent:
+        raise ProcessListError("ps did not list this process")
     chain = []
     pid = os.getpid()
     while pid > 1 and pid not in chain and len(chain) < 64:
@@ -122,6 +134,34 @@ def find_owner():
         if os.path.isfile(os.path.join(boundary_dir(), "%d.json" % pid)):
             return str(pid)
     return None
+
+
+def any_live_pointer():
+    """True when some conversation's pointer in the boundary folder is live."""
+    try:
+        names = os.listdir(boundary_dir())
+    except OSError:
+        return False
+    for name in names:
+        if name.endswith(".json") and name[:-len(".json")].isdigit():
+            if pointer_state(name[:-len(".json")]) == "live":
+                return True
+    return False
+
+
+def hold_unchecked(error):
+    """A live boundary exists but this call cannot be matched to its owner: hold it.
+    A subagent call abstains, as it does when the owner is known."""
+    try:
+        data = read_input()
+    except ValueError:
+        data = {}
+    if data.get("agent_id"):
+        return
+    deny("The external-page boundary could not read the process list (%s), so it cannot tell "
+         "whether this call belongs to an annotate session on a page outside the project, and "
+         "the call is held. Tell the user in plain chat that this call was held because the "
+         "process list could not be read, then end your turn." % error)
 
 
 def remove(path):
@@ -348,7 +388,12 @@ def main(mode):
     owner = None
     live = False
     try:
-        owner = find_owner()
+        try:
+            owner = find_owner()
+        except ProcessListError as error:
+            if mode == "pre-tool" and any_live_pointer():
+                hold_unchecked(error)
+            return
         live = owner is not None
         try:
             data = read_input()

@@ -386,6 +386,54 @@ assert_contains "the reason names the error" "Error" "$(printf '%s' "$OUT" | jq 
 OUT="$(printf '%s' '{"tool_name":"Bash","tool_input":"oops","prompt_id":"q"}' | bash "$GATE" pre-tool)"
 assert_eq "a malformed tool_input denies" "deny" "$(verdict "$OUT")"
 
+begin_test "when the process list cannot be read, a live boundary holds the call; no live boundary stays silent"
+PSB="$BASE/psbin"; mkdir -p "$PSB/fail" "$PSB/empty" "$PSB/other" "$PSB/hang" "$PSB/none"
+printf '#!/bin/sh\nexit 1\n' > "$PSB/fail/ps"
+printf '#!/bin/sh\nexit 0\n' > "$PSB/empty/ps"
+printf '#!/bin/sh\necho "  1     0"\n' > "$PSB/other/ps"
+printf '#!/bin/sh\nexec sleep 30\n' > "$PSB/hang/ps"
+chmod +x "$PSB"/*/ps
+ln -sf "$(command -v python3)" "$PSB/none/python3"
+WRITE_IN='{"tool_name":"Write","tool_input":{"file_path":"/tmp/x","content":"x"},"prompt_id":"p1"}'
+# held <ps kind> - the gate's output for a Write with that ps first on PATH
+# (none: a PATH holding only python3, so there is no ps at all)
+held() {
+  if [ "$1" = none ]; then
+    printf '%s' "$WRITE_IN" | PATH="$PSB/none" "$BASH" "$GATE" pre-tool
+  else
+    printf '%s' "$WRITE_IN" | PATH="$PSB/$1:$PATH" bash "$GATE" pre-tool
+  fi
+}
+fake_session ps1
+for kind in fail empty other hang none; do
+  OUT="$(held "$kind")"
+  assert_eq "ps $kind: the Write is denied" "deny" "$(verdict "$OUT")"
+  assert_contains "ps $kind: the reason says the process list could not be read" "could not read the process list" \
+    "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null)"
+done
+OUT="$(jq -n '{tool_name:"Write",tool_input:{file_path:"/tmp/x",content:"x"},prompt_id:"p1",agent_id:"sub-1"}' | PATH="$PSB/fail:$PATH" bash "$GATE" pre-tool)"
+assert_eq "a subagent call still abstains" "" "$OUT"
+OUT="$(printf '%s' 'not json' | PATH="$PSB/fail:$PATH" bash "$GATE" pre-tool)"
+assert_eq "unreadable input is held too" "deny" "$(verdict "$OUT")"
+OUT="$(jq -n '{prompt:"yes",prompt_id:"p1"}' | PATH="$PSB/fail:$PATH" bash "$GATE" prompt)"
+assert_eq "prompt mode prints nothing" "" "$OUT"
+reset_boundary
+for kind in fail hang; do
+  assert_eq "ps $kind with no pointer: silent" "" "$(held "$kind")"
+done
+printf '{"sessions": [], "updated": %s}' "$(date +%s)" > "$BD/99999999.json"
+assert_eq "ps fail with only a stale pointer: silent" "" "$(held fail)"
+assert_eq "and the stale pointer is left alone" "yes" "$([ -f "$BD/99999999.json" ] && echo yes || echo no)"
+
+begin_test "grabbing a style from an external page still works"
+fake_session st1
+assert_eq "evaluate_script with nothing typed" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__evaluate_script '{"function":"() => getComputedStyle(document.body).color"}' ps1)")"
+assert_eq "take_screenshot with nothing typed" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_screenshot '{}' ps1)")"
+assert_eq "take_snapshot with nothing typed" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_snapshot '{}' ps1)")"
+assert_eq "a Write with nothing typed is held" "deny" "$(verdict "$(pre Write '{"file_path":"/tmp/x","content":"x"}' ps1)")"
+prompt 'use that color in my header' ps2 >/dev/null
+assert_eq "a typed request lets the Write through" "silent" "$(verdict "$(pre Write '{"file_path":"/tmp/x","content":"x"}' ps2)")"
+
 # --- wiring --------------------------------------------------------------------
 begin_test "hooks.json: matcher * pre-tool entry and a prompt entry exist, script is executable, existing entries unchanged"
 assert_eq "script is executable" "yes" "$([ -x "$GATE" ] && echo yes || echo no)"
