@@ -55,6 +55,9 @@ DENY_REASON = (
 
 BROWSER_PREFIXES = ("mcp__plugin_craft_chrome-devtools__", "mcp__chrome-devtools__")
 BROWSER_TOOLS = {"evaluate_script", "take_screenshot", "take_snapshot", "list_pages", "wait_for"}
+# These two save their output to any path named in filePath instead of returning it,
+# so they run on their own only when the result comes back inline.
+BROWSER_FILE_WRITERS = {"take_screenshot", "take_snapshot"}
 PLAIN_TOOLS = {"ToolSearch", "TaskOutput", "TaskStop"}
 
 # Only these script/verb pairs run while blocked. clear ends the boundary, bake and
@@ -278,7 +281,10 @@ def tool_allowed(tool_name, tool_input):
         return True
     for prefix in BROWSER_PREFIXES:
         if tool_name.startswith(prefix):
-            return tool_name[len(prefix):] in BROWSER_TOOLS
+            name = tool_name[len(prefix):]
+            if name in BROWSER_FILE_WRITERS and tool_input.get("filePath") not in (None, ""):
+                return False
+            return name in BROWSER_TOOLS
     if tool_name == "Read":
         return read_allowed(tool_input)
     if tool_name in ("Bash", "Monitor"):

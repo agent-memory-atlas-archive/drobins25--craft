@@ -180,6 +180,19 @@ assert_eq "Read of a plugin file" "silent" "$(verdict "$(pre Read "$(jq -n --arg
 ALLOWS="$( { bash_call "bash $RS status"; pre Read "$(jq -n --arg p "$ROOT_LOGICAL/README.md" '{file_path: $p}')"; } | grep -c allow || true)"
 assert_eq "never an allow" "0" "$ALLOWS"
 
+begin_test "external session, no lift: take_snapshot and take_screenshot that save to a filePath are denied, inline ones stay silent"
+fake_session f1
+for prefix in mcp__plugin_craft_chrome-devtools__ mcp__chrome-devtools__; do
+  for tool in take_snapshot take_screenshot; do
+    assert_eq "$prefix$tool with filePath" "deny" "$(verdict "$(pre "$prefix$tool" '{"filePath":"/Users/x/.zshrc"}')")"
+    assert_eq "$prefix$tool with a relative filePath" "deny" "$(verdict "$(pre "$prefix$tool" '{"filePath":"notes.txt"}')")"
+    assert_eq "$prefix$tool without filePath" "silent" "$(verdict "$(pre "$prefix$tool" '{}')")"
+    assert_eq "$prefix$tool with an empty filePath" "silent" "$(verdict "$(pre "$prefix$tool" '{"filePath":""}')")"
+  done
+done
+assert_eq "take_screenshot fullPage inline" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_screenshot '{"fullPage":true,"format":"png"}')")"
+assert_eq "take_snapshot verbose inline" "silent" "$(verdict "$(pre mcp__plugin_craft_chrome-devtools__take_snapshot '{"verbose":true}')")"
+
 begin_test "grammar attacks are denied: ; rm, && curl, \$(...), backticks, unquoted heredoc, text after the terminator, bake --file, clear, Read outside the plugin root"
 fake_session g1
 attack() { assert_eq "$1" "deny" "$(verdict "$(bash_call "$2")")"; }
