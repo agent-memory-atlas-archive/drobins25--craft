@@ -2145,6 +2145,76 @@ assert_dir_not_exists "ex22 session dir removed" "$D22"
 assert_file_not_exists "the pointer is removed when the last session is disarmed" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json"
 assert_file_not_exists "and the lift with it" "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.lift"
 
+begin_test "clear, disarm and the sweep leave no lock file in the boundary folder"
+new_root; ROOT="$NEW_ROOT"
+BD="$CRAFT_ANNOTATE_BOUNDARY_DIR"
+rm -rf "$BD"
+arm_session "$ROOT" --session lk1
+run_in "$ROOT" loader --session lk1 --page https://example.test/a >/dev/null
+assert_file_exists "the pointer is written" "$BD/$$.json"
+run_in "$ROOT" clear --session lk1 >/dev/null
+assert_eq "clear leaves the folder empty" "" "$(ls -A "$BD" 2>/dev/null)"
+arm_session "$ROOT" --session lk2
+run_in "$ROOT" loader --session lk2 --page https://example.test/b >/dev/null
+run_in "$ROOT" disarm --session lk2 >/dev/null
+assert_eq "disarm leaves the folder empty" "" "$(ls -A "$BD" 2>/dev/null)"
+arm_session "$ROOT" --session lk3
+run_in "$ROOT" clear --session lk3 >/dev/null
+assert_eq "clear of a session that was never external leaves no lock" "" "$(ls -A "$BD" 2>/dev/null)"
+sleep 0.05 & GONE=$!; wait "$GONE" || true
+sleep 0.05 & GONE2=$!; wait "$GONE2" || true
+mkdir -p "$BD"
+printf '{"sessions": ["/nowhere/gone"], "updated": %s}' "$(date +%s)" > "$BD/$GONE.json"
+: > "$BD/$GONE.lock"
+: > "$BD/$GONE2.lock"
+arm_session "$ROOT" --session lk4
+run_in "$ROOT" loader --session lk4 --page https://example.test/c >/dev/null
+run_in "$ROOT" sweep >/dev/null
+assert_file_not_exists "the sweep removes a dead owner's pointer" "$BD/$GONE.json"
+assert_file_not_exists "and its lock" "$BD/$GONE.lock"
+assert_file_not_exists "and a dead owner's lock that has no pointer" "$BD/$GONE2.lock"
+assert_file_exists "a live owner's pointer stays" "$BD/$$.json"
+assert_file_exists "and so does its lock" "$BD/$$.lock"
+run_in "$ROOT" clear --session lk4 >/dev/null
+assert_eq "the last clear leaves the folder empty" "" "$(ls -A "$BD" 2>/dev/null)"
+
+begin_test "a writer that waited on a lock file the holder removed waits again for the lock now at that path"
+new_root; ROOT="$NEW_ROOT"
+rm -rf "$CRAFT_ANNOTATE_BOUNDARY_DIR"
+arm_session "$ROOT" --session rl1
+# Hold the owner's lock, let a loader wait on it, then swap a new lock file in
+# at the path (held here too) and let go of the old one. The loader must not
+# write the pointer until the lock at the path is free.
+OUT="$(CRAFT_PROJECT_ROOT="$ROOT" python3 - "$CRAFT_ANNOTATE_BOUNDARY_DIR" "$$" "$RUN" "$ROOT/.craft/annotations/rl1" <<'PYEOF'
+import fcntl, os, subprocess, sys, time
+folder, owner, run, session = sys.argv[1:5]
+os.makedirs(folder, exist_ok=True)
+path = os.path.join(folder, owner + ".lock")
+pointer = os.path.join(folder, owner + ".json")
+first = open(path, "a")
+fcntl.flock(first, fcntl.LOCK_EX)
+writer = subprocess.Popen(["bash", run, "loader", "--session", "rl1", "--page", "https://example.test/w"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+deadline = time.time() + 15
+while not os.path.exists(os.path.join(session, "external.json")) and time.time() < deadline:
+    time.sleep(0.05)
+time.sleep(0.5)
+os.unlink(path)
+second = open(path, "a")
+fcntl.flock(second, fcntl.LOCK_EX)
+first.close()
+time.sleep(1.0)
+during = "written" if os.path.exists(pointer) else "waiting"
+second.close()
+writer.wait(timeout=20)
+after = "written" if os.path.exists(pointer) else "missing"
+print(during, after)
+PYEOF
+)"
+assert_eq "the loader waits while the lock at the path is held, then writes" "waiting written" "$OUT"
+assert_eq "the pointer lists the session" "$ROOT/.craft/annotations/rl1" "$(json_get "$CRAFT_ANNOTATE_BOUNDARY_DIR/$$.json" 'd["sessions"][0]')"
+run_in "$ROOT" clear --session rl1 >/dev/null
+
 begin_test "two sessions marked at once keep both pointer entries"
 new_root; ROOT="$NEW_ROOT"
 for i in 1 2 3 4 5 6; do arm_session "$ROOT" --session cm$i; done

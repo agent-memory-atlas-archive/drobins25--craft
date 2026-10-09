@@ -262,28 +262,45 @@ def write_json(path, data):
         raise
 
 
+def take_lock(path):
+    """Open and hold the lock file at path. A writer that waited while the holder
+    removed the file holds a lock nobody else can see, so it opens the path again
+    until the file it holds is the one at the path."""
+    while True:
+        lock = open(path, "a")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            held, there = os.fstat(lock.fileno()), os.stat(path)
+            if (held.st_dev, held.st_ino) == (there.st_dev, there.st_ino):
+                return lock
+        except OSError:
+            pass
+        lock.close()
+
+
 def edit_pointer(owner, change, create=True):
     """Apply change(sessions) to the owner's pointer under its lock; an emptied
     list removes the pointer and the lift. A missing pointer is left missing
-    unless create is true."""
+    unless create is true. With no pointer left, the lock file goes too, while
+    still held, so no lock outlives its pointer."""
     folder = boundary_dir()
     os.makedirs(folder, mode=0o700, exist_ok=True)
     pointer = os.path.join(folder, owner + ".json")
-    with open(os.path.join(folder, owner + ".lock"), "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    lock_path = os.path.join(folder, owner + ".lock")
+    with take_lock(lock_path):
         try:
             with open(pointer, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
             sessions = [item for item in data.get("sessions", []) if isinstance(item, str)]
         except (OSError, ValueError, AttributeError):
-            if not create:
+            sessions = None
+        if sessions is not None or create:
+            sessions = change(sessions or [])
+            if sessions:
+                write_json(pointer, {"sessions": sessions, "updated": int(time.time())})
                 return
-            sessions = []
-        sessions = change(sessions)
-        if sessions:
-            write_json(pointer, {"sessions": sessions, "updated": int(time.time())})
-            return
-        for name in (pointer, os.path.join(folder, owner + ".lift")):
+        names = (lock_path,) if sessions is None else (pointer, os.path.join(folder, owner + ".lift"), lock_path)
+        for name in names:
             try:
                 os.unlink(name)
             except OSError:
@@ -1621,16 +1638,28 @@ print(text or "-")
 # Reaps session dirs whose owning session process is dead. A dir with no
 # readable owner is left alone: unknown is never treated as dead.
 sweep_all() {
-  local dir owner listener boundary pointer
+  local dir owner listener boundary pointer dead=""
   # Boundary pointers are per user, not per project: one whose owner is gone keeps
   # the block's cheap path off for every session, and the block never reaches it.
+  # A dead owner's pointer, lift and lock go together, under that lock; a lock
+  # with no pointer is one an older version left behind.
   boundary="${CRAFT_ANNOTATE_BOUNDARY_DIR:-$HOME/.cache/craft/annotate-boundary}"
-  for pointer in "$boundary"/*.json; do
+  for pointer in "$boundary"/*.json "$boundary"/*.lock; do
     [ -f "$pointer" ] || continue
-    owner="$(basename "$pointer" .json)"
+    owner="${pointer##*/}"
+    owner="${owner%.*}"
     is_number "$owner" || continue
-    pid_alive "$owner" || rm -f "$pointer" "$boundary/$owner.lift"
+    case " $dead " in *" $owner "*) continue ;; esac
+    pid_alive "$owner" || dead="$dead $owner"
   done
+  if [ -n "$dead" ]; then
+    # $dead is unquoted on purpose: it holds digit-only owners split on spaces.
+    python3 -c "$BOUNDARY_PY
+import sys
+
+for owner in sys.argv[1:]:
+    edit_pointer(owner, lambda sessions: [])" $dead || true
+  fi
   [ -n "$ROOT" ] || return 0
   for dir in "$ROOT"/.craft/annotations/*/; do
     [ -d "$dir" ] || continue
