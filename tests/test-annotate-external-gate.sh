@@ -559,10 +559,10 @@ assert_eq "a UserPromptSubmit entry runs the gate in prompt mode with timeout 10
   "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-external-gate.sh prompt" and .type == "command" and .timeout == 10)] | length' "$HOOKS_JSON")"
 assert_eq "PreToolUse keeps its three original entries" "Write|Edit,Write|Edit,Bash" \
   "$(jq -r '[.hooks.PreToolUse[] | select(.matcher != "*") | .matcher] | join(",")' "$HOOKS_JSON")"
-assert_eq "the push gate entry is untouched" "1" \
-  "$(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-gate.sh" and .timeout == 5000)] | length' "$HOOKS_JSON")"
-assert_eq "the context injector entry is untouched" "1" \
-  "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-craft-context.sh" and .timeout == 3000)] | length' "$HOOKS_JSON")"
+assert_eq "the push gate entry keeps its command and 10-second timeout" "1" \
+  "$(jq '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-gate.sh" and .timeout == 10)] | length' "$HOOKS_JSON")"
+assert_eq "the context injector entry keeps its command and 10-second timeout" "1" \
+  "$(jq '[.hooks.UserPromptSubmit[] | .hooks[] | select(.command == "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-craft-context.sh" and .timeout == 10)] | length' "$HOOKS_JSON")"
 assert_eq "no event was added" "7" "$(jq '.hooks | length' "$HOOKS_JSON")"
 assert_file_contains "the gate is documented in DESIGN.md" "annotate-external-gate.sh" "$PLUGIN_ROOT/DESIGN.md"
 
