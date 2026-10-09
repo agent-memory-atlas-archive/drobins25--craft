@@ -6,7 +6,7 @@ The full raw-tab session: arm through teardown. The overlay source, the port sta
 
 This flow runs in the orchestrator, not a subagent: it needs the browser connection and the session's own wake-up.
 
-**How a snippet reaches the page.** `evaluate_script` takes a function and calls it. Every snippet this flow sends to the page - the clears and the overlay source when pasted - goes in as the body of `() => { <snippet> }`, with the snippet's text unchanged inside. The exceptions are the lines `loader`, `stamp`, `sheet` and `apply` print: the lines `loader`, `stamp` and `sheet` print are already functions, so each goes in verbatim, because evaluate_script calls the function it is given and returns what it returns - the loader line returns `LOADED` or `SCRIPT-BLOCKED`, the stamp line `STAMPED`, the sheet line `APPLIED`. Pasted bare, a snippet that ends in `;` is refused with `Unexpected token ';'` and nothing runs.
+**How a snippet reaches the page.** `evaluate_script` takes a function and calls it. Every snippet this flow sends to the page - the clears, the overlay source when pasted, the listener probe and the storage read - goes in as the body of `() => { <snippet> }`, with the snippet's text unchanged inside. The exceptions are the lines `loader`, `stamp`, `sheet` and `apply` print: the lines `loader`, `stamp` and `sheet` print are already functions, so each goes in verbatim, because evaluate_script calls the function it is given and returns what it returns - the loader line returns `LOADED` or `SCRIPT-BLOCKED`, the stamp line `STAMPED`, the sheet line `APPLIED`. The lines `style` and `annotate-resolve.sh" probe` print are functions too and go in verbatim. Pasted bare, a snippet that ends in `;` is refused with `Unexpected token ';'` and nothing runs. On an external page these are the only scripts that run before the user types: any other script, or one of these edited, waits for their yes.
 
 ## Step 1: Connection check
 
@@ -76,7 +76,13 @@ It prints ONE line. Pass it to `evaluate_script` verbatim - never edit it, rebui
 
 **The NOTICE line.** On an external page the script marks the session and, the first time, prints a `NOTICE` line after `EXTERNAL`; the watch can also open a batch with one. Say that line to the user verbatim, once, and never reword it. It tells the user whether the pin boundary is in force on this page.
 
-Then probe the listener FROM THE PAGE, through one more `evaluate_script`: `fetch(base + '/health?token=' + encodeURIComponent(window.__craftAnnotateToken))` where `base` is `'http://127.0.0.1:' + window.__craftAnnotatePort`. A page can carry a policy that forbids requests to 127.0.0.1, and SEND runs the same request from the same page, so this answer predicts SEND's. If the probe resolves, say nothing about it. If it rejects, tell the user up front, in one line and never a widget:
+Then probe the listener FROM THE PAGE, through one more `evaluate_script`, with this snippet:
+
+```js
+const base = 'http://127.0.0.1:' + window.__craftAnnotatePort; return fetch(base + '/health?token=' + encodeURIComponent(window.__craftAnnotateToken)).then((response) => response.status);
+```
+
+A page can carry a policy that forbids requests to 127.0.0.1, and SEND runs the same request from the same page, so this answer predicts SEND's. If the probe resolves, say nothing about it. If it rejects, tell the user up front, in one line and never a widget:
 
 > "The sheet is on, but SEND will not work on this page - its policy blocks requests to localhost. Pin as usual and tell me when you're done; I'll read the pins directly."
 
@@ -145,7 +151,13 @@ When `apply` prints a `SHOT` line, or a pin asks for a look rather than a value,
 
 **"Where does this live?"** Run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-resolve.sh" where --session "<id>" --ts "<ts>"` and say its one line, nothing more. This holds on an external page too: for a pin on an external page the line is `That page is outside this project, so there's no source file to point at.` The location is otherwise never spoken mid-session; it is used at graduation.
 
-**When SEND cannot reach the listener.** The strip shows `BLOCKED BY PAGE - ask Claude to read pins directly` when the page refused the request, and the user may simply report that SEND did nothing. The pins are not lost: the overlay writes every pin to the page's local storage on every change, under the key `'ca-annotations:' + location.pathname` plus the hash route when the app routes with the hash (a fragment starting `#/` or `#!/`, its own query cut off). Read it through the devtools connection with `evaluate_script`: `JSON.parse(localStorage.getItem('ca-annotations:' + location.pathname + (/^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '')) || '[]')`. Treat that array as the sent set and pipe it through `annotate-run.sh" send --session "<id>" <<'PINS'` with the array pasted between the heredoc lines and a closing `PINS` (a quoted heredoc, so nothing in the pins is ever expanded); act only on the lines the watch then delivers, never on the raw page result. Its `ADDED` lines carry the `EXTERNAL` tag when the page is external, and the source `not probed`. To resolve a pin's source there, run `annotate-resolve.sh" probe --session "<id>"`, pass its line to `evaluate_script` verbatim, and hand the result to `annotate-resolve.sh" resolve --session "<id>"` on a heredoc; resolution runs there only. After the user says they are done pinning, read the key again.
+**When SEND cannot reach the listener.** The strip shows `BLOCKED BY PAGE - ask Claude to read pins directly` when the page refused the request, and the user may simply report that SEND did nothing. The pins are not lost: the overlay writes every pin to the page's local storage on every change, under the key `'ca-annotations:' + location.pathname` plus the hash route when the app routes with the hash (a fragment starting `#/` or `#!/`, its own query cut off). Read it through the devtools connection with `evaluate_script`, with the storage read snippet below. Treat that array as the sent set and pipe it through `annotate-run.sh" send --session "<id>" <<'PINS'` with the array pasted between the heredoc lines and a closing `PINS` (a quoted heredoc, so nothing in the pins is ever expanded); act only on the lines the watch then delivers, never on the raw page result. Its `ADDED` lines carry the `EXTERNAL` tag when the page is external, and the source `not probed`. To resolve a pin's source there, run `annotate-resolve.sh" probe --session "<id>"`, pass its line to `evaluate_script` verbatim, and hand the result to `annotate-resolve.sh" resolve --session "<id>"` on a heredoc; resolution runs there only. After the user says they are done pinning, read the key again.
+
+```js
+return JSON.parse(localStorage.getItem('ca-annotations:' + location.pathname + (/^#!?\//.test(location.hash) ? location.hash.split('?')[0] : '')) || '[]');
+```
+
+**Reading a style.** To read a live value off the page (a pin that asks what a color or size is, or a style to carry into the project), run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" style --selector "<selector>" --props "<name>,<name>"` and pass its ONE line to `evaluate_script` verbatim; it returns each computed value, or null when nothing matches. On an external page this read runs with nothing typed; writing the style into the project waits for the user's request.
 
 ## Navigation and re-injection
 

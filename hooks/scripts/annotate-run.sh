@@ -20,6 +20,7 @@
 #   annotate-run.sh ensure  [--root R] --session ID   (read beat: OK PORT p | REARMED PORT p STREAK k | GONE | FAILED; restarts a dead or hung listener)
 #   annotate-run.sh send    [--root R] --session ID   (POSTs the JSON pin array on stdin to the listener)
 #   annotate-run.sh review-clear [--root R]   (review flows: OPEN <id> <subject> per open run, else ONE line, a function that clears leftover annotate changes and returns CLEARED; needs no session, writes nothing)
+#   annotate-run.sh style   --selector CSS --props NAME[,NAME...]   (ONE line for evaluate_script that returns the computed value of each named property on the first element the selector matches, or null; needs no session, writes nothing, contacts no listener)
 #   annotate-run.sh disarm  [--root R] --session ID
 #
 # announce pushes a reload event to every page holding the session's stream and
@@ -1659,6 +1660,33 @@ print(text or "-")
   echo "() => { $clear return 'CLEARED'; }"
 }
 
+# cmd_style - ONE line for evaluate_script that reads the computed value of
+# each named property on the first element the selector matches and returns
+# them as {name: value}, or null when nothing matches. The selector and the
+# names ride in the line only as JSON data, so the external-page boundary can
+# recognise the line as this verb's own. It writes nothing, needs no session
+# and contacts no listener.
+cmd_style() {
+  [ -n "$SELECTOR" ] || die "--selector <css> is required"
+  [ -n "$PROPS" ] || die "--props <name,name,...> is required"
+  python3 - "$SELECTOR" "$PROPS" <<'PYEOF' || exit 1
+import json
+import re
+import sys
+
+names = [name.strip() for name in sys.argv[2].split(",")]
+if any(not re.match(r"^-{0,2}[A-Za-z][A-Za-z0-9-]*$", name) for name in names):
+    sys.stderr.write("annotate-run: --props takes CSS property names separated by commas\n")
+    sys.exit(1)
+sys.stdout.write(
+    "() => { const el = document.querySelector(%s); if (!el) return null; "
+    "const cs = getComputedStyle(el); const out = {}; "
+    "for (const name of %s) out[name] = cs.getPropertyValue(name); return out; }\n"
+    % (json.dumps(sys.argv[1]), json.dumps(names))
+)
+PYEOF
+}
+
 # Reaps session dirs whose owning session process is dead. A dir with no
 # readable owner is left alone: unknown is never treated as dead.
 sweep_all() {
@@ -1704,7 +1732,7 @@ for owner in sys.argv[1:]:
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|watch|sheet|kind|apply|stamp|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|watch|sheet|kind|style|apply|stamp|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -1724,6 +1752,8 @@ NO_RUN=0
 WATCH_ONCE=0
 PAGE=""
 FILE=""
+SELECTOR=""
+PROPS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root)      [ $# -ge 2 ] || die "--root needs a value"; ROOT_ARG="$2"; shift 2 ;;
@@ -1736,6 +1766,8 @@ while [ $# -gt 0 ]; do
     --key)       [ $# -ge 2 ] || die "--key needs a value"; KEY="$2"; shift 2 ;;
     --page)      [ $# -ge 2 ] || die "--page needs a value"; PAGE="$2"; shift 2 ;;
     --file)      [ $# -ge 2 ] || die "--file needs a value"; FILE="$2"; shift 2 ;;
+    --selector)  [ $# -ge 2 ] || die "--selector needs a value"; SELECTOR="$2"; shift 2 ;;
+    --props)     [ $# -ge 2 ] || die "--props needs a value"; PROPS="$2"; shift 2 ;;
     --add)       SHEET_ADD=1; shift ;;
     --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; APPLY_DROPS+=("$2"); shift 2 ;;
     --target)    [ $# -ge 2 ] || die "--target needs a value"; case "$2" in ?*=?*) ;; *) die "--target must look like TS=SELECTOR" ;; esac; APPLY_TARGETS+=("$2"); shift 2 ;;
@@ -1772,6 +1804,7 @@ case "$VERB" in
   ensure) cmd_ensure ;;
   send)   cmd_send ;;
   review-clear) cmd_review_clear ;;
+  style)  cmd_style ;;
   disarm) cmd_disarm ;;
   *)      die "unknown verb: $VERB" ;;
 esac

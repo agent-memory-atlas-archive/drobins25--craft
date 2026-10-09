@@ -58,6 +58,9 @@ BROWSER_TOOLS = {"evaluate_script", "take_screenshot", "take_snapshot", "list_pa
 # These two save their output to any path named in filePath instead of returning it,
 # so they run on their own only when the result comes back inline.
 BROWSER_FILE_WRITERS = {"take_screenshot", "take_snapshot"}
+# evaluate_script runs code in the page, so it runs on its own only when its
+# function is one of craft's own page scripts (page_script_allowed below).
+PAGE_SCRIPT_TOOL = "evaluate_script"
 PLAIN_TOOLS = {"ToolSearch", "TaskOutput", "TaskStop"}
 
 # Only these script/verb pairs run while blocked. clear ends the boundary, bake and
@@ -65,10 +68,54 @@ PLAIN_TOOLS = {"ToolSearch", "TaskOutput", "TaskStop"}
 ALLOWED_VERBS = {
     "annotate-run.sh": {
         "arm", "status", "ensure", "begin", "watch", "wait", "sheet", "apply", "stamp",
-        "loader", "kind", "send", "announce", "review-clear",
+        "loader", "kind", "send", "announce", "review-clear", "style",
     },
     "annotate-resolve.sh": {"where"},
 }
+
+# The page scripts craft prints. Each is fixed code with its data spliced in;
+# a slot (INT, STR, STR_LIST, ANY_LIST, URL_QUOTED) must hold exactly one value
+# of that kind, so data can never become code. Kept in step with the printers
+# in annotate-run.sh (loader, stamp, sheet and apply's PASTE line, style) and
+# annotate-resolve.sh (probe); tests/test-annotate-external-gate.sh runs every
+# printer through this list. review-clear and the pasted snippets are matched
+# against the reference fences instead (fixed_scripts).
+INT, STR, STR_LIST, ANY_LIST, URL_QUOTED = "int", "str", "str-list", "any-list", "url-quoted"
+RUN_STAMP = ["window.__craftAnnotateRun = ", STR, "; "]
+LOADER_HEAD = ["async () => { window.__craftAnnotatePort = ", INT, "; window.__craftAnnotateToken = ", STR, "; "]
+LOADER_TAIL = [
+    "if (window.__craftAnnotateInstalled) return 'LOADED'; try { return await new Promise((resolve) => { "
+    "let timer = null; const settle = (status) => { clearTimeout(timer); resolve(status); }; "
+    "const el = document.createElement('script'); el.src = 'http://127.0.0.1:", INT,
+    "/overlay.js?token=", URL_QUOTED, "'; el.setAttribute('data-craft-annotate-injected', ''); "
+    "el.onload = () => settle(window.__craftAnnotateInstalled ? 'LOADED' : 'SCRIPT-BLOCKED'); "
+    "el.onerror = () => settle('SCRIPT-BLOCKED'); timer = setTimeout(() => settle('SCRIPT-BLOCKED'), 3000); "
+    "document.head.appendChild(el); }); } catch (error) { return 'SCRIPT-BLOCKED'; } }",
+]
+STAMP_HEAD = ["() => { window.__craftAnnotatePort = ", INT, "; window.__craftAnnotateToken = ", STR, "; "]
+STAMP_TAIL = ["return 'STAMPED'; }"]
+PRINTED_SCRIPTS = (
+    LOADER_HEAD + LOADER_TAIL,
+    LOADER_HEAD + RUN_STAMP + LOADER_TAIL,
+    STAMP_HEAD + STAMP_TAIL,
+    STAMP_HEAD + RUN_STAMP + STAMP_TAIL,
+    ["() => { let s = document.getElementById('ca-session-css'); if (!s) { s = document.createElement('style'); "
+     "s.id = 'ca-session-css'; s.setAttribute('data-craft-annotate-injected', ''); } s.textContent = ", STR,
+     "; document.head.appendChild(s); return 'APPLIED'; }"],
+    ["() => (typeof window.__craftAnnotateProbe === 'function' ? window.__craftAnnotateProbe(", ANY_LIST, ") : [])"],
+    ["() => { const el = document.querySelector(", STR, "); if (!el) return null; const cs = getComputedStyle(el); "
+     "const out = {}; for (const name of ", STR_LIST, ") out[name] = cs.getPropertyValue(name); return out; }"],
+)
+INT_TEXT = re.compile(r"[0-9]+")
+URL_QUOTED_TEXT = re.compile(r"[A-Za-z0-9_.~%-]*")
+
+# The snippets the flow pastes as the body of () => { ... }: fences read from
+# the plugin's own reference files, (file, fence opener lines).
+SNIPPET_FENCES = (
+    ("commands/references/annotate-overlay.md", ("```overlay-source", "```annotate-clear")),
+    ("commands/references/annotate-inline.md", ("```js",)),
+)
+CLEAR_FENCE = ("commands/references/annotate-overlay.md", "```annotate-clear")
 
 PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}"
 UNQUOTED_FORBIDDEN = set(";&|<>()$\\`'")
@@ -380,6 +427,98 @@ def command_allowed(command, owner):
     return scan_args(args) and args_bound(args, owner)
 
 
+def reject_constant(name):
+    raise ValueError("not a JSON constant: %s" % name)
+
+
+JSON_DATA = json.JSONDecoder(parse_constant=reject_constant)
+
+
+def take_slot(text, pos, kind):
+    """The end of one value of the slot's kind starting at pos, or None."""
+    if kind in (INT, URL_QUOTED):
+        found = (INT_TEXT if kind == INT else URL_QUOTED_TEXT).match(text, pos)
+        return found.end() if found else None
+    try:
+        value, end = JSON_DATA.raw_decode(text, pos)
+    except ValueError:
+        return None
+    if kind == STR and isinstance(value, str):
+        return end
+    if kind == ANY_LIST and isinstance(value, list):
+        return end
+    if kind == STR_LIST and isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return end
+    return None
+
+
+def matches_printed(text, parts):
+    """True when text is exactly this printed shape: every literal part in
+    order, and every slot one value of its kind."""
+    pos = 0
+    for part in parts:
+        if part in (INT, STR, STR_LIST, ANY_LIST, URL_QUOTED):
+            pos = take_slot(text, pos, part)
+            if pos is None:
+                return False
+        elif text.startswith(part, pos):
+            pos += len(part)
+        else:
+            return False
+    return pos == len(text)
+
+
+def fences(relative, openers):
+    """Bodies of every fence in a plugin reference file that opens with one of
+    the opener lines, without their final newline."""
+    root = os.environ.get("CRAFT_GATE_PLUGIN_ROOT", "")
+    if not root:
+        return []
+    try:
+        with open(os.path.join(root, relative), "r", encoding="utf-8", newline="") as handle:
+            lines = handle.read().split("\n")
+    except (OSError, UnicodeDecodeError):
+        return []
+    bodies = []
+    body = None
+    for line in lines:
+        if body is None:
+            if line in openers:
+                body = []
+        elif line == "```":
+            bodies.append("\n".join(body))
+            body = None
+        else:
+            body.append(line)
+    return bodies
+
+
+def fixed_scripts():
+    """Every exact script text the flow sends from a reference fence: each
+    snippet as the body of () => { ... } on one line or on its own lines, and
+    the line review-clear prints from the annotate-clear fence."""
+    scripts = set()
+    for relative, openers in SNIPPET_FENCES:
+        for body in fences(relative, openers):
+            for before in (" ", "\n"):
+                for after in (" ", "\n"):
+                    scripts.add("() => {" + before + body + after + "}")
+    for body in fences(CLEAR_FENCE[0], (CLEAR_FENCE[1],)):
+        scripts.add("() => { " + body + " return 'CLEARED'; }")
+    return scripts
+
+
+def page_script_allowed(function):
+    """True only for one of craft's own page scripts, exactly as printed or
+    pasted (one trailing newline aside)."""
+    if not isinstance(function, str):
+        return False
+    text = function[:-1] if function.endswith("\n") else function
+    if any(matches_printed(text, parts) for parts in PRINTED_SCRIPTS):
+        return True
+    return text in fixed_scripts()
+
+
 def tool_allowed(tool_name, tool_input, owner):
     if tool_name in PLAIN_TOOLS:
         return True
@@ -388,6 +527,8 @@ def tool_allowed(tool_name, tool_input, owner):
             name = tool_name[len(prefix):]
             if name in BROWSER_FILE_WRITERS and tool_input.get("filePath") not in (None, ""):
                 return False
+            if name == PAGE_SCRIPT_TOOL:
+                return page_script_allowed(tool_input.get("function"))
             return name in BROWSER_TOOLS
     if tool_name == "Read":
         return read_allowed(tool_input)
