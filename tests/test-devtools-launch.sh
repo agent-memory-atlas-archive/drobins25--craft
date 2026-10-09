@@ -173,6 +173,25 @@ expect_eq "a failed flag write still prints the copy" "$OUT" "$COPY"
 RC=0; CRAFT_DEVTOOLS_KEY=s2 TMPDIR="$TMP/does-not-exist" node "$LAUNCH" notice >/dev/null || RC=$?
 expect_eq "notice always exits 0" "$RC" "0"
 
+# two simultaneous notices print one line
+rm -f "$TMPDIR"/craft-devtools-noticed-*
+write_marker s6 isolated $$
+( notice_for s6 > "$TMP/n1" ) & N1=$!
+( notice_for s6 > "$TMP/n2" ) & N2=$!
+( notice_for s6 > "$TMP/n3" ) & N3=$!
+wait "$N1" "$N2" "$N3"
+expect_eq "three concurrent notices print one line" "$(cat "$TMP/n1" "$TMP/n2" "$TMP/n3" | grep -cF "$COPY" || true)" "1"
+
+# a pre-planted symlink at the flag path is never written through
+rm -f "$TMPDIR"/craft-devtools-noticed-*
+ln -s "$TMP/victim" "$TMPDIR/craft-devtools-noticed-$$"
+write_marker s7 isolated $$
+SYM_OUT="$(notice_for s7)"
+[ ! -e "$TMP/victim" ] && NOT_WRITTEN=yes || NOT_WRITTEN=no
+expect_eq "a dangling symlink target is never created" "$NOT_WRITTEN" "yes"
+expect_eq "a pre-planted flag path stays silent" "$SYM_OUT" ""
+rm -f "$TMPDIR/craft-devtools-noticed-$$"
+
 # the copy lives exactly once
 N="$(grep -cF "$COPY" "$LAUNCH" || true)"
 expect_eq "the copy appears exactly once in devtools-launch.cjs" "$N" "1"

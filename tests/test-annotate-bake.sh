@@ -82,7 +82,9 @@ assert_eq "one closing script tag" "1" "$(grep -c '</script>' "$PAGE")"
 assert_eq "the element opens right after the body content" '<html><body><p>x</p><script id="ca-overlay">' "$(sed -n 1p "$PAGE")"
 assert_eq "stamp 1 is the port" "window.__craftAnnotatePort = $PORT;" "$(sed -n 2p "$PAGE")"
 assert_eq "stamp 2 is the baked flag" "window.__craftAnnotateBaked = true;" "$(sed -n 3p "$PAGE")"
-assert_eq "the fence follows the stamps" "$(printf '%s\n' "$FENCE" | sed -n 1p)" "$(sed -n 4p "$PAGE")"
+BTOKEN="$(tr -d '\n' < "$ROOT/.craft/annotations/bk1/token")"
+assert_eq "stamp 3 is the token" "window.__craftAnnotateToken = \"$BTOKEN\";" "$(sed -n 4p "$PAGE")"
+assert_eq "the fence follows the stamps" "$(printf '%s\n' "$FENCE" | sed -n 1p)" "$(sed -n 5p "$PAGE")"
 assert_eq "the page ends with the closing tags" "</script>" "$(tail -2 "$PAGE" | head -1)"
 assert_eq "the body closes right after the element" "</body></html>" "$(tail -1 "$PAGE")"
 assert_eq "no context stamp" "0" "$(grep -c '^window.__craftAnnotateContext = ' "$PAGE" || true)"
@@ -91,10 +93,10 @@ assert_eq "no src attribute on the element" "0" "$(grep -c '<script[^>]* src=' "
 begin_test "served, printed and baked bytes equal the reference fence"
 A="$(mktemp)"; B="$(mktemp)"; C="$(mktemp)"; D="$(mktemp)"
 fence_of_ref > "$A"
-curl -s --max-time 5 -o "$B" "http://127.0.0.1:$PORT/overlay.js" 2>/dev/null || true
+curl -s --max-time 5 -o "$B" "http://127.0.0.1:$PORT/overlay.js?token=$BTOKEN" 2>/dev/null || true
 python3 "$CHANNEL" --print-overlay > "$C" 2>/dev/null || true
 LINES="$(wc -l < "$PAGE" | tr -d ' ')"
-sed -n "4,$((LINES - 1))p" "$PAGE" > "$D"
+sed -n "5,$((LINES - 1))p" "$PAGE" > "$D"
 for pair in "B:served" "C:printed" "D:baked"; do
   var="${pair%%:*}"; label="${pair##*:}"
   rc=0; cmp -s "$A" "${!var}" || rc=$?
@@ -112,6 +114,13 @@ assert_eq "bake reports the new port" "BAKED $PAGE PORT $PORT" "$OUT"
 assert_eq "still one element" "1" "$(grep -c '<script id="ca-overlay">' "$PAGE")"
 assert_eq "the stamp carries the new port" "window.__craftAnnotatePort = $PORT;" "$(sed -n 2p "$PAGE")"
 assert_eq "one port stamp in the page" "1" "$(grep -c '^window.__craftAnnotatePort = ' "$PAGE")"
+
+begin_test "bake writes the token on line 4; a re-bake leaves exactly one token line"
+BTOKEN="$(tr -d '\n' < "$ROOT/.craft/annotations/bk1/token")"
+assert_eq "line 4 is the token stamp" "window.__craftAnnotateToken = \"$BTOKEN\";" "$(sed -n 4p "$PAGE")"
+assert_eq "exactly one token line after the re-bake" "1" "$(grep -c '^window.__craftAnnotateToken = ' "$PAGE")"
+run_in "$ROOT" bake --session bk1 --file "$PAGE" >/dev/null
+assert_eq "still one token line after another bake" "1" "$(grep -c '^window.__craftAnnotateToken = ' "$PAGE")"
 
 begin_test "bake then strip restores the original bytes"
 printf '%s\n' '<html>' '<body>' '<p>x</p>' '</body>' '</html>' > "$PAGE"

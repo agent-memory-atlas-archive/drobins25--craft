@@ -34,7 +34,13 @@ GET /overlay.js serves the overlay script. The listener holds no copy of it:
 every request reads the one fence in commands/references/annotate-overlay.md,
 so an edit or a plugin update is served on the next load.
 
-Usage: annotate-channel.py --dir <session-dir>
+Every route refuses (403, the allow-origin header kept, connection closed) a
+request whose `token` query value is not the one in <session-dir>/token or
+whose Host is not 127.0.0.1 or localhost; the CORS preflight is checked for
+Host alone. A request with Transfer-Encoding is answered 411, and a connection
+that stalls longer than --socket-timeout is closed.
+
+Usage: annotate-channel.py --dir <session-dir> [--socket-timeout SECONDS]
        annotate-channel.py --print-overlay
        annotate-channel.py --print-clear
 
@@ -48,12 +54,16 @@ it is listening. Python 3.9, standard library only.
 """
 
 import argparse
+import hmac
 import json
 import os
 import queue
+import re
+import secrets
 import select
 import socket
 import sys
+import tempfile
 import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -61,6 +71,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 MAX_BODY_BYTES = 1024 * 1024
+DEFAULT_SOCKET_TIMEOUT = 10.0
 
 ALLOW_ORIGIN = "*"
 ALLOW_HEADERS = "Content-Type"
@@ -266,9 +277,11 @@ class Registry:
 class Channel(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, session_dir):
+    def __init__(self, session_dir, token, socket_timeout=DEFAULT_SOCKET_TIMEOUT):
         super().__init__(("127.0.0.1", 0), Handler)
         self.session_dir = session_dir
+        self.token = token
+        self.socket_timeout = socket_timeout
         self.current_path = os.path.join(session_dir, "current.json")
         self.history_path = os.path.join(session_dir, "history.jsonl")
         self.changes_path = os.path.join(session_dir, "changes.jsonl")
@@ -363,8 +376,27 @@ class Channel(ThreadingHTTPServer):
             return self.seq
 
 
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
+HOST_PORT_SUFFIX = re.compile(r":[0-9]+$")
+
+
+def host_is_local(header):
+    """True when the Host header names this machine: 127.0.0.1 or localhost,
+    any case, with an optional :port. A browser sends the page's own host, so a
+    rebound name (evil.example resolving to 127.0.0.1) never matches."""
+    if not header:
+        return False
+    return HOST_PORT_SUFFIX.sub("", header.strip().lower()) in LOCAL_HOSTS
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def setup(self):
+        # A stalled client frees its thread: reads and writes on the accepted
+        # connection give up after the server's socket timeout.
+        self.timeout = self.server.socket_timeout
+        super().setup()
 
     def log_message(self, format, *args):  # noqa: A002 - signature fixed by the base class
         pass
@@ -380,6 +412,57 @@ class Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _refuse(self, status, error):
+        """Answers a refused request and closes the connection. The allow-origin
+        header stays on the refusal: without it the page's fetch rejects and the
+        strip would say BLOCKED BY PAGE instead of NOT ARMED. Bytes the client
+        already sent are discarded unread by the handler (never parsed), so
+        closing does not reset the connection under the answer."""
+        self.close_connection = True
+        body = json.dumps({"ok": False, "error": error}).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.wfile.flush()
+        self._discard_declared_body()
+
+    def _discard_declared_body(self):
+        """Drops the body a refused request declared (capped), after the answer
+        went out, so the close is a clean FIN rather than a reset."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            self.connection.shutdown(socket.SHUT_WR)
+            remaining = min(max(length, 0), MAX_BODY_BYTES)
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except (OSError, ValueError):
+            pass
+
+    def _admitted(self, route):
+        """True when the request may be served; otherwise it has been answered.
+        Checks in order, all before any body is read or any state changes: the
+        Host names this machine (defeats DNS rebinding), no Transfer-Encoding
+        (the listener frames bodies by Content-Length only), and the token
+        query value equals the session's."""
+        if not host_is_local(self.headers.get("Host")):
+            self._refuse(403, "forbidden")
+            return False
+        if self.headers.get("Transfer-Encoding") is not None:
+            self._refuse(411, "length required")
+            return False
+        supplied = (parse_qs(route.query).get("token") or [""])[0]
+        if not hmac.compare_digest(supplied.encode("utf-8"), self.server.token.encode("utf-8")):
+            self._refuse(403, "forbidden")
+            return False
+        return True
+
     def _read_body(self):
         """Body bytes, or None after answering 400/413 itself."""
         try:
@@ -394,6 +477,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def do_OPTIONS(self):
+        # The preflight URL carries the page's query, but the browser sends no
+        # token on a preflight, so only the Host is checked.
+        if not host_is_local(self.headers.get("Host")):
+            self._refuse(403, "forbidden")
+            return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
         self.send_header("Access-Control-Allow-Headers", ALLOW_HEADERS)
@@ -490,21 +578,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         route = urlsplit(self.path)
+        if not self._admitted(route):
+            return
         if route.path == "/applied":
             self._serve_applied(route.query)
-        elif self.path == "/overlay.js":
+        elif route.path == "/overlay.js":
             self._serve_overlay()
-        elif self.path == "/health":
+        elif route.path == "/health":
             self._send(200, {
                 "ok": True,
                 "port": self.server.server_address[1],
                 "clients": self.server.client_count(),
             })
-        elif self.path == "/session.css":
+        elif route.path == "/session.css":
             self._serve_session_css()
-        elif self.path == "/events":
+        elif route.path == "/events":
             self._serve_stream(self.server.events)
-        elif self.path == "/changes":
+        elif route.path == "/changes":
             self._serve_stream(self.server.change_streams)
         else:
             self._send(404, {"ok": False, "error": "not found"})
@@ -522,10 +612,13 @@ class Handler(BaseHTTPRequestHandler):
         return parsed
 
     def do_POST(self):
+        route = urlsplit(self.path)
+        if not self._admitted(route):
+            return
         body = self._read_body()
         if body is None:
             return
-        if self.path == "/pins":
+        if route.path == "/pins":
             try:
                 pins = json.loads(body.decode("utf-8"))
             except (ValueError, UnicodeDecodeError):
@@ -545,30 +638,76 @@ class Handler(BaseHTTPRequestHandler):
             sent_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             seq = self.server.replace_state(False, pins, sent_at, deleted)
             self._send(200, {"ok": True, "seq": seq, "count": len(pins)})
-        elif self.path == "/sheet":
+        elif route.path == "/sheet":
             job = self._json_object_with_id(body)
             if job is not None:
                 delivered = self.server.change_streams.broadcast(
                     b"event: sheet\ndata: " + json.dumps(job).encode("utf-8") + b"\n\n")
                 self._send(200, {"ok": True, "delivered": delivered})
-        elif self.path == "/applied":
+        elif route.path == "/applied":
             report = self._json_object_with_id(body)
             if report is not None:
                 self.server.hold_report(report)
                 self._send(200, {"ok": True})
-        elif self.path == "/clear":
+        elif route.path == "/clear":
             seq = self.server.replace_state(True, [])
             self._send(200, {"ok": True, "seq": seq, "cleared": True})
-        elif self.path == "/announce":
+        elif route.path == "/announce":
             delivered = self.server.broadcast(RELOAD_EVENT)
             self._send(200, {"ok": True, "delivered": delivered})
         else:
             self._send(404, {"ok": False, "error": "not found"})
 
 
+TOKEN_FILE = "token"
+TOKEN_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def load_or_create_token(session_dir):
+    """Return the session's token, creating the file when it does not exist.
+
+    The file is 32 lowercase hex characters, mode 0600, and lives as long as
+    the session folder, so a re-armed listener keeps the token that pages and
+    baked mockups already carry. A malformed file is replaced atomically."""
+    path = os.path.join(session_dir, TOKEN_FILE)
+    for _ in range(3):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = handle.read().strip()
+            if TOKEN_PATTERN.match(existing):
+                return existing
+            replace = True
+        except FileNotFoundError:
+            replace = False
+        except OSError:
+            replace = True
+        token = secrets.token_hex(16)
+        if not replace:
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                continue
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(token + "\n")
+            return token
+        fd, temp = tempfile.mkstemp(dir=session_dir, prefix=TOKEN_FILE + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(token + "\n")
+            os.replace(temp, path)
+        except OSError:
+            if os.path.exists(temp):
+                os.unlink(temp)
+            raise
+        return token
+    raise OSError("could not settle the session token file")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dir", help="the session directory holding current.json")
+    parser.add_argument("--socket-timeout", type=float, default=DEFAULT_SOCKET_TIMEOUT, metavar="SECONDS",
+                        help="seconds a connection may stall before it is closed (default %(default)s)")
     parser.add_argument("--print-overlay", action="store_true", help="print the overlay script and exit")
     parser.add_argument("--print-clear", action="store_true", help="print the canonical annotate clear and exit")
     args = parser.parse_args()
@@ -593,7 +732,10 @@ def main():
         parser.error("--dir is required unless --print-overlay or --print-clear is given")
 
     os.makedirs(args.dir, exist_ok=True)
-    server = Channel(args.dir)
+    # The token file exists before the port is announced, so the arm that reads
+    # the port can stamp the token at once. Callers read it from the file.
+    token = load_or_create_token(args.dir)
+    server = Channel(args.dir, token, args.socket_timeout)
     print("PORT %d" % server.server_address[1], flush=True)
     try:
         server.serve_forever()

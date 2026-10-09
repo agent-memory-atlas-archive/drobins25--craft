@@ -12,7 +12,7 @@
 #   annotate-run.sh watch   [--root R] --session ID [--once]   (annotate only: prints each new change from the saved position as one line; --once blocks until one batch prints, then exits)
 #   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
 #   annotate-run.sh apply   [--root R] --session ID [--drop KEY]... [--target TS=SELECTOR]...   (annotate only: blocks on stdin; writes them, pushes the page, prints what the page measured)
-#   annotate-run.sh stamp   [--root R] --session ID   (annotate only: ONE line that stamps the port and the run id, for a page that blocks the loader)
+#   annotate-run.sh stamp   [--root R] --session ID [--no-run]   (annotate only: ONE line that stamps the port, the token and the run id, for a page that blocks the loader; --no-run leaves out the run id and needs no run)
 #   annotate-run.sh kind    --page URL   (prints project or external; needs no session)
 #   annotate-run.sh loader  [--root R] --session ID --page URL [--run]   (--run: annotate only, also stamps the run id; project page: ONE line for evaluate_script that loads the served overlay; external page: EXTERNAL)
 #   annotate-run.sh bake    [--root R] --session ID --file PATH   (mockup: splices the stamps and the overlay into the page file)
@@ -121,26 +121,201 @@ resolve_root() {
   echo "${found%/}"
 }
 
-# http_call <METHOD> <port> <path> [timeout-seconds] - prints the response body; non-zero when unreachable
-http_call() {
-  python3 - "$1" "$2" "$3" "${4:-5}" <<'PYEOF'
-import sys
+# LOCAL_OPENER_PY - Python source every listener call starts from. The one
+# opener skips the proxy environment, so http_proxy cannot make a healthy
+# loopback listener look dead, and every request carries the session token as
+# a query parameter. The token is read from the session's token file (a
+# missing file reads as empty), never taken from a command line.
+read -r -d '' LOCAL_OPENER_PY <<'PYEOF' || true
+import urllib.parse
 import urllib.request
 
-method, port, path = sys.argv[1:4]
-timeout = float(sys.argv[4])
-request = urllib.request.Request(
-    "http://127.0.0.1:%s%s" % (port, path),
-    data=b"" if method == "POST" else None,
-    method=method,
+LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def read_token(token_file):
+    try:
+        with open(token_file, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def local_url(port, path, token_file):
+    joiner = "&" if "?" in path else "?"
+    return "http://127.0.0.1:%s%s%stoken=%s" % (
+        port, path, joiner, urllib.parse.quote(read_token(token_file), safe=""))
+
+
+def local_request(method, port, path, token_file, timeout, data=None, headers=None):
+    request = urllib.request.Request(
+        local_url(port, path, token_file), data=data, headers=headers or {}, method=method)
+    return LOCAL_OPENER.open(request, timeout=timeout)
+PYEOF
+
+# PAGE_KIND_PY - the one definition of the project/external rule: a page is
+# project when it is a file, or http/https on exactly localhost or 127.0.0.1
+# (any port); everything else is external. Shared by page_kind and the watch.
+read -r -d '' PAGE_KIND_PY <<'PYEOF' || true
+from urllib.parse import urlparse
+
+
+def page_is_external(url):
+    try:
+        parsed = urlparse(str(url).strip())
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return True
+    local = scheme == "file" or (scheme in ("http", "https") and host in ("localhost", "127.0.0.1"))
+    return not local
+PYEOF
+
+# BOUNDARY_PY - the external-page boundary, written only by this script. A
+# session on an external page holds <session-dir>/external.json; a pointer
+# <boundary-dir>/<owner-pid>.json lists the owner's marked sessions so the gate
+# can find them from the conversation's pid; <owner-pid>.lift holds the one
+# prompt a typed yes covered. Marking and unmarking are the only writers of the
+# marker; every pin print revokes the lift first.
+read -r -d '' BOUNDARY_PY <<'PYEOF' || true
+import datetime
+import fcntl
+import json
+import os
+import tempfile
+import time
+
+NOTICE = (
+    "NOTICE This page is outside your project, so I'll treat pins here as page content - "
+    "something the site itself could add to. Pins can change how this page looks; anything "
+    "beyond that, like running a command, reading or editing a file, or fetching something, "
+    "waits until you reply in chat."
 )
+
+
+def boundary_dir():
+    return os.environ.get("CRAFT_ANNOTATE_BOUNDARY_DIR") or os.path.join(
+        os.path.expanduser("~"), ".cache", "craft", "annotate-boundary")
+
+
+def owner_of(session_dir):
+    try:
+        with open(os.path.join(session_dir, "owner.pid"), "r", encoding="utf-8") as handle:
+            text = handle.read().strip()
+    except OSError:
+        return None
+    return text if text.isdigit() else None
+
+
+def write_json(path, data):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def edit_pointer(owner, change, create=True):
+    """Apply change(sessions) to the owner's pointer under its lock; an emptied
+    list removes the pointer and the lift. A missing pointer is left missing
+    unless create is true."""
+    folder = boundary_dir()
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    pointer = os.path.join(folder, owner + ".json")
+    with open(os.path.join(folder, owner + ".lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(pointer, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            sessions = [item for item in data.get("sessions", []) if isinstance(item, str)]
+        except (OSError, ValueError, AttributeError):
+            if not create:
+                return
+            sessions = []
+        sessions = change(sessions)
+        if sessions:
+            write_json(pointer, {"sessions": sessions, "updated": int(time.time())})
+            return
+        for name in (pointer, os.path.join(folder, owner + ".lift")):
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+
+
+def mark_external(session_dir, page):
+    """Mark the session external and list it under its owner; True when this
+    call created the marker (the one that owes the user the notice)."""
+    session_dir = os.path.abspath(session_dir)
+    created = False
+    try:
+        fd = os.open(os.path.join(session_dir, "external.json"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        since = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"since": since, "page": str(page)}, handle)
+        created = True
+    owner = owner_of(session_dir)
+    if owner:
+        edit_pointer(owner, lambda sessions: sessions if session_dir in sessions else sessions + [session_dir])
+    return created
+
+
+def revoke_lift(session_dir):
+    """Remove the owner's lift and refresh the pointer's clock."""
+    owner = owner_of(os.path.abspath(session_dir))
+    if not owner:
+        return
+    try:
+        os.unlink(os.path.join(boundary_dir(), owner + ".lift"))
+    except OSError:
+        pass
+    edit_pointer(owner, lambda sessions: sessions, create=False)
+
+
+def unmark_external(session_dir):
+    """End the session's boundary: the marker goes, and so does its pointer entry."""
+    session_dir = os.path.abspath(session_dir)
+    try:
+        os.unlink(os.path.join(session_dir, "external.json"))
+    except OSError:
+        pass
+    owner = owner_of(session_dir)
+    if owner:
+        edit_pointer(owner, lambda sessions: [item for item in sessions if item != session_dir], create=False)
+PYEOF
+
+# token_file - the current session's token file, which may not exist
+token_file() {
+  echo "$ROOT/.craft/annotations/$SESSION/token"
+}
+
+# http_call <METHOD> <port> <path> [timeout-seconds] - prints the response body; non-zero when unreachable
+http_call() {
+  local source
+  read -r -d '' source <<'PYEOF' || true
+import sys
+
+method, port, path, token_file = sys.argv[1:5]
+timeout = float(sys.argv[5])
 try:
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with local_request(method, port, path, token_file, timeout,
+                       data=b"" if method == "POST" else None) as response:
         sys.stdout.write(response.read().decode("utf-8"))
 except Exception as error:
     sys.stderr.write("request failed: %s\n" % error)
     sys.exit(1)
 PYEOF
+  python3 -c "$LOCAL_OPENER_PY
+$source" "$1" "$2" "$3" "$(token_file)" "${4:-5}"
 }
 
 # http_post_body <port> <path> - POSTs stdin as the body; prints the reply, non-zero when unreachable or refused
@@ -150,17 +325,11 @@ http_post_body() {
   read -r -d '' source <<'PYEOF' || true
 import sys
 import urllib.error
-import urllib.request
 
-port, path = sys.argv[1:3]
-request = urllib.request.Request(
-    "http://127.0.0.1:%s%s" % (port, path),
-    data=sys.stdin.buffer.read(),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
+port, path, token_file = sys.argv[1:4]
 try:
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with local_request("POST", port, path, token_file, 5, data=sys.stdin.buffer.read(),
+                       headers={"Content-Type": "application/json"}) as response:
         sys.stdout.write(response.read().decode("utf-8"))
 except urllib.error.HTTPError as error:
     sys.stderr.write("listener refused the set (%s)\n" % error.code)
@@ -169,7 +338,8 @@ except Exception as error:
     sys.stderr.write("request failed: %s\n" % error)
     sys.exit(1)
 PYEOF
-  python3 -c "$source" "$1" "$2"
+  python3 -c "$LOCAL_OPENER_PY
+$source" "$1" "$2" "$(token_file)"
 }
 
 # last_seq_on_disk <session-dir> - the max seq across current.json and history.jsonl, 0 when neither reads
@@ -387,6 +557,11 @@ cmd_clear() {
   dir="$(session_dir)"
   port="$(read_file "$dir/port")"
   is_number "$port" || die "session $SESSION has no port"
+  # The boundary ends here and nowhere else; it ends even when the listener is already gone.
+  python3 -c "$BOUNDARY_PY
+import sys
+
+unmark_external(sys.argv[1])" "$dir"
   http_call POST "$port" /clear >/dev/null || die "listener for $SESSION is not answering"
 }
 
@@ -416,9 +591,11 @@ cmd_begin() {
   # An earlier run's probes must never resolve this run's pins.
   rm -f "$dir/probes.json"
   python3 - "$dir" "$start" "$SUBJECT" <<'PYEOF'
+import fcntl
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 dir_path, start, subject = sys.argv[1:4]
@@ -431,11 +608,29 @@ try:
     log_size = os.path.getsize(os.path.join(dir_path, "changes.jsonl"))
 except OSError:
     log_size = 0
-for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", ""), ("watch.cursor", "%d\n" % log_size)):
-    tmp_path = os.path.join(dir_path, name + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(content)
-    os.replace(tmp_path, os.path.join(dir_path, name))
+
+
+def write_unique(name, content):
+    """Write through a temp file of this writer's own, then replace."""
+    fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_path, os.path.join(dir_path, name))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+# The sheet reset takes the same lock sheet and apply do, so a background undo
+# cannot write between the reset and the run record.
+with open(os.path.join(dir_path, "session.css.lock"), "w") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", ""), ("watch.cursor", "%d\n" % log_size)):
+        write_unique(name, content)
 PYEOF
   echo "RUN $start"
 }
@@ -446,10 +641,12 @@ PYEOF
 #   apply           stdin holds blocks; d: entries drop keys, t: entries aim a
 #                   pin at another element; prints the page job as one JSON line
 read -r -d '' SHEET_PY <<'PYEOF' || true
+import fcntl
 import json
 import os
 import re
 import sys
+import tempfile
 import uuid
 
 path, mode, key = sys.argv[1:4]
@@ -512,11 +709,26 @@ def set_block(blocks, block_key, css):
 
 
 def save(text):
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    os.replace(tmp_path, path)
+    """Write through a temp file of this writer's own, then replace."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
+
+# Every change to the sheet is read-modify-write, so it runs under an exclusive
+# lock that lasts until this process exits. Nothing here starts a subprocess.
+lock = None
+if mode != "print":
+    lock = open(path + ".lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
 
 try:
     with open(path, "r", encoding="utf-8") as handle:
@@ -668,10 +880,11 @@ def reasons_of(rule, page_size):
 
 
 def rule_line(key, rule):
+    key = one_line(key)
     selector = one_line(rule.get("selector", ""))
     if rule.get("matched") == 0:
         return "%s %s x0" % (key, selector)
-    line = "%s %s x%s" % (key, selector, rule.get("matched", 1))
+    line = "%s %s x%s" % (key, selector, one_line(rule.get("matched", 1)))
     box = box_of(rule)
     if box is not None:
         line += " box %d,%d %dx%d" % tuple(box)
@@ -708,8 +921,8 @@ for key, rules in blocks.items():
         out.append(rule_line(key, rule))
         reasons |= reasons_of(rule, page_size)
     if reasons:
-        shots.append("SHOT %s %s" % (key, ", ".join(r for r in REASON_ORDER if r in reasons)))
-out.extend("%s dropped" % key for key in drops)
+        shots.append("SHOT %s %s" % (one_line(key), ", ".join(r for r in REASON_ORDER if r in reasons)))
+out.extend("%s dropped" % one_line(key) for key in drops)
 out.extend(shots)
 sys.stdout.write("\n".join(out) + "\n")
 PYEOF
@@ -772,8 +985,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
-import urllib.request
 
 dir_path, root, session, run_sh, resolve_sh, once = sys.argv[1:7]
 once = once == "1"
@@ -826,10 +1039,17 @@ def read_cursor():
 
 
 def write_cursor(offset):
-    tmp = CURSOR + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        handle.write("%d\n" % offset)
-    os.replace(tmp, CURSOR)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CURSOR), prefix=os.path.basename(CURSOR) + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("%d\n" % offset)
+        os.replace(tmp, CURSOR)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def new_batch(offset):
@@ -895,6 +1115,35 @@ def drop(keys):
     return result.stdout.startswith("APPLIED")
 
 
+def session_external():
+    return os.path.isfile(os.path.join(dir_path, "external.json"))
+
+
+def pin_page(change):
+    pin = change.get("pin") if isinstance(change.get("pin"), dict) else {}
+    page = pin.get("page")
+    return page.strip() if isinstance(page, str) else ""
+
+
+def guard_external(changes):
+    """Run before a batch is printed. When any pin line will be external - the
+    session is marked, or a pin's own page is outside the project - mark the
+    session and remove the lift, so no pin arrives covered by an earlier yes.
+    Returns the notice line when this call created the marker, else None."""
+    pins = [c for c in changes if c.get("kind") in ("added", "edited")]
+    first_page = None
+    for change in pins:
+        page = pin_page(change)
+        if page and page_is_external(page):
+            first_page = page
+            break
+    if first_page is None and not (pins and session_external()):
+        return None
+    created = mark_external(dir_path, first_page or "")
+    revoke_lift(dir_path)
+    return NOTICE if created else None
+
+
 def lines_for(changes):
     probes = resolve(changes)
     blocks = sheet_keys()
@@ -909,8 +1158,9 @@ def lines_for(changes):
         kind, key = change.get("kind"), str(change.get("ts"))
         if kind in ("added", "edited"):
             pin = change.get("pin") if isinstance(change.get("pin"), dict) else {}
-            out.append("%s %s #%s %s at %s near %s source %s" % (
-                kind.upper(), key, pin.get("n", "?"), quoted(pin.get("text")),
+            tagged = session_external() or (pin_page(change) != "" and page_is_external(pin_page(change)))
+            out.append("%s%s %s #%s %s at %s near %s source %s" % (
+                "EXTERNAL " if tagged else "", kind.upper(), key, pin.get("n", "?"), quoted(pin.get("text")),
                 quoted(pin.get("selector")), quoted(pin.get("nearText")),
                 quoted(source_of(key, probes))))
         elif kind == "deleted" and key in doomed:
@@ -927,7 +1177,7 @@ def listener_answers():
     try:
         with open(os.path.join(dir_path, "port"), "r", encoding="utf-8") as handle:
             port = handle.read().strip()
-        with urllib.request.urlopen("http://127.0.0.1:%s/health" % port, timeout=2) as response:
+        with local_request("GET", port, "/health", os.path.join(dir_path, "token"), 2) as response:
             return response.status == 200
     except (OSError, ValueError):
         return False
@@ -967,7 +1217,10 @@ try:
     while still_mine():
         changes, end = new_batch(offset)
         if end != offset:
+            notice = guard_external(changes)
             lines = lines_for(changes)
+            if notice and lines:
+                lines.insert(0, notice)
             if not still_mine():
                 break
             if lines:
@@ -1001,7 +1254,10 @@ cmd_watch() {
   local dir
   dir="$(session_dir)"
   [ -f "$dir/run.json" ] || die "no run in progress (run begin first)"
-  exec python3 -c "$WATCH_PY" "$dir" "$ROOT" "$SESSION" "$SCRIPT_DIR/annotate-run.sh" "$SCRIPT_DIR/annotate-resolve.sh" "$WATCH_ONCE"
+  exec python3 -c "$LOCAL_OPENER_PY
+$PAGE_KIND_PY
+$BOUNDARY_PY
+$WATCH_PY" "$dir" "$ROOT" "$SESSION" "$SCRIPT_DIR/annotate-run.sh" "$SCRIPT_DIR/annotate-resolve.sh" "$WATCH_ONCE"
 }
 
 # cmd_kind - project when the page is a local one (file, or http/https on
@@ -1012,44 +1268,42 @@ cmd_kind() {
 }
 
 page_kind() {
-  python3 - "$1" <<'PYEOF'
+  python3 -c "$PAGE_KIND_PY
 import sys
-from urllib.parse import urlparse
-
-try:
-    parsed = urlparse(sys.argv[1].strip())
-    scheme = (parsed.scheme or "").lower()
-    host = (parsed.hostname or "").lower()
-except ValueError:
-    scheme, host = "", ""
-local = scheme == "file" or (scheme in ("http", "https") and host in ("localhost", "127.0.0.1"))
-print("project" if local else "external")
-PYEOF
+print('external' if page_is_external(sys.argv[1]) else 'project')" "$1"
 }
 
 # cmd_loader - the one line that loads the served overlay. It is an async
 # function because evaluate_script awaits a function's return value but only
 # runs an immediately invoked expression while building its handle.
 cmd_loader() {
-  local dir port stamp=""
+  local dir port source stamp=""
   [ -n "$PAGE" ] || die "--page <url> is required"
+  dir="$(session_dir)"
   if [ "$(page_kind "$PAGE")" != "project" ]; then
     echo "EXTERNAL"
+    python3 -c "$BOUNDARY_PY
+import sys
+
+if mark_external(sys.argv[1], sys.argv[2]):
+    print(NOTICE)" "$dir" "$PAGE"
     return 0
   fi
-  dir="$(session_dir)"
   port="$(read_file "$dir/port")"
   is_number "$port" || die "session $SESSION has no port"
   http_call GET "$port" /health >/dev/null 2>&1 || die "listener for $SESSION is not answering"
   [ "$RUN_STAMP" = "0" ] || stamp="$(run_stamp_js "$dir")"
-  python3 - "$port" "$stamp" <<'PYEOF'
+  read -r -d '' source <<'PYEOF' || true
+import json
 import sys
 
 port = int(sys.argv[1])
 stamp = sys.argv[2]
+token = read_token(sys.argv[3])
 sys.stdout.write(
     "async () => { "
     "window.__craftAnnotatePort = %(port)d; "
+    "window.__craftAnnotateToken = %(token_js)s; "
     "%(stamp)s"
     "if (window.__craftAnnotateInstalled) return 'LOADED'; "
     "try { "
@@ -1057,7 +1311,7 @@ sys.stdout.write(
     "let timer = null; "
     "const settle = (status) => { clearTimeout(timer); resolve(status); }; "
     "const el = document.createElement('script'); "
-    "el.src = 'http://127.0.0.1:%(port)d/overlay.js'; "
+    "el.src = 'http://127.0.0.1:%(port)d/overlay.js?token=%(token_q)s'; "
     "el.setAttribute('data-craft-annotate-injected', ''); "
     "el.onload = () => settle(window.__craftAnnotateInstalled ? 'LOADED' : 'SCRIPT-BLOCKED'); "
     "el.onerror = () => settle('SCRIPT-BLOCKED'); "
@@ -1065,9 +1319,14 @@ sys.stdout.write(
     "document.head.appendChild(el); "
     "}); "
     "} catch (error) { return 'SCRIPT-BLOCKED'; } "
-    "}\n" % {"port": port, "stamp": stamp}
+    "}\n" % {
+        "port": port, "stamp": stamp, "token_js": json.dumps(token),
+        "token_q": urllib.parse.quote(token, safe=""),
+    }
 )
 PYEOF
+  python3 -c "$LOCAL_OPENER_PY
+$source" "$port" "$stamp" "$(token_file)"
 }
 
 # run_stamp_js <session-dir> - the statement that stamps the run id, with its
@@ -1087,15 +1346,30 @@ sys.stdout.write("window.__craftAnnotateRun = %s; " % json.dumps(run_id))
 PYEOF
 }
 
-# cmd_stamp - the paste-path stamp for a page that blocks the loader: the port
-# and the run id, set without loading anything
+# token_stamp_js <session-dir> - the statement that stamps the session token,
+# with its trailing space; an empty string literal when the session has no token
+token_stamp_js() {
+  local source
+  read -r -d '' source <<'PYEOF' || true
+import json
+import sys
+
+sys.stdout.write("window.__craftAnnotateToken = %s; " % json.dumps(read_token(sys.argv[1])))
+PYEOF
+  python3 -c "$LOCAL_OPENER_PY
+$source" "$1/token"
+}
+
+# cmd_stamp - the paste-path stamp for a page that blocks the loader: the port,
+# the token and (unless --no-run) the run id, set without loading anything
 cmd_stamp() {
-  local dir port stamp
+  local dir port stamp="" token_js
   dir="$(session_dir)"
   port="$(read_file "$dir/port")"
   is_number "$port" || die "session $SESSION has no port"
-  stamp="$(run_stamp_js "$dir")" || exit 1
-  echo "() => { window.__craftAnnotatePort = $port; ${stamp}return 'STAMPED'; }"
+  [ "$NO_RUN" = "1" ] || stamp="$(run_stamp_js "$dir")" || exit 1
+  token_js="$(token_stamp_js "$dir")"
+  echo "() => { window.__craftAnnotatePort = $port; ${token_js}${stamp}return 'STAMPED'; }"
 }
 
 # strip_overlay_py - Python source shared by bake and strip: removes every
@@ -1123,9 +1397,10 @@ cmd_bake() {
     die "overlay source not found"
   fi
   if out="$(python3 -c "$STRIP_PY
-import os, sys
+$LOCAL_OPENER_PY
+import json, os, sys
 
-path, port, fence_path = sys.argv[1:4]
+path, port, fence_path, token_file = sys.argv[1:5]
 with open(path, encoding='utf-8', newline='') as handle:
     text = handle.read()
 with open(fence_path, encoding='utf-8', newline='') as handle:
@@ -1139,13 +1414,14 @@ element = (
     '<script id=\"ca-overlay\">\n'
     'window.__craftAnnotatePort = %s;\n'
     'window.__craftAnnotateBaked = true;\n'
-    '%s</script>\n' % (port, fence)
+    'window.__craftAnnotateToken = %s;\n'
+    '%s</script>\n' % (port, json.dumps(read_token(token_file)), fence)
 )
 temp = path + '.bake-tmp'
 with open(temp, 'w', encoding='utf-8', newline='') as handle:
     handle.write(text[:at] + element + text[at:])
 os.replace(temp, path)
-" "$FILE" "$port" "$fence_file")"; then
+" "$FILE" "$port" "$fence_file" "$(token_file)")"; then
     rm -f "$fence_file"
     echo "BAKED $FILE PORT $port"
   else
@@ -1220,11 +1496,28 @@ cmd_ensure() {
 }
 
 cmd_send() {
-  local dir port
+  local dir port body
   dir="$(session_dir)"
   port="$(read_file "$dir/port")"
   is_number "$port" || die "session $SESSION has no port"
-  http_post_body "$port" /pins || die "listener for $SESSION is not answering"
+  body="$(cat)"
+  # An external pin must never ride an earlier yes: the lift goes before the post.
+  printf '%s' "$body" | python3 -c "$PAGE_KIND_PY
+$BOUNDARY_PY
+import json
+import os
+import sys
+
+session_dir = sys.argv[1]
+try:
+    pins = json.load(sys.stdin)
+except ValueError:
+    pins = []
+pages = [pin.get('page') for pin in pins if isinstance(pin, dict)] if isinstance(pins, list) else []
+external = any(isinstance(page, str) and page.strip() and page_is_external(page) for page in pages)
+if external or os.path.isfile(os.path.join(session_dir, 'external.json')):
+    revoke_lift(session_dir)" "$dir"
+  printf '%s' "$body" | http_post_body "$port" /pins || die "listener for $SESSION is not answering"
 }
 
 cmd_disarm() {
@@ -1311,6 +1604,7 @@ SHEET_DROP=""
 APPLY_DROPS=()
 APPLY_TARGETS=()
 RUN_STAMP=0
+NO_RUN=0
 WATCH_ONCE=0
 PAGE=""
 FILE=""
@@ -1330,6 +1624,7 @@ while [ $# -gt 0 ]; do
     --drop)      [ $# -ge 2 ] || die "--drop needs a value"; SHEET_DROP="$2"; APPLY_DROPS+=("$2"); shift 2 ;;
     --target)    [ $# -ge 2 ] || die "--target needs a value"; case "$2" in ?*=?*) ;; *) die "--target must look like TS=SELECTOR" ;; esac; APPLY_TARGETS+=("$2"); shift 2 ;;
     --run)       RUN_STAMP=1; shift ;;
+    --no-run)    NO_RUN=1; shift ;;
     --once)      WATCH_ONCE=1; shift ;;
     *)           die "unknown argument: $1" ;;
   esac

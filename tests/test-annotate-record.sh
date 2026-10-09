@@ -371,4 +371,14 @@ mkdir -p "$ROOT/.craft/annotations/live-1"
 OUTS="$(ss "$ROOT")"
 assert_not_contains "no segment" "Annotations:" "$OUTS"
 
+begin_test "graduate --to 'story: one #two' writes a quoted value"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" s1 0 "quoted"; hist "$LIVE" "$S1"; file_rec "$ROOT" s1 nothing
+NAME="$(basename "$(dirname "$OUT")")"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to 'story: one #two' >/dev/null 2>&1
+assert_eq "the colon destination is JSON-quoted" '"story: one #two"' "$(fm "$OUT" graduated_to)"
+assert_eq "status is still graduated" "graduated" "$(fm "$OUT" status)"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to $'two\nlines: x' >/dev/null 2>&1
+assert_eq "a newline cannot add a frontmatter line" '"two lines: x"' "$(fm "$OUT" graduated_to)"
+
 finish_tests "test-annotate-record"

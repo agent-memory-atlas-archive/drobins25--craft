@@ -78,6 +78,16 @@
             "timeout": 5000
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-external-gate.sh pre-tool",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -98,6 +108,15 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-craft-context.sh",
             "timeout": 3000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-external-gate.sh prompt",
+            "timeout": 10
           }
         ]
       }

@@ -305,4 +305,17 @@ assert_contains_literal "where finds it by ts alone" "SaveButton in src/componen
 printf '[{"page":"http://localhost:5173/a","ts":8,"selector":".gone","found":false,"component":null,"inline":false,"blocked":[],"rules":[]}]' | resolve_in "$R" > /dev/null
 assert_eq "a not-found item maps nothing" "False" "$(json_file "$D/resolutions.json" '"8" in d["pins"].get("http://localhost:5173/a", {})')"
 
+begin_test "concurrent resolve calls keep every pin's resolution"
+new_root; R="$NEW_ROOT"
+D="$R/.craft/annotations/$SID"
+RES_PIDS=()
+for n in 1 2 3 4 5 6 7 8; do
+  ( printf '[{"page":"http://localhost:5173/a","ts":%s,"selector":".n%s","found":true,"component":"SaveButton","inline":false,"blocked":[],"rules":[]}]' "$n" "$n" | resolve_in "$R" >/dev/null ) &
+  RES_PIDS+=("$!")
+done
+wait "${RES_PIDS[@]}" || true
+assert_eq "all eight pins are mapped" "8" "$(json_file "$D/resolutions.json" 'len(d["pins"]["http://localhost:5173/a"])')"
+assert_eq "all eight targets are cached" "8" "$(json_file "$D/resolutions.json" 'len(d["targets"]["http://localhost:5173/a"])')"
+assert_eq "no temp file is left" "0" "$(ls "$D" | grep -c '\.tmp$' || true)"
+
 finish_tests "test-annotate-resolve"

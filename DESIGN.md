@@ -102,7 +102,7 @@ plugins/craft/
 │       ├── devtools-launch.cjs    ← Browser server launcher: pinned chrome-devtools-mcp, statistics off, shared profile or isolated window decided at the first browser call
 │       ├── annotate-resolve.sh    ← Pin to source: probe / resolve / where - the probe runs in the page at SEND; maps the page's matched rules and the component name to project files, honest about bundles, cached per run in resolutions.json
 │       ├── annotate-record.sh     ← Files a run as .craft/annotations/<date>-<slug>/ (record.md + session.css) and graduates it; the sweep and the next begin file orphaned runs
-│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, serves the overlay at /overlay.js, replace-the-set / tombstone, history.jsonl ledger, CORS, SSE stream, client registry)
+│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, serves the overlay at /overlay.js, replace-the-set / tombstone, history.jsonl ledger, CORS, per-session token and Host check on every route, socket timeout, SSE stream, client registry)
 ├── templates/                 ← File templates for craft init and scaffolding
 │   ├── craft/                 ← .craft/ directory templates
 │   │   ├── design/            ← tokens.yaml, components.md, locked.md
@@ -264,6 +264,9 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 ### PreToolUse (Bash)
 - **`push-gate.sh`** - Denies a `git push` while custody signals are live (untriaged leftovers, secret-shaped paths in the outgoing range). Never grants approval: a clean push falls through to the user's own permission flow.
 
+### PreToolUse (all tools)
+- **`annotate-external-gate.sh pre-tool`** - Deny-only boundary for annotate sessions on a page outside the project. While `annotate-run.sh` has marked a session external (`external.json` plus a pointer in `~/.cache/craft/annotate-boundary/` keyed by the conversation's pid, found by walking the hook's ancestors), every tool call outside a closed allowlist is denied: annotate's own verbs through a strict one-line grammar, `evaluate_script` and read-only browser tools, `Read` inside the plugin. Never answers allow or ask. A pointer 12 hours past its last refresh, or whose session folder is gone, is removed with a visible message. Costs one bash glob per call when no boundary exists. Calls from subagents abstain.
+
 ### PostToolUse (Write|Edit)
 - **`update-progress.py`** (async) - Tracks which files were modified, updates story progress counts
 
@@ -275,6 +278,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 
 ### UserPromptSubmit
 - **`inject-craft-context.sh`** - Injects active cycle/story context into every prompt
+- **`annotate-external-gate.sh prompt`** - Lifts the external-page boundary for one turn when the user types a message: records that turn's `prompt_id`, and a tool call is lifted only when its own `prompt_id` matches. Prompts that open with a task notification or another session's message, or carry an `EXTERNAL ADDED` / `EXTERNAL EDITED` line, never lift and remove any lift. Prints nothing. `annotate-run.sh` also removes the lift before it prints or sends any external pin, so a pin never rides an earlier yes.
 
 ### Stop
 - **`stop-hook-guard.sh`** - Guards against unclean session stops, ensures state consistency

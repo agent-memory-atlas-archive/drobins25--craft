@@ -346,6 +346,7 @@ cmd_graduate() {
   [ -f "$file" ] || die "no such record: $RECORD"
 
   python3 - "$file" "$TO" "${OUTCOME:-story}" <<'PYEOF'
+import json
 import os
 import re
 import sys
@@ -354,7 +355,20 @@ path, destination, outcome = sys.argv[1:4]
 with open(path, "r", encoding="utf-8") as handle:
     lines = handle.read().split("\n")
 
-wanted = {"status": "graduated", "graduated_to": destination, "outcome": outcome}
+
+def one_line(text):
+    return " ".join(str(text).split())
+
+
+def scalar(text):
+    """A frontmatter value: plain when safe, a JSON string when YAML would misread it."""
+    text = one_line(text)
+    if re.search(r"(^[-?:,\[\]{}#&*!|>'\"%@`])|(: )|( #)|(:$)", text):
+        return json.dumps(text)
+    return text
+
+
+wanted = {"status": "graduated", "graduated_to": scalar(destination), "outcome": outcome}
 fences = 0
 for index, line in enumerate(lines):
     if line == "---":

@@ -17,6 +17,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const [chromeBin, profileDir, chromePidFile, runSh, channelPy, root, session, pageUrl] = process.argv.slice(2);
 if (!pageUrl) {
@@ -51,6 +52,8 @@ const check = (n, text, ok, detail) => { asserts.push({ n, text, ok: !!ok, detai
 chrome = spawn(chromeBin, [
   '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
   '--remote-debugging-port=0', '--user-data-dir=' + profileDir,
+  // A name that is not local, served by this machine: lets the run open a page on a foreign origin.
+  '--host-resolver-rules=MAP external.test 127.0.0.1',
   '--window-size=' + WIDTH + ',' + HEIGHT, 'about:blank'
 ], { stdio: 'ignore', detached: true });
 chrome.on('error', e => { verdictError = 'chrome did not start: ' + e.message; finish(); });
@@ -141,8 +144,11 @@ const waitLine = async (w, prefix, capMs) => (await until(() => !!lineFor(w, pre
 
 // --- reads that never go through the verbs' output ---------------------------
 const listenerBase = () => 'http://127.0.0.1:' + readFileSync(join(sessionDir, 'port'), 'utf8').trim();
-const healthClients = async () => (await (await fetch(listenerBase() + '/health')).json()).clients;
-const postSheet = async id => (await (await fetch(listenerBase() + '/sheet', {
+// The listener's own session token, read from the file it writes (never from a verb's output).
+const sessionToken = () => { try { return readFileSync(join(sessionDir, 'token'), 'utf8').trim(); } catch (e) { return ''; } };
+const withToken = path => path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(sessionToken());
+const healthClients = async () => (await (await fetch(listenerBase() + withToken('/health'))).json()).clients;
+const postSheet = async id => (await (await fetch(listenerBase() + withToken('/sheet'), {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, measure: [], targets: [] })
 })).json()).delivered;
 const readJson = name => { try { return JSON.parse(readFileSync(join(sessionDir, name), 'utf8')); } catch (e) { return null; } };
@@ -463,6 +469,114 @@ try {
     const quiet = await until(async () => { delivered = await postSheet('probe-after-clear'); return delivered === 0; }, 6000);
     return { ok: !left.sheet && left.marked === 0 && left.pins === 0 && quiet,
       detail: `left on the page: ${JSON.stringify(left)}; POST /sheet delivered ${delivered}` };
+  });
+
+  // 14 and 15 start from a clean page: no stored pins, a fresh load, the overlay back through the loader line.
+  const freshPage = async () => {
+    await evaluate(`localStorage.removeItem(${JSON.stringify(await storeKey())})`);
+    await send('Page.reload');
+    await waitFor(`document.readyState === 'complete' && window.__renders > 0`, 10000);
+    return loadPage();
+  };
+  const pinState = title => evaluate(`(() => { const n = document.querySelector('.ca-pin[title=' + JSON.stringify(${JSON.stringify(title)}) + ']');
+    return n ? { detached: n.classList.contains('ca-detached'), sent: n.classList.contains('ca-sent') } : null; })()`);
+
+  // 14. a pin under a utility-class section with no id above it stays attached
+  await step(14, 'a pin under a utility-class section stayed attached after comment mode off and after a reload', async () => {
+    if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
+    const pin = await makePin('.lede', null, 'utility pin');
+    const want = 'html > body > section.md\\:flex.w-1\\/2 > p.lede';
+    if (pin.selector !== want) return { ok: false, detail: `the pin selector is ${pin.selector}, expected ${want}` };
+    await clickEl('#ca-toggle');
+    const resolves = () => evaluate(`(() => { try { return document.querySelectorAll(${JSON.stringify(pin.selector)}).length === 1; } catch (e) { return false; } })()`);
+    const offResolves = await resolves();
+    await send('Page.reload');
+    await waitFor(`document.readyState === 'complete' && window.__renders > 0`, 10000);
+    const reloaded = await loadPage();
+    const back = await waitFor(`!!document.querySelector('.ca-pin[title="utility pin"]')`, 5000);
+    await sleep(500);
+    const state = await pinState('utility pin');
+    return { ok: offResolves && reloaded === 'LOADED' && back >= 0 && !!state && !state.detached && (await resolves()),
+      detail: `selector ${pin.selector}; resolves with comment mode off ${offResolves}; after reload loader ${reloaded}, pin ${JSON.stringify(state)}` };
+  });
+
+  // 15. a pin saved while a SEND is in flight is not marked sent
+  await step(15, 'a pin saved while a SEND was in flight was not marked sent', async () => {
+    if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
+    await evaluate(`(() => { const real = window.fetch; window.fetch = (url, opts) => { const out = real.call(window, url, opts);
+      return String(url).includes('/pins') ? out.then(res => new Promise(done => setTimeout(() => done(res), 1500))) : out; }; })()`);
+    await makePin('.name', null, 'in flight A');
+    await evaluate(`document.getElementById('ca-status').textContent = ''`);
+    await clickEl('#ca-send');
+    await makePin('.badge', [4, 4], 'saved in flight B');
+    const returned = await waitFor(`document.getElementById('ca-status').textContent === 'RETURNED'`, 8000);
+    const stored = await storedPins();
+    const a = stored.find(p => p.text === 'in flight A');
+    const b = stored.find(p => p.text === 'saved in flight B');
+    const nodeA = await pinState('in flight A');
+    const nodeB = await pinState('saved in flight B');
+    return { ok: returned >= 0 && !!a && a.sent === true && !!nodeA && nodeA.sent && !!b && !b.sent && !!nodeB && !nodeB.sent,
+      detail: `RETURNED ${returned >= 0}; stored A sent ${a && a.sent}, stored B sent ${b && b.sent}; nodes A ${JSON.stringify(nodeA)} B ${JSON.stringify(nodeB)}` };
+  });
+
+  // 16. the listener refuses a page that does not hold the session's token
+  await step(16, 'the listener refused a request without the token and the strip said NOT ARMED for a stale one', async () => {
+    if ((await freshPage()) !== 'LOADED') return { ok: false, detail: 'the loader did not load the overlay' };
+    const probeHealth = query => evaluate(`fetch('http://127.0.0.1:' + window.__craftAnnotatePort + '/health${query}')
+      .then(async res => ({ status: res.status, body: await res.text() })).catch(e => ({ error: String(e) }))`);
+    const bare = await probeHealth('');
+    const stamped = await probeHealth('?token=' + sessionToken());
+    await makePin('.name', null, 'refused pin');
+    const realToken = await evaluate('window.__craftAnnotateToken');
+    await evaluate(`window.__craftAnnotateToken = 'stale'; document.getElementById('ca-status').textContent = ''`);
+    await clickEl('#ca-send');
+    const shown = await waitFor(`document.getElementById('ca-status').textContent !== ''`, 5000);
+    const strip = await evaluate(`document.getElementById('ca-status').textContent`);
+    await evaluate(`window.__craftAnnotateToken = ${JSON.stringify(realToken)}`);
+    return { ok: bare.status === 403 && /"forbidden"/.test(bare.body || '') && stamped.status === 200 && realToken === sessionToken()
+        && shown >= 0 && strip === 'NOT ARMED - no craft session listening',
+      detail: `without the token ${JSON.stringify(bare)}; with it ${stamped.status}; stale-token SEND showed "${strip}"` };
+  });
+
+  // 17. a page file baked by `bake`, opened over file://, holds its stream and a SEND returns RETURNED
+  await step(17, 'a baked page opened over file:// held its stream and its SEND returned', async () => {
+    const bakedFile = join(root, 'baked.html');
+    writeFileSync(bakedFile, '<!doctype html>\n<html><head><meta charset="utf-8"><title>baked</title></head>\n<body><p id="target" style="margin:40px">baked page</p>\n</body></html>\n');
+    const baked = await verb(['bake', '--file', bakedFile]);
+    if (baked.code !== 0) return { ok: false, detail: 'bake failed: ' + baked.err };
+    await send('Page.navigate', { url: pathToFileURL(bakedFile).href });
+    if ((await waitFor(`window.__craftAnnotateInstalled === true && !!document.getElementById('ca-send')`, 10000)) < 0) return { ok: false, detail: 'the baked overlay never installed' };
+    const held = await until(async () => (await healthClients()) >= 1, 6000);
+    const pin = await makePin('#target', null, 'baked page pin');
+    const returned = await sendPins();
+    const added = await waitLine(live, `ADDED ${pin.ts} `, 8000);
+    return { ok: held && returned && !!added && (await evaluate('location.protocol')) === 'file:',
+      detail: `stream held ${held}; SEND RETURNED ${returned}; watch ADDED line ${added ? 'seen' : 'missing'}` };
+  });
+
+  // 18. a foreign-origin page takes the paste path, its pins reach Claude tagged EXTERNAL, and the Host check holds
+  await step(18, 'a foreign-origin page took the pasted overlay, its pin arrived EXTERNAL, and a foreign Host was refused', async () => {
+    const site = new URL(pageUrl);
+    const foreignUrl = 'http://external.test:' + site.port + site.pathname;
+    await send('Page.navigate', { url: foreignUrl });
+    if ((await waitFor(`document.readyState === 'complete' && window.__renders > 0`, 10000)) < 0) return { ok: false, detail: 'the foreign page did not load' };
+    const origin = await evaluate('location.origin');
+    if (origin !== 'http://external.test:' + site.port) return { ok: false, detail: 'the page origin is ' + origin };
+    const loader = await verb(['loader', '--page', foreignUrl, '--run']);
+    if (loader.out.split('\n')[0] !== 'EXTERNAL') return { ok: false, detail: 'loader printed ' + JSON.stringify(loader.out) };
+    const stamp = await verb(['stamp']);
+    if ((await evaluate(`(${stamp.out.trim()})()`)) !== 'STAMPED') return { ok: false, detail: 'the stamp line did not return STAMPED' };
+    const overlay = execFileSync('python3', [channelPy, '--print-overlay'], { encoding: 'utf8' });
+    await evaluate(`(() => { ${overlay} })()`);
+    if ((await waitFor(`window.__craftAnnotateInstalled === true && !!document.getElementById('ca-send')`, 10000)) < 0) return { ok: false, detail: 'the pasted overlay never installed' };
+    const pin = await makePin('.name', null, 'foreign page pin');
+    const returned = await sendPins();
+    const added = await waitLine(live, `EXTERNAL ADDED ${pin.ts} `, 8000);
+    const token = await evaluate('window.__craftAnnotateToken');
+    const refused = await evaluate(`fetch('http://external.test:' + window.__craftAnnotatePort + '/health?token=' + encodeURIComponent(${JSON.stringify(token)}))
+      .then(res => res.status).catch(e => String(e))`);
+    return { ok: returned && !!added && refused === 403,
+      detail: `SEND RETURNED ${returned}; EXTERNAL ADDED line ${added ? 'seen' : 'missing; saw: ' + live.lines.join(' | ')}; /health by foreign Host answered ${refused}` };
   });
 } catch (e) {
   verdictError = `step ${current}: ${String(e && e.message || e)}`;

@@ -148,6 +148,11 @@ The whole block is one self-invoking expression: served as a script it runs as i
   let undo = [];
 
   const base = () => window.__craftAnnotatePort ? 'http://127.0.0.1:' + window.__craftAnnotatePort : null;
+  // The one place a listener address is built: every request and the stream go through it, and each
+  // carries the session token the loader, stamp or bake wrote beside the port.
+  const channelUrl = path => {
+    return base() + path + (path.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(window.__craftAnnotateToken || '');
+  };
   const say = text => { status.textContent = text; };
   const paintReadout = () => {
     readout.textContent = 'MARKUP - ' + entries.length + ' marks' + (undo.length ? ' - ' + undo.length + ' to undo' : '');
@@ -206,8 +211,11 @@ The whole block is one self-invoking expression: served as a script it runs as i
     const p = [];
     while (el && el.nodeType === 1 && p.length < 5) {
       let s = el.tagName.toLowerCase();
-      if (el.id) { p.unshift('#' + el.id); break; }
-      if (el.classList.length) s += '.' + [...el.classList].slice(0, 2).join('.');
+      if (el.id) { p.unshift('#' + CSS.escape(el.id)); break; }
+      // The overlay puts its own classes on the page (comment mode sets ca-mode on body); a path that
+      // kept one would match nothing once the mode is off.
+      const own = [...el.classList].filter(c => !c.startsWith('ca-')).slice(0, 2);
+      if (own.length) s += own.map(c => '.' + CSS.escape(c)).join('');
       p.unshift(s);
       el = el.parentElement;
     }
@@ -334,7 +342,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   const fetchSheet = () => {
     const root = base();
     if (!root || !runId()) return Promise.reject(new Error('page is not stamped'));
-    return fetch(root + '/session.css', { cache: 'no-store' })
+    return fetch(channelUrl('/session.css'), { cache: 'no-store' })
       .then(res => {
         if (!res.ok) throw new Error('sheet ' + res.status);
         return res.text();
@@ -443,7 +451,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
     try {
       body.probes = probeTargets((job.targets || []).map(t => ({ page: pageNow(), ts: t.ts, selector: t.selector, component: null })));
     } catch (e) { body.probes = []; }
-    fetch(root + '/applied', {
+    fetch(channelUrl('/applied'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -661,8 +669,12 @@ The whole block is one self-invoking expression: served as a script it runs as i
 
   const currentSet = () => entries.map(en => Object.assign({}, en.d));
 
-  const markSent = () => {
+  // Marks only the pins the request carried, with the text it carried. A pin saved, edited or deleted
+  // while the request was in flight was not delivered in that state, so it keeps its own state.
+  const markSent = delivered => {
+    const sentText = new Map(delivered.map(d => [d.ts, d.text]));
     entries.forEach(en => {
+      if (sentText.get(en.d.ts) !== en.d.text) return;
       en.sent = true;
       if (runId()) en.sentRun = runId();
     });
@@ -690,7 +702,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
     sendBtn.classList.add('ca-lift');
     const sentUndo = stamped ? undo.slice() : [];
     const body = stamped ? { pins: set, deleted: sentUndo, probes: probeUnsent() } : set;
-    fetch(root + '/pins', {
+    fetch(channelUrl('/pins'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -698,7 +710,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
       sending = false;
       sendBtn.classList.remove('ca-lift');
       if (!res.ok) { say(NOT_ARMED); return; }
-      markSent();
+      markSent(set);
       undo = undo.filter(t => sentUndo.indexOf(t) < 0);
       persistUndo();
       paintReadout();
@@ -713,7 +725,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   const clearAll = () => {
     const root = base();
     if (root) {
-      fetch(root + '/clear', { method: 'POST' }).catch(() => {});
+      fetch(channelUrl('/clear'), { method: 'POST' }).catch(() => {});
     }
     closePopover();
     entries.forEach(en => en.node.remove());
@@ -819,7 +831,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
     let tries = 0;
     const connect = () => {
       if (!strip.isConnected || !base()) return;
-      stream = new EventSource(base() + path);
+      stream = new EventSource(channelUrl(path));
       stream.addEventListener('open', () => { delay = 1000; opened = true; tries = 0; });
       if (streamKind === 'baked') stream.addEventListener('reload', () => { location.reload(); });
       else stream.addEventListener('sheet', onSheet);
@@ -862,21 +874,23 @@ The delivering flow writes these before the overlay source runs. The port is the
 
 ```annotate-stamp
 window.__craftAnnotatePort = <port>;
+window.__craftAnnotateToken = '<token>';
 window.__craftAnnotateBaked = true;
 window.__craftAnnotateContext = '<candidate letter>';
 window.__craftAnnotateRun = '<run id>';
 ```
 
 - `__craftAnnotatePort` is stamped by every delivery. Without it the overlay still annotates locally and SEND reports `NOT ARMED - no craft session listening`. With it, a page whose policy blocks the request reports `BLOCKED BY PAGE - ask Claude to read pins directly`, and the pins wait in local storage under `ca-annotations:<pathname>` for the session to read.
+- `__craftAnnotateToken` is the session's secret, read from `<session-dir>/token`. Every request and the stream carry it as a `token` query parameter, built in one place (`channelUrl`). The loader line, `annotate-run.sh stamp` and `annotate-run.sh bake` write it beside the port; no flow writes it by hand.
 - `__craftAnnotateBaked` is stamped only by a mockup round written to disk. It is the single switch that makes the page hold the event stream open. Raw-tab and dial injections never stamp it.
 - `__craftAnnotateRun` is the run id, `<start_seq>@<started_at>`, stamped by the loader line on a project page for an open run. Without it the overlay behaves as it always has: no sheet fetch, no change stream, an array SEND body, no stale-pin drop, no undo list. With it, install fetches `GET /session.css`, the page holds `GET /changes`, SEND posts the object body, and pins sent in another run are dropped. Dial and baked pages never carry it.
 - `__craftAnnotateContext` is optional and owned by the dial flow: the bare candidate letter string (for example `"B"`), never an object. Each pin copies it verbatim into a `candidate` field.
 
-On a project page the loader line stamps the port itself and never stamps the baked flag or a context. For a raw tab pasted as the fallback, run the stamp and the source in one injection, in that order. A baked page's stamps are the first two lines of the one `ca-overlay` script element that `annotate-run.sh bake` writes; the overlay source follows them in that same element, and no flow writes them by hand.
+On a project page the loader line stamps the port and the token itself and never stamps the baked flag or a context. For a raw tab pasted as the fallback, run the stamp and the source in one injection, in that order. A baked page's stamps are the first lines of the one `ca-overlay` script element (the port and the baked flag are its first two lines, the token the line after them) that `annotate-run.sh bake` writes; the overlay source follows them in that same element, and no flow writes them by hand.
 
 ## The channel protocol
 
-The channel is a per-session listener on `127.0.0.1`. Pages reach it from any origin, including a local file, so it answers CORS preflight and sets an allow-origin header on every response.
+The channel is a per-session listener on `127.0.0.1`. Pages reach it from any origin, including a local file, so it answers CORS preflight and sets an allow-origin header on every response. What lets a request through is the session's token, not its origin: every route refuses with 403 `{"ok": false, "error": "forbidden"}` (allow-origin kept, connection closed, nothing written) a request whose `token` query value is not the one the listener keeps in the session folder, or whose `Host` is not `127.0.0.1` or `localhost`. The preflight is checked for `Host` alone, since a browser sends no token on it. The page's strip shows a refused request as NOT ARMED, the same as no listener. A request with `Transfer-Encoding` is answered 411.
 
 | Request | Meaning | Body | Answer |
 |---|---|---|---|

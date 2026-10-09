@@ -22,14 +22,25 @@
 #   11. a stale sent pin drops, an unsent pin stays
 #   12. announce never reaches the annotate page
 #   13. the canonical clear leaves nothing behind
+#   14. a pin on an element under a utility-class section (md:flex w-1/2) with no id above it
+#       stays attached after comment mode is turned off and after a reload
+#   15. a pin saved while a SEND is in flight is not marked sent
+#   16. the listener refuses a request without the token (403, readable by the page), and a SEND
+#       holding a stale token shows NOT ARMED
+#   17. a page file baked by `bake`, opened straight from disk, holds its stream and a SEND returns RETURNED
+#   18. a page on a foreign origin (a host-resolver map sends external.test to this machine) takes
+#       the pasted stamp and overlay, its SEND reaches the listener and the watch prints
+#       EXTERNAL ADDED, and the listener refuses a fetch that names it by that foreign host (403)
 #
 # scripts/ci/annotate-probe.mjs drives Chrome over its DevTools protocol with
 # node's built-in WebSocket (no packages), in real time.
 #
 # With no Chrome binary (or no usable node) found the run prints a SKIP line and
-# exits 0 - the CI job is non-blocking by decision, so a missing browser must
-# read as a legible log line. CRAFT_CI_CHROME and CRAFT_CI_NODE override
-# discovery entirely (a nonexistent value forces the SKIP path).
+# exits 0, so a machine without a browser reads as a legible log line. When
+# CRAFT_CI_REQUIRE_BROWSER=1 (the blocking CI job sets it) the same conditions
+# print a FAIL line and exit 1, so a required check can never pass by skipping.
+# CRAFT_CI_CHROME and CRAFT_CI_NODE override discovery entirely (a nonexistent
+# value forces the missing-browser path).
 #
 # Everything the run starts - the page server, Chrome, the listener and the
 # watch - is stopped on every exit path, and the fixture root is removed.
@@ -64,22 +75,31 @@ find_chrome() {
   return 1
 }
 
+# unavailable <what was missing> - the one exit for a missing tool: SKIP, or FAIL when required
+unavailable() {
+  if [ "${CRAFT_CI_REQUIRE_BROWSER:-}" = "1" ]; then
+    echo "FAIL: $1"
+    exit 1
+  fi
+  echo "SKIP: $1"
+  exit 0
+}
+
 if ! CHROME="$(find_chrome)"; then
   if [ -n "${CRAFT_CI_CHROME:-}" ]; then
-    echo "SKIP: no Chrome binary found (looked for: \$CRAFT_CI_CHROME=$CRAFT_CI_CHROME)"
+    unavailable "no Chrome binary found (looked for: \$CRAFT_CI_CHROME=$CRAFT_CI_CHROME)"
   else
-    echo "SKIP: no Chrome binary found (looked for: google-chrome, google-chrome-stable, chromium, chromium-browser on PATH; /Applications/Google Chrome.app/Contents/MacOS/Google Chrome)"
+    unavailable "no Chrome binary found (looked for: google-chrome, google-chrome-stable, chromium, chromium-browser on PATH; /Applications/Google Chrome.app/Contents/MacOS/Google Chrome)"
   fi
-  exit 0
 fi
 echo "using Chrome: $CHROME"
 
 if [ -n "${CRAFT_CI_NODE:-}" ]; then
   NODE="$CRAFT_CI_NODE"
-  [ -x "$NODE" ] || { echo "SKIP: no node binary found (looked for: \$CRAFT_CI_NODE=$CRAFT_CI_NODE)"; exit 0; }
+  [ -x "$NODE" ] || unavailable "no node binary found (looked for: \$CRAFT_CI_NODE=$CRAFT_CI_NODE)"
 else
   NODE="$(command -v node || true)"
-  [ -n "$NODE" ] || { echo "SKIP: no node binary found (looked for: node on PATH)"; exit 0; }
+  [ -n "$NODE" ] || unavailable "no node binary found (looked for: node on PATH)"
 fi
 # The probe uses node's built-in WebSocket: on by default from node 22, behind
 # --experimental-websocket on 20.10 to 21.
@@ -92,15 +112,18 @@ if [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
 elif [ "$NODE_MAJOR" -eq 21 ] 2>/dev/null || { [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -ge 10 ]; } 2>/dev/null; then
   NODE_FLAGS=(--experimental-websocket)
 else
-  echo "SKIP: node $NODE_VERSION is too old for the probe (needs 20.10 or later)"
-  exit 0
+  unavailable "node $NODE_VERSION is too old for the probe (needs 20.10 or later)"
 fi
 echo "using node: $NODE ($NODE_VERSION)"
 
 # --- The fixture project, in a root that is removed on every exit ------------
 TMP="$(mktemp -d)"
 SESSION_ID="annotate-check"
+# How many asserts the probe makes; the verdict below must report each of 1..ASSERT_COUNT.
+ASSERT_COUNT=18
 SESSION_DIR="$TMP/.craft/annotations/$SESSION_ID"
+# The external-page boundary pointer lives under the user's cache by default; keep this run's inside its root.
+export CRAFT_ANNOTATE_BOUNDARY_DIR="$TMP/boundary"
 SERVER_PID=""
 
 stop_pid() {
@@ -143,6 +166,9 @@ body { margin: 0; font: 16px/1.4 sans-serif; background: #ffffff; }
 .cover { position: absolute; left: 36px; top: 8px; width: 48px; height: 24px; background-color: rgba(0, 0, 0, 0.3); }
 .spacer { height: 200vh; }
 .below { padding: 20px; color: rgb(10, 10, 10); }
+.md\:flex { display: flex; }
+.w-1\/2 { width: 50%; }
+.lede { margin: 0; padding: 6px; }
 CSSEOF
 
 # The app rebuilds #app's children on a timer, as a framework re-render does,
@@ -157,6 +183,7 @@ cat > "$TMP/site/index.html" <<'HTMLEOF'
 </head>
 <body>
 <div id="app"></div>
+<section class="md:flex w-1/2"><p class="lede">utility lede</p></section>
 <div class="spacer"></div>
 <div class="below">below the fold</div>
 <script>
@@ -217,7 +244,7 @@ if [ -z "$VERDICT" ]; then
   exit 1
 fi
 
-python3 -I - "$VERDICT" <<'PYEOF'
+python3 -I - "$VERDICT" "$ASSERT_COUNT" <<'PYEOF'
 import json
 import sys
 
@@ -230,7 +257,7 @@ failed = False
 seen = {}
 for item in data.get("asserts", []):
     seen[item["n"]] = item
-for n in range(1, 14):
+for n in range(1, int(sys.argv[2]) + 1):
     item = seen.get(n)
     if item is None:
         print("assert %d FAIL: not reached (%s)" % (n, data.get("error") or "no verdict for it"))

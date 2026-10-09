@@ -93,11 +93,13 @@ SESSION_DIR="$ROOT/.craft/annotations/$SESSION"
 [ -d "$SESSION_DIR" ] || die "no session folder for $SESSION"
 
 read -r -d '' PY_SOURCE <<'PYEOF' || true
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 verb, root, session_dir, run_sh, ts_arg = sys.argv[1:6]
 target_args = sys.argv[6:]
@@ -157,12 +159,32 @@ def load_cache():
 
 
 def save_cache(cache):
+    """Write through a temp file of this writer's own, then replace."""
     path = os.path.join(session_dir, "resolutions.json")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(cache, handle)
-        handle.write("\n")
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=session_dir, prefix="resolutions.json.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(cache, handle)
+            handle.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+class cache_lock:
+    """An exclusive lock for a load-to-save of the cache. Take it only when no
+    subprocess is left to run: the work that needs one happens before."""
+
+    def __enter__(self):
+        self.handle = open(os.path.join(session_dir, "resolutions.json.lock"), "w")
+        fcntl.flock(self.handle, fcntl.LOCK_EX)
+
+    def __exit__(self, *_):
+        self.handle.close()
 
 
 def current_pins():
@@ -470,8 +492,10 @@ def cmd_resolve():
     except ValueError:
         items = []
     items = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
-    cache = load_cache()
     override = overrides()
+    # Everything that may start a subprocess (the page-kind check, the file
+    # search) runs before the lock; the locked part only merges and saves.
+    found_items = []
     missed = set()
     for item in items:
         page, selector, key = item.get("page"), item.get("selector"), ts_key(item.get("ts"))
@@ -480,26 +504,33 @@ def cmd_resolve():
         if item.get("found") is not True:
             missed.add((page, selector))
             continue
-        cache["targets"].setdefault(page, {})[selector] = resolution_of(item)
-        # The item names its own pin, so a pin no longer in current.json still
-        # maps. An override that points the pin at another element wins only
-        # when this item is that element.
-        if key not in override or override[key] == selector:
-            map_pin(cache, page, key, selector, override)
-    printed = {}
+        found_items.append((page, selector, key, resolution_of(item)))
+    pins = []
     for pin in current_pins():
         page = pin.get("page")
         key = ts_key(pin.get("ts"))
         selector = target_of(pin, override)
         if key is None or selector is None or not is_project_page(page):
             continue
-        cached = (cache["targets"].get(page) or {}).get(selector)
-        if cached is not None:
-            map_pin(cache, page, key, selector, override)
-            printed[key] = cached
-        elif (page, selector) in missed:
-            printed[key] = None
-    save_cache(cache)
+        pins.append((page, key, selector))
+    with cache_lock():
+        cache = load_cache()
+        for page, selector, key, resolution in found_items:
+            cache["targets"].setdefault(page, {})[selector] = resolution
+            # The item names its own pin, so a pin no longer in current.json
+            # still maps. An override that points the pin at another element
+            # wins only when this item is that element.
+            if key not in override or override[key] == selector:
+                map_pin(cache, page, key, selector, override)
+        printed = {}
+        for page, key, selector in pins:
+            cached = (cache["targets"].get(page) or {}).get(selector)
+            if cached is not None:
+                map_pin(cache, page, key, selector, override)
+                printed[key] = cached
+            elif (page, selector) in missed:
+                printed[key] = None
+        save_cache(cache)
     print(json.dumps(printed))
 
 

@@ -77,11 +77,11 @@ done <<EOF
 $GROUP_LIST
 EOF
 
-# Test: exactly eight jobs, the five groups plus doc-drift, template-stamp, browser
+# Test: exactly nine jobs, the five groups plus doc-drift, template-stamp, annotate-browser, browser
 JOB_IDS=$(awk '/^jobs:$/{f=1;next} f && /^  [a-zA-Z0-9_-]+:$/{gsub(/^  |:$/,""); print}' "$WF")
-EXPECTED_JOBS=$(printf '%s\ndoc-drift\ntemplate-stamp\nbrowser\n' "$GROUP_LIST" | sort)
+EXPECTED_JOBS=$(printf '%s\ndoc-drift\ntemplate-stamp\nannotate-browser\nbrowser\n' "$GROUP_LIST" | sort)
 if [ "$(echo "$JOB_IDS" | sort)" = "$EXPECTED_JOBS" ]; then
-  pass "the workflow defines exactly the eight expected jobs"
+  pass "the workflow defines exactly the nine expected jobs"
 else
   fail "job list mismatch" "got: $(echo "$JOB_IDS" | tr '\n' ' ')"
 fi
@@ -119,9 +119,24 @@ NEEDS_LINE=$(job_block browser | grep '^    needs:' || true)
 # an extra job smuggled into the list.
 EXPECTED_NEEDS="    needs: [$(printf '%s\ndoc-drift\ntemplate-stamp\n' "$GROUP_LIST" | paste -sd, - | sed 's/,/, /g')]"
 if [ "$NEEDS_LINE" = "$EXPECTED_NEEDS" ]; then
-  pass "the browser job declares needs on exactly the other seven jobs"
+  pass "the browser job declares needs on exactly the seven suite and git-range jobs"
 else
   fail "browser job's needs line is wrong" "got: '$NEEDS_LINE' expected: '$EXPECTED_NEEDS'"
+fi
+
+# Test: annotate-browser is blocking, standalone, and fails (not skips) without a browser
+AB=$(job_block annotate-browser)
+if echo "$AB" | grep -q '^    env:$' && echo "$AB" | grep -q '^      CRAFT_CI_REQUIRE_BROWSER: "1"$' \
+  && echo "$AB" | grep -q 'run: bash scripts/ci/annotate-check.sh$' \
+  && ! echo "$AB" | grep -qE 'continue-on-error|needs:'; then
+  pass "annotate-browser is blocking, has no needs, and runs annotate-check.sh with CRAFT_CI_REQUIRE_BROWSER"
+else
+  fail "annotate-browser job is missing, non-blocking, has needs, or lacks CRAFT_CI_REQUIRE_BROWSER" "$AB"
+fi
+if ! job_block browser | grep -q 'annotate-check.sh' && job_block browser | grep -q 'run: bash scripts/ci/browser-check.sh$'; then
+  pass "browser no longer runs annotate-check.sh and still runs browser-check.sh"
+else
+  fail "browser job still runs annotate-check.sh or lost browser-check.sh"
 fi
 
 # Test: every job runs on ubuntu-latest
@@ -160,7 +175,7 @@ fi
 
 # --- Runbook / workflow agreement (added by the runbook chunk) -------------
 if [ -f "$RUNBOOK" ]; then
-  # The seven blocking job ids (everything except browser) must each be named
+  # The eight blocking job ids (everything except browser) must each be named
   # as a required check in the runbook - derived from the workflow, not restated.
   RB_OK=1
   while IFS= read -r j; do
@@ -170,9 +185,14 @@ if [ -f "$RUNBOOK" ]; then
 $JOB_IDS
 EOF
   if [ "$RB_OK" -eq 1 ]; then
-    pass "the runbook names all seven required check ids from the workflow"
+    pass "the runbook names all eight required check ids from the workflow, annotate-browser included"
   else
     fail "runbook/workflow job-name drift"
+  fi
+  if grep -q '`annotate-browser`' "$RUNBOOK" && [ "$(grep -c '{"context": "annotate-browser"}' "$RUNBOOK")" = "2" ]; then
+    pass "the runbook lists annotate-browser in both payloads"
+  else
+    fail "the runbook payloads do not both carry annotate-browser"
   fi
   if grep -qi 'browser.*not required\|browser.*NOT a required' "$RUNBOOK"; then
     pass "the runbook names browser as not required"

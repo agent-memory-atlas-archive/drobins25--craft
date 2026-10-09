@@ -175,10 +175,12 @@ function cmdNotice(quiet) {
   const m = findMarker();
   if (!m || m.mode !== 'isolated') return;
   const flag = path.join(os.tmpdir(), `craft-devtools-noticed-${m.launcher_pid}`);
-  if (fs.existsSync(flag)) return;
   try {
-    fs.writeFileSync(flag, '');
-  } catch {
+    // An exclusive create: only the call that makes the flag prints, and a
+    // path someone else planted is never written through.
+    fs.writeFileSync(flag, '', { flag: 'wx' });
+  } catch (err) {
+    if (err && err.code === 'EEXIST') return;
     // Cannot record it: the line repeats rather than going missing.
   }
   if (!quiet) process.stdout.write(FALLBACK_NOTICE + '\n');
