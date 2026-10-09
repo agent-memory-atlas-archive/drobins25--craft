@@ -137,3 +137,41 @@ Open a pull request (any small change). Confirm:
 `tests/test-ci-workflow.sh` keeps this document and the workflow's job ids
 in agreement - if a job is ever renamed in `ci.yml`, that test fails until
 this file (and the protection rule, by re-running step 2) catch up.
+
+## If a required check turns flaky - take it off the list, then put it back
+
+This is a separate procedure from steps 1-4, for one situation: a required
+check (most likely `annotate-browser`, which runs a real Chrome on GitHub's
+runners) fails on pull requests for reasons unrelated to the change, and every
+merge is blocked. Like steps 1-4, a human admin applies it; no agent or
+automation changes branch protection.
+
+1. **Confirm it is a flake.** Re-run the failed job from the PR's checks
+   section. If it fails the same way again on a change that cannot affect it,
+   treat it as flaky. If it fails because of the change, fix the change
+   instead - this procedure is not a way around a real failure.
+
+2. **Read and save the current status-check settings first.** Same rule as
+   step 1: never write before you have read.
+
+   ```
+   gh api repos/drobins25/craft/branches/main/protection/required_status_checks
+   ```
+
+   Save the output to a file. It shows the current `strict` value and the
+   `checks` list you will restore in step 5.
+
+3. **Take the one check off.** Run the step 2 command with that check's
+   `{"context": ...}` line deleted from the `checks` array and every other
+   line kept. Set `strict` to the value the saved output showed. This
+   endpoint changes only the status-check settings, so nothing else about
+   the protection rule moves.
+
+4. **Track it.** Open an issue naming the check, the failing runs, and the
+   date it came off the list, so it does not stay off by accident. Fix the
+   flakiness through a normal pull request.
+
+5. **Put it back.** Once the fix is merged, re-run the step 2 command exactly
+   as written above (all eight checks), then read the settings again with the
+   command from item 2 and confirm the `checks` list matches what you saved.
+   Step 4's verify checklist confirms the merge button blocks again.
