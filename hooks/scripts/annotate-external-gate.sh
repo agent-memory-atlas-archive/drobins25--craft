@@ -265,6 +265,68 @@ def scan_args(text):
     return not in_quotes
 
 
+def arg_words(text):
+    """The words bash makes of argument text that scan_args passed: whitespace
+    outside double quotes splits, and the quotes themselves are dropped."""
+    words = []
+    word = None
+    in_quotes = False
+    for char in text:
+        if char == '"':
+            in_quotes = not in_quotes
+            word = word or ""
+        elif not in_quotes and char in " \t":
+            if word is not None:
+                words.append(word)
+            word = None
+        else:
+            word = (word or "") + char
+    if word is not None:
+        words.append(word)
+    return words
+
+
+def session_roots(owner):
+    """Real paths of the project roots of the owner's listed sessions, each a
+    folder <root>/.craft/annotations/<id>."""
+    try:
+        with open(os.path.join(boundary_dir(), owner + ".json"), "r", encoding="utf-8") as handle:
+            sessions = json.load(handle).get("sessions", [])
+    except (OSError, ValueError, AttributeError):
+        return set()
+    roots = set()
+    for session in sessions:
+        if not isinstance(session, str) or not os.path.isabs(session):
+            continue
+        annotations = os.path.dirname(os.path.normpath(session))
+        craft = os.path.dirname(annotations)
+        if os.path.basename(annotations) == "annotations" and os.path.basename(craft) == ".craft":
+            roots.add(os.path.realpath(os.path.dirname(craft)))
+    return roots
+
+
+def args_bound(text, owner):
+    """True unless a --root names a folder other than one of the owner's session
+    projects, or an --owner-pid names a pid other than the owner. Those two flags
+    choose where annotate-run.sh creates folders and whose session it is."""
+    words = arg_words(text)
+    roots = None
+    for index, word in enumerate(words):
+        if word not in ("--root", "--owner-pid"):
+            continue
+        value = words[index + 1] if index + 1 < len(words) else None
+        if value is None:
+            return False
+        if word == "--owner-pid" and value != owner:
+            return False
+        if word == "--root":
+            if roots is None:
+                roots = session_roots(owner)
+            if not os.path.isabs(value) or os.path.realpath(value) not in roots:
+                return False
+    return True
+
+
 def script_path_ok(path):
     """The script's name when path is a plugin script, else None."""
     prefixes = [PLUGIN_ROOT_VAR + "/hooks/scripts/"]
@@ -277,9 +339,10 @@ def script_path_ok(path):
     return None
 
 
-def command_allowed(command):
+def command_allowed(command, owner):
     """True for `bash <plugin script> <allowed verb> <args>` and nothing more,
-    optionally followed by one quoted heredoc whose terminator ends the command."""
+    optionally followed by one quoted heredoc whose terminator ends the command,
+    with any --root or --owner-pid bound to the owner's own session."""
     if not isinstance(command, str) or not command.strip():
         return False
     lines = command.rstrip("\n").split("\n")
@@ -313,10 +376,11 @@ def command_allowed(command):
     words = rest.split(None, 1)
     if not words or words[0] not in ALLOWED_VERBS[name]:
         return False
-    return scan_args(words[1] if len(words) > 1 else "")
+    args = words[1] if len(words) > 1 else ""
+    return scan_args(args) and args_bound(args, owner)
 
 
-def tool_allowed(tool_name, tool_input):
+def tool_allowed(tool_name, tool_input, owner):
     if tool_name in PLAIN_TOOLS:
         return True
     for prefix in BROWSER_PREFIXES:
@@ -328,7 +392,7 @@ def tool_allowed(tool_name, tool_input):
     if tool_name == "Read":
         return read_allowed(tool_input)
     if tool_name in ("Bash", "Monitor"):
-        return command_allowed(tool_input.get("command"))
+        return command_allowed(tool_input.get("command"), owner)
     return False
 
 
@@ -378,7 +442,7 @@ def run_pre_tool(data, owner):
     if not isinstance(tool_name, str) or not isinstance(tool_input, dict):
         deny(DENY_REASON)
         return
-    if not tool_allowed(tool_name, tool_input):
+    if not tool_allowed(tool_name, tool_input, owner):
         deny(DENY_REASON)
 
 
