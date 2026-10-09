@@ -381,4 +381,38 @@ assert_eq "status is still graduated" "graduated" "$(fm "$OUT" status)"
 CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to $'two\nlines: x' >/dev/null 2>&1
 assert_eq "a newline cannot add a frontmatter line" '"two lines: x"' "$(fm "$OUT" graduated_to)"
 
+begin_test "graduate writes through a temp of its own and never touches one another writer left"
+# A fixed record.md.tmp is shared by every graduate, so one's rename can find
+# it gone. A file already at that name stands for another graduate's temp.
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" g1 0 "held temp"; hist "$LIVE" "$S1"; file_rec "$ROOT" g1 nothing
+RDIR="$(dirname "$OUT")"; NAME="$(basename "$RDIR")"
+NEW_MODE="$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT")"
+printf 'another writer\n' > "$RDIR/record.md.tmp"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to held >/dev/null 2>&1; GRC=$?
+assert_eq "graduate exits 0" "0" "$GRC"
+assert_eq "graduated_to set" "held" "$(fm "$OUT" graduated_to)"
+assert_eq "the other writer's record.md.tmp is left as it was" "another writer" "$(rd "$RDIR/record.md.tmp")"
+assert_eq "no temp of its own is left" "record.md.tmp" "$(ls "$RDIR" | grep '\.tmp$' | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "record.md keeps the mode the filer gave it" "$NEW_MODE" "$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT")"
+
+begin_test "two graduate calls on one record at once all succeed, 20 rounds"
+new_root; ROOT="$NEW_ROOT"
+live "$ROOT" g2 0 "twice"; hist "$LIVE" "$S1"; file_rec "$ROOT" g2 nothing
+RDIR="$(dirname "$OUT")"; NAME="$(basename "$RDIR")"
+GRAD_FAILED=0
+for i in $(seq 20); do
+  CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to one >/dev/null 2>&1 & A=$!
+  CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to two >/dev/null 2>&1 & B=$!
+  wait "$A" || GRAD_FAILED=$((GRAD_FAILED + 1))
+  wait "$B" || GRAD_FAILED=$((GRAD_FAILED + 1))
+done
+assert_eq "no graduate failed" "0 of 40" "$GRAD_FAILED of 40"
+assert_eq "status is graduated" "graduated" "$(fm "$OUT" status)"
+case "$(fm "$OUT" graduated_to)" in
+  one|two) echo "  PASS: graduated_to is one of the two destinations"; PASS=$((PASS + 1)) ;;
+  *) echo "  FAIL: graduated_to is '$(fm "$OUT" graduated_to)'"; FAIL=$((FAIL + 1)) ;;
+esac
+assert_eq "no temp file is left" "0" "$(ls "$RDIR" | grep -c '\.tmp$' || true)"
+
 finish_tests "test-annotate-record"

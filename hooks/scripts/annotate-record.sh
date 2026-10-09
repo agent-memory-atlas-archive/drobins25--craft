@@ -350,6 +350,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 path, destination, outcome = sys.argv[1:4]
 with open(path, "r", encoding="utf-8") as handle:
@@ -380,10 +381,22 @@ for index, line in enumerate(lines):
     if fences == 1 and found and found.group(1) in wanted:
         lines[index] = "%s: %s" % (found.group(1), wanted[found.group(1)])
 
-tmp_path = path + ".tmp"
-with open(tmp_path, "w", encoding="utf-8") as handle:
-    handle.write("\n".join(lines))
-os.replace(tmp_path, path)
+# A temp of this writer's own, so two graduates at once never share one; it
+# gets the mode a newly created file gets, the mode the filer gave record.md.
+umask = os.umask(0)
+os.umask(umask)
+fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix="record.md.", suffix=".tmp")
+try:
+    os.fchmod(fd, 0o666 & ~umask)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+    os.replace(tmp_path, path)
+except BaseException:
+    try:
+        os.unlink(tmp_path)
+    except OSError:
+        pass
+    raise
 print(path)
 PYEOF
 }

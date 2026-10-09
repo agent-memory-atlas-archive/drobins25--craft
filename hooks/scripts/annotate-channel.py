@@ -175,6 +175,25 @@ def terminate_torn_line(path):
             fh.write(b"\n")
 
 
+def replace_json(path, data):
+    """Writes data as JSON through a temp file of this writer's own in the same
+    folder, synced, then os.replace: a reader never sees it half written, and a
+    second process writing the same file never shares the temp."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def ts_key(value):
     """A pin's ts as the string every reader keys it by: an integral float
     becomes an int first, so 5, 5.0 and "5" meet. None when unusable."""
@@ -319,12 +338,7 @@ class Channel(ThreadingHTTPServer):
                 key = ts_key(item.get("ts")) if isinstance(item, dict) else None
                 if key is not None:
                     held[key] = item
-            tmp_path = self.probes_path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as fh:
-                json.dump(held, fh)
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(tmp_path, self.probes_path)
+            replace_json(self.probes_path, held)
 
     def hold_report(self, report):
         """Keeps a page report by id; the first for an id wins and only the
@@ -358,12 +372,7 @@ class Channel(ThreadingHTTPServer):
                 ledger.write(json.dumps(state) + "\n")
                 ledger.flush()
                 os.fsync(ledger.fileno())
-            tmp_path = self.current_path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as fh:
-                json.dump(state, fh)
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(tmp_path, self.current_path)
+            replace_json(self.current_path, state)
             if cleared:
                 changes = [{"seq": self.seq, "kind": "cleared"}]
             else:

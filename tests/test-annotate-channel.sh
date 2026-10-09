@@ -1110,6 +1110,23 @@ POS_PROBES="$(printf '%s' "$SRC" | grep -n 'merge_probes(' | tail -1 | cut -d: -
 POS_STATE="$(printf '%s' "$SRC" | grep -n 'self.server.replace_state(' | head -1 | cut -d: -f1)"
 if [ -n "$POS_PROBES" ] && [ -n "$POS_STATE" ] && [ "$POS_PROBES" -lt "$POS_STATE" ]; then echo "  PASS: probes are merged before replace_state is called"; PASS=$((PASS + 1)); else echo "  FAIL: probes merge does not precede replace_state"; FAIL=$((FAIL + 1)); fi
 
+begin_test "the listener writes current.json and probes.json through temps of its own, never one another writer could hold"
+# Two listeners on one session folder would share a fixed <file>.tmp, so one's
+# rename finds the temp gone. A file already sitting at that fixed name stands
+# for the other writer's temp: a SEND must succeed and leave it exactly as it was.
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT"
+SD="$ROOT/.craft/annotations/$SID"
+printf 'another writer\n' > "$SD/current.json.tmp"
+printf 'another writer\n' > "$SD/probes.json.tmp"
+BODY='{"pins":['"$(cpin 21 http://localhost/a held)"'],"probes":[{"page":"http://localhost/a","ts":21,"selector":".h","found":true,"component":null,"inline":false,"blocked":[],"rules":[]}]}'
+assert_eq "the SEND is 200" "200" "$(status_of "$(http POST "$PORT" /pins "$BODY")")"
+assert_eq "current.json holds the pin" "held" "$(json_get "$SD/current.json" 'd["pins"][0]["text"]')"
+assert_eq "probes.json holds the probe" ".h" "$(json_get "$SD/probes.json" 'd["21"]["selector"]')"
+assert_eq "the other writer's current.json.tmp is left as it was" "another writer" "$(rd "$SD/current.json.tmp")"
+assert_eq "the other writer's probes.json.tmp is left as it was" "another writer" "$(rd "$SD/probes.json.tmp")"
+assert_eq "no temp of the listener's own is left" "current.json.tmp probes.json.tmp" "$(ls "$SD" | grep '\.tmp$' | tr '\n' ' ' | sed 's/ $//')"
+
 begin_test "two SENDs with different pins append two added lines; a resent identical SEND appends nothing"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT"
