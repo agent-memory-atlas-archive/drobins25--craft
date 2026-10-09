@@ -17,13 +17,7 @@ Report formats for refinement outcomes. The orchestrator parses these to track f
 + <Form onSubmit={handleSubmit}>
 ```
 
-Re-validating...
-
-TypeScript: Pass
-Lint: Pass
-Build: Pass
-
-Error resolved. Continue?
+>>> HAND BACK TO validate-chunk: Refinement complete. Re-validate this chunk now.
 ```
 
 ---
@@ -46,11 +40,7 @@ Added 'email' to useEffect dependencies
 
 ---
 
-Re-validating...
-
-All checks pass
-
-Chunk validation complete. Continue?
+>>> HAND BACK TO validate-chunk: Refinement complete. Re-validate this chunk now.
 ```
 
 ---
