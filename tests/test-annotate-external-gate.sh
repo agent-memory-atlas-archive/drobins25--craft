@@ -285,6 +285,8 @@ attack "an owner pid with no value" "bash $RS arm --owner-pid"
 attack "a foreign root on status" "bash $RS status --session rt1 --root $BASE/elsewhere"
 attack "a foreign root on where" "bash $SCRIPT_DIR_ABS/annotate-resolve.sh where --root $BASE/elsewhere --session rt1 --ts 1"
 attack "a foreign root under the plugin root variable" "bash \"\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh\" arm --root \"$BASE/elsewhere\""
+attack "a foreign root inside a brace expansion" "bash $RS arm {--root,$BASE/elsewhere}"
+attack "a foreign owner pid inside a brace expansion" "bash $RS arm {--owner-pid,1}"
 ok() { assert_eq "$1" "silent" "$(verdict "$(bash_call "$2")")"; }
 ok "the flow's cold path, the session's own root" "bash \"\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh\" arm --root \"$PROJ\""
 ok "the session's own root, bare" "bash $RS arm --root $PROJ"

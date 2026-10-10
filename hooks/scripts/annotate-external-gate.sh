@@ -118,7 +118,7 @@ SNIPPET_FENCES = (
 CLEAR_FENCE = ("commands/references/annotate-overlay.md", "```annotate-clear")
 
 PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}"
-UNQUOTED_FORBIDDEN = set(";&|<>()$\\`'")
+UNQUOTED_FORBIDDEN = set(";&|<>()$\\`'{}")
 QUOTED_FORBIDDEN = set("$\\`")
 HEREDOC_OPENER = re.compile(r"^(.*\S) <<'([A-Za-z_][A-Za-z0-9_]*)'$")
 SCRIPT_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
