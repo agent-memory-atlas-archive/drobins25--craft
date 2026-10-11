@@ -3,7 +3,9 @@
 #
 # The skip paths run on any machine. The Chrome-dependent assertions run only
 # when a Chrome binary is present; on a browser-less machine they pass as
-# SKIPs, because the harness itself skips legibly (the CI job is non-blocking).
+# SKIPs, because the harness itself skips legibly. On GitHub they run only in
+# the annotate-browser job (CRAFT_CI_LIVE=1), which also sets
+# CRAFT_CI_REQUIRE_BROWSER, so a missing browser fails there instead of skipping.
 
 set -euo pipefail
 
@@ -25,7 +27,7 @@ tmp_path_from() { echo "$1" | grep -o 'annotate fixture root: .*' | sed 's/^anno
 
 # Test 1: no Chrome found - exits 0 with a SKIP line naming what it looked for
 set +e
-OUT=$(CRAFT_CI_CHROME=/nonexistent-chrome-for-test bash "$HARNESS" 2>&1)
+OUT=$(env -u CRAFT_CI_REQUIRE_BROWSER CRAFT_CI_CHROME=/nonexistent-chrome-for-test bash "$HARNESS" 2>&1)
 RC=$?
 set -e
 if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "^SKIP: no Chrome binary found"; then
@@ -50,7 +52,7 @@ fi
 STANDIN="$(mktemp)"
 chmod +x "$STANDIN"
 set +e
-OUT=$(CRAFT_CI_CHROME="$STANDIN" CRAFT_CI_NODE=/nonexistent-node-for-test bash "$HARNESS" 2>&1)
+OUT=$(env -u CRAFT_CI_REQUIRE_BROWSER CRAFT_CI_CHROME="$STANDIN" CRAFT_CI_NODE=/nonexistent-node-for-test bash "$HARNESS" 2>&1)
 RC=$?
 set -e
 set +e
@@ -125,7 +127,12 @@ else
   [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] && have_chrome=1
 fi
 
-if [ "$have_chrome" -eq 1 ] && command -v node > /dev/null 2>&1; then
+# On GitHub the live run belongs to the annotate-browser job alone, never to
+# the suite group this file lands in.
+if [ -n "${GITHUB_ACTIONS:-}" ] && [ "${CRAFT_CI_LIVE:-}" != "1" ]; then
+  pass "with Chrome: the live run (SKIPPED - the annotate-browser job runs it)"
+elif { [ "$have_chrome" -eq 1 ] && command -v node > /dev/null 2>&1; } \
+  || [ "${CRAFT_CI_REQUIRE_BROWSER:-}" = "1" ]; then
   set +e
   OUT=$(bash "$HARNESS" 2>&1)
   RC=$?

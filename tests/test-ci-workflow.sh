@@ -127,9 +127,10 @@ fi
 # Test: annotate-browser is blocking, standalone, and fails (not skips) without a browser
 AB=$(job_block annotate-browser)
 if echo "$AB" | grep -q '^    env:$' && echo "$AB" | grep -q '^      CRAFT_CI_REQUIRE_BROWSER: "1"$' \
-  && echo "$AB" | grep -q 'run: bash scripts/ci/annotate-check.sh$' \
+  && echo "$AB" | grep -q '^      CRAFT_CI_LIVE: "1"$' \
+  && echo "$AB" | grep -q 'run: bash tests/test-ci-annotate-check.sh$' \
   && ! echo "$AB" | grep -qE 'continue-on-error|needs:'; then
-  pass "annotate-browser is blocking, has no needs, and runs annotate-check.sh with CRAFT_CI_REQUIRE_BROWSER"
+  pass "annotate-browser is blocking, has no needs, and runs the annotate check's tests live with CRAFT_CI_REQUIRE_BROWSER"
 else
   fail "annotate-browser job is missing, non-blocking, has needs, or lacks CRAFT_CI_REQUIRE_BROWSER" "$AB"
 fi
@@ -140,10 +141,11 @@ if echo "$AB" | grep -qx '    timeout-minutes: 10'; then
 else
   fail "annotate-browser does not set timeout-minutes: 10" "$AB"
 fi
-if ! job_block browser | grep -q 'annotate-check.sh' && job_block browser | grep -q 'run: bash scripts/ci/browser-check.sh$'; then
-  pass "browser no longer runs annotate-check.sh and still runs browser-check.sh"
+if ! job_block browser | grep -q 'annotate-check' && job_block browser | grep -q '^      CRAFT_CI_LIVE: "1"$' \
+  && job_block browser | grep -q 'run: bash tests/test-ci-browser-check.sh$'; then
+  pass "browser runs no annotate check and runs the browser check's tests live"
 else
-  fail "browser job still runs annotate-check.sh or lost browser-check.sh"
+  fail "browser job runs an annotate check or lost the live browser check tests"
 fi
 
 # Test: every job runs on ubuntu-latest

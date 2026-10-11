@@ -3,7 +3,8 @@
 #
 # The Chrome-dependent assertions run only when a Chrome binary is present;
 # on a browser-less machine they pass as SKIPs, because the harness itself
-# is designed to skip legibly (the CI job is non-blocking by decision).
+# is designed to skip legibly (the CI job is non-blocking by decision). On
+# GitHub they run only in the browser job (CRAFT_CI_LIVE=1).
 
 set -euo pipefail
 
@@ -88,7 +89,11 @@ else
   [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] && have_chrome=1
 fi
 
-if [ "$have_chrome" -eq 1 ]; then
+# On GitHub the live run belongs to the non-blocking browser job alone, never
+# to the required suite group this file lands in.
+if [ -n "${GITHUB_ACTIONS:-}" ] && [ "${CRAFT_CI_LIVE:-}" != "1" ]; then
+  pass "with Chrome: the live run (SKIPPED - the browser job runs it)"
+elif [ "$have_chrome" -eq 1 ]; then
   set +e
   OUT=$(bash "$HARNESS" 2>&1)
   RC=$?
