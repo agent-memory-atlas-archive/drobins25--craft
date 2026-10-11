@@ -21,11 +21,11 @@ cleanup() {
   local r f p
   for r in "${TMP_ROOTS[@]:-}"; do
     [ -n "$r" ] || continue
-    for f in "$r"/*/.craft/annotations/*/listener.pid; do
+    while IFS= read -r f; do
       [ -f "$f" ] || continue
       p="$(cat "$f" 2>/dev/null || true)"
       case "$p" in ''|*[!0-9]*) ;; *) kill "$p" 2>/dev/null || true ;; esac
-    done
+    done < <(find "$r" -path '*/.craft/annotations/*/listener.pid' 2>/dev/null)
     rm -rf "$r"
   done
   rm -f "$ROOT_LOGICAL/.gate-test-link"
