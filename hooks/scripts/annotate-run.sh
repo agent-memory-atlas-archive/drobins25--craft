@@ -1210,9 +1210,11 @@ def lines_for(changes):
         kind, key = change.get("kind"), str(change.get("ts"))
         if kind in ("added", "edited"):
             pin = change.get("pin") if isinstance(change.get("pin"), dict) else {}
+            n = pin.get("n")
+            n = n if isinstance(n, int) and not isinstance(n, bool) else "?"
             tagged = session_external() or (pin_page(change) != "" and page_is_external(pin_page(change)))
             out.append("%s%s %s #%s %s at %s near %s source %s" % (
-                "EXTERNAL " if tagged else "", kind.upper(), key, pin.get("n", "?"), quoted(pin.get("text")),
+                "EXTERNAL " if tagged else "", kind.upper(), key, n, quoted(pin.get("text")),
                 quoted(pin.get("selector")), quoted(pin.get("nearText")),
                 quoted(source_of(key, probes))))
         elif kind == "deleted" and key in doomed:

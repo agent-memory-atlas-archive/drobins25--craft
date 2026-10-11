@@ -140,7 +140,8 @@ def ts_key(value):
         return None
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    return str(value) if isinstance(value, (int, str)) and str(value) != "" else None
+    text = str(value) if isinstance(value, (int, str)) else ""
+    return text if text.isascii() and text.isdigit() else None
 
 
 def run_id():
