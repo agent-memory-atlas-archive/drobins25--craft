@@ -69,13 +69,9 @@ if [ -n "$CRAFT_PROJECT_ROOT" ]; then
 else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || true
-  ROOT="${PROJECT_ROOT%/}"
-fi
-
-# Cold fallback: mirror dials-list.sh / notebook-list.sh's anchor (git
-# toplevel, else PWD) so records are listable before /craft:init.
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+  # The shared lookup picks the folder, so records are listable before /craft:init.
+  craft_before_init_root >/dev/null
+  ROOT="$CRAFT_BEFORE_INIT_ROOT"
 fi
 
 ROOM_FILTER=""

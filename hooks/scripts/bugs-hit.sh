@@ -22,13 +22,8 @@ if [ -n "$CRAFT_PROJECT_ROOT" ]; then
   ROOT="${CRAFT_PROJECT_ROOT%/}"
 else
   source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1 || true
-  ROOT="${PROJECT_ROOT%/}"
-fi
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-fi
-if [ -z "$ROOT" ]; then
-  ROOT="$PWD"
+  craft_before_init_root >/dev/null
+  ROOT="$CRAFT_BEFORE_INIT_ROOT"
 fi
 
 OPEN_DIR="$ROOT/.craft/bugs"

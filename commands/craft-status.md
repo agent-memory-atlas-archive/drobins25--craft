@@ -136,13 +136,13 @@ No new state files - the records ARE the state. Conversational recall ("what moc
 
 ## Implementation
 
-Set `PROJECT` to `${CRAFT_PROJECT_ROOT:-.}`. **Cold anchor:** if `CRAFT_PROJECT_ROOT` is unset and no walk-up from PWD finds a `.craft/.global-state` or `.craft/project.md`, set `PROJECT` to the git toplevel (`git rev-parse --show-toplevel`) when in a repo, else PWD - never a subdirectory. Cold captures land at the repo root, so the counts below must look there, not wherever the shell sits.
+Set `PROJECT` to `$CRAFT_PROJECT_ROOT` when it is set, else the folder this prints: `bash -c 'source "$1" >/dev/null 2>&1; craft_before_init_root' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh"`. Cold captures land in that folder, so the counts below must look there, not wherever the shell sits.
 
 **Cold guard (uninitialized project):** if `$PROJECT/.craft/.global-state` and `$PROJECT/.craft/project.md` are both absent, this project is not initialized - do NOT run the dashboard reads below (they assume state that does not exist). Answer instead:
 
 > **Craft is installed here, but this project isn't initialized - so there's no cycle or story state to show yet.**
 >
-> Works right now, no setup: `/craft:mockup` (visual options funnel), `/craft:dial` (live value calibration on a running app), `/craft:notebook` (capture thoughts), `/craft:guide` / `/craft:ask` / `/craft:riff` (consult), `/craft:research` and `/craft:become` (artifacts land at the repo root).
+> Works right now, no setup: `/craft:mockup` (visual options funnel), `/craft:dial` (live value calibration on a running app), `/craft:notebook` (capture thoughts), `/craft:guide` / `/craft:ask` / `/craft:riff` (consult), `/craft:research` and `/craft:become` (artifacts land in the project's folder).
 >
 > `/craft:init` unlocks the rest - stories, cycles, tweaks, adhoc fixes - and makes anything already captured recallable and buildable.
 

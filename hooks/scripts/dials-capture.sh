@@ -35,15 +35,11 @@ if [ -n "$CRAFT_PROJECT_ROOT" ]; then
 else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || true
-  ROOT="${PROJECT_ROOT%/}"
-fi
-
-# Cold fallback: anchor to the git toplevel (never a subdirectory), else PWD.
-# An orphaned capture must be loud - nothing recalls it until /craft:init runs.
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -z "$ROOT" ]; then
-    ROOT="$PWD"
+  # The shared lookup picks the folder, so capture works before /craft:init.
+  # An orphaned capture must be loud - nothing recalls it until /craft:init runs.
+  craft_before_init_root >/dev/null
+  ROOT="$CRAFT_BEFORE_INIT_ROOT"
+  if [ "$CRAFT_BEFORE_INIT_FROM" = "folder" ]; then
     echo "not a git repo - capturing to $ROOT/.craft/dials/ (local to this directory)" >&2
   fi
 fi

@@ -127,6 +127,41 @@ craft_refuse_monorepo_top() {
   return 0
 }
 
+# Which folder a project's craft files go in before /craft:init has set it up.
+# Reads what the main resolution below leaves in PROJECT_ROOT, so call it after
+# sourcing this file. Answer order: the set-up project when one resolved, else
+# the git top level (never a subfolder), else the current folder.
+#
+# Callers that were handed a CRAFT_PROJECT_ROOT use that folder as given and do
+# not call this: the main block drops a handed-in folder that has no .craft/
+# yet, which would erase exactly the folder they were told to use.
+#
+# Prints the folder (no trailing slash) on stdout and sets, in the caller's
+# shell, CRAFT_BEFORE_INIT_ROOT (the same folder) and CRAFT_BEFORE_INIT_FROM
+# (project, git or folder) so a script can tell which step answered; a $(...)
+# capture loses both. It assigns none of PROJECT_ROOT, CRAFT_PROJECT_ROOT,
+# CRAFT_PROJECT_NAME or CRAFT_MULTI_PROJECT, so callers still see the "several
+# projects" flag, and it never refuses, exits or creates anything. Always
+# returns 0, with nothing on stderr.
+# Usage: craft_before_init_root >/dev/null; folder="$CRAFT_BEFORE_INIT_ROOT"
+craft_before_init_root() {
+  local root="${PROJECT_ROOT:-}" from="project" top
+  root="${root%/}"
+  if [ -z "$root" ]; then
+    if top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ]; then
+      root="$top"
+      from="git"
+    else
+      root="$PWD"
+      from="folder"
+    fi
+  fi
+  CRAFT_BEFORE_INIT_ROOT="$root"
+  CRAFT_BEFORE_INIT_FROM="$from"
+  printf '%s\n' "$root"
+  return 0
+}
+
 # Main resolution
 if [ -z "${PROJECT_ROOT:-}" ]; then
 

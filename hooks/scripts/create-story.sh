@@ -70,6 +70,9 @@ if [ -n "$CYCLE" ]; then
   template="$TEMPLATES_DIR/story-full.md"
 else
   # Backlog story
+  # The backlog is the one destination that works before /craft:init, so its
+  # folder may not exist yet; a redirect into a missing folder aborts under set -e.
+  mkdir -p "$ROOT/.craft/backlog"
   story_file="$ROOT/.craft/backlog/${STORY_NAME}.md"
   template="$TEMPLATES_DIR/story-backlog.md"
 fi
