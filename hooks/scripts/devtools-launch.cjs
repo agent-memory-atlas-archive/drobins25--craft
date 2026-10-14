@@ -138,14 +138,20 @@ function readMarker(key) {
   }
 }
 
-function parentPid(pid) {
+// Every process's parent from one ps call. The list-all form is the one every
+// ps answers - BusyBox (Alpine) has no -p - and one call beats one per hop.
+function parentMap() {
+  const parents = new Map();
   try {
-    const r = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
-    const n = Number(String(r.stdout || '').trim());
-    return Number.isInteger(n) && n > 1 ? n : null;
+    const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 2000 });
+    for (const line of String(r.stdout || '').split('\n')) {
+      const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+      if (Number.isInteger(pid) && Number.isInteger(ppid) && ppid > 1) parents.set(pid, ppid);
+    }
   } catch {
-    return null;
+    // No ps at all: the walk stops at the launcher's own parent.
   }
+  return parents;
 }
 
 function findMarker() {
@@ -156,10 +162,12 @@ function findMarker() {
   }
   if (process.platform === 'win32') return null;
   let pid = process.ppid;
+  let parents = null;
   for (let hop = 0; pid && hop < MAX_ANCESTOR_HOPS; hop++) {
     const m = readMarker(String(pid));
     if (m) return m;
-    pid = parentPid(pid);
+    if (!parents) parents = parentMap();
+    pid = parents.get(pid) || null;
   }
   return null;
 }

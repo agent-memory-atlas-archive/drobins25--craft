@@ -152,6 +152,29 @@ expect_eq "a CLAUDE_PID with a path is never read" "$(CLAUDE_PID=../outside/m no
 expect_eq "a rejected CRAFT_DEVTOOLS_KEY still lets CLAUDE_PID through" "$(CRAFT_DEVTOOLS_KEY=../outside/m CLAUDE_PID=4242 node "$LAUNCH" status)" "ISOLATED"
 expect_eq "a key with dots and dashes is still a key" "$(write_marker k.e-y_1 shared $$; CRAFT_DEVTOOLS_KEY=k.e-y_1 node "$LAUNCH" status)" "SHARED"
 
+# ancestor walk: with no key set, the marker is found by walking parent processes
+write_marker "$$" shared $$
+expect_eq "the walk finds a marker on an ancestor process" "$(node "$LAUNCH" status)" "SHARED"
+rm -f "$CRAFT_DEVTOOLS_STATE_DIR/$$.json"
+
+# A BusyBox-style ps (Alpine) rejects -p and answers only the list-all form. The
+# fake hands back a two-hop chain above the launcher's parent; the walk must
+# still reach the marker at its end.
+REAL_PS="$(command -v ps)"
+mkdir -p "$TMP/fakebin"
+cat > "$TMP/fakebin/ps" <<FAKEPS
+#!/bin/sh
+case " \$* " in
+  *" -p "*) echo "ps: unrecognized option: p" >&2; exit 1 ;;
+esac
+node_ppid=\$("$REAL_PS" -o ppid= -p "\$PPID" | tr -d ' ')
+printf '  %s  90001\n  90001  90002\n    1     0\n' "\$node_ppid"
+FAKEPS
+chmod +x "$TMP/fakebin/ps"
+write_marker 90002 isolated $$
+expect_eq "the walk reaches an ancestor through a ps without -p" "$(PATH="$TMP/fakebin:$PATH" node "$LAUNCH" status)" "ISOLATED"
+rm -f "$CRAFT_DEVTOOLS_STATE_DIR/90002.json"
+
 # notice: once for isolated, then nothing
 FIRST="$(notice_for s2)"; SECOND="$(notice_for s2)"
 expect_eq "notice prints the copy the first time for isolated" "$FIRST" "$COPY"
