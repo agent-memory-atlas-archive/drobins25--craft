@@ -203,6 +203,10 @@ assert_eq "first death" "LISTEN STREAK 1" "$(run_sh "$R" ensure --session bg5)"
 assert_eq "nothing started" "0" "$(annotate_procs "$R")"
 assert_file_not_exists "pid file removed" "$D/listener.pid"
 assert_file_not_exists "port file removed" "$D/port"
+# The exit notice and the watch's UNREACHABLE can both run ensure before Claude
+# runs listen: the second call is the same death and must not count again.
+assert_eq "same death asked twice" "LISTEN STREAK 1" "$(run_sh "$R" ensure --session bg5)"
+assert_eq "streak file still 1" "1" "$(rd "$D/rearm.streak")"
 start_listen "$R" bg5
 run_sh "$R" ready --session bg5 >/dev/null
 kill -KILL "$LJ" 2>/dev/null || true

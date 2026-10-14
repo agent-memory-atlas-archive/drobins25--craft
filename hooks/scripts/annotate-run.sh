@@ -1759,8 +1759,15 @@ cmd_ensure() {
     rm -f "$dir/port"
     streak="$(read_file "$dir/rearm.streak")"
     is_number "$streak" || streak=0
-    streak=$((streak + 1))
-    write_session_files "$dir/rearm.streak" "$streak"
+    # Only a recorded pid is a new death. Claude Code's exit notice and the
+    # watch's UNREACHABLE can both ask before listen runs: the second finds the
+    # pid already cleared and repeats the count instead of raising it.
+    if is_number "$pid"; then
+      streak=$((streak + 1))
+      write_session_files "$dir/rearm.streak" "$streak"
+    elif [ "$streak" -lt 1 ]; then
+      streak=1
+    fi
     echo "LISTEN STREAK $streak"
     return 0
   fi
