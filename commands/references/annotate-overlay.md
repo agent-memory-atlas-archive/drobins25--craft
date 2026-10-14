@@ -868,6 +868,40 @@ The five analyzers (creative, qa, style, ux and walkthrough) and adhoc fix and a
 
 The gate exists because an open run's page is the user's live review: clearing it would pull the overlay out from under someone mid-comment. The verb needs no session, writes nothing and contacts no listener; it reads the clear from the fence above at run time, so the text is stated once. The clear removes the overlay and the live session styles but never the pins waiting in local storage.
 
+## Starting the listener
+
+This is the only text that starts a listener, first start or restart, for the annotate, mockup and dial flows. A background command is one Claude Code tracks: it stops it when the session ends and tells Claude when it dies. The flows' read beats keep their own restart lines; this section refers to them and does not restate them.
+
+1. Prepare the session, adding `--root "<project root>"` when the flow holds a folder and `--session "<id>"` when re-arming a held id:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" arm --background
+   ```
+
+   `SESSION <id> PORT <port>` means a listener is already running: hold the id and port, done.
+2. `SESSION <id> LISTEN` means the folder is ready and nothing is running yet. Run this as a background Bash command (`run_in_background: true`), with the same `--root`:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" listen --session "<id>"
+   ```
+
+3. Then, as an ordinary command with the same `--root`, read the port:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" ready --session "<id>"
+   ```
+
+   Its `SESSION <id> PORT <port>` line is the port. Hold it.
+4. When Claude Code refuses the background option (an unexpected-parameter error: the command never ran), skip steps 2 and 3 and start the listener the plain way, saying nothing:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" arm --session "<id>"
+   ```
+
+   with the same `--root`. It prints `SESSION <id> PORT <port>`.
+5. `ensure` printing `LISTEN STREAK <k>` means the listener is dead and nothing was started: do steps 2 and 3 (or step 4 when the option is refused), then treat the result as `REARMED PORT <port> STREAK <k>` with the new port - or as `FAILED` when `ready` fails.
+6. When Claude Code reports that the listener's background command exited, run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" ensure --session "<id>"` and act on its line as the flow's read beat does.
+
 ## The stamps
 
 The delivering flow writes these before the overlay source runs. The port is the one printed when the session's listener was armed.

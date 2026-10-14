@@ -2,13 +2,15 @@
 # annotate-run.sh - the single entry seam for the annotation capture channel.
 #
 # Usage:
-#   annotate-run.sh arm     [--root R] [--session ID] [--owner-pid PID]
+#   annotate-run.sh arm     [--root R] [--session ID] [--owner-pid PID] [--background]   (--background: prepares the session and prints SESSION <id> LISTEN; listen starts the listener)
+#   annotate-run.sh listen  [--root R] --session ID   (run as a Claude Code background command: becomes the listener, so stopping this command stops the listener)
+#   annotate-run.sh ready   [--root R] --session ID [--timeout SECONDS]   (waits for the listener started by listen; prints SESSION <id> PORT <port>)
 #   annotate-run.sh status  [--root R] (--session ID | --all)   (CLIENTS is a count, or 'unreachable' when the listener does not answer)
 #   annotate-run.sh wait    [--root R] --session ID --timeout SECONDS [--since SEQ]   (--since: the last seq already acted on; a SEND past it returns at once)
 #   annotate-run.sh clear   [--root R] --session ID
 #   annotate-run.sh announce [--root R] --session ID
 #   annotate-run.sh sweep   [--root R]
-#   annotate-run.sh begin   [--root R] --session ID [--subject TEXT]   (annotate only: marks the run's start seq)
+#   annotate-run.sh begin   [--root R] --session ID [--subject TEXT] [--resume RECORD]   (annotate only: marks the run's start seq; --resume seeds the sheet from a saved open record and names it in run.json)
 #   annotate-run.sh watch   [--root R] --session ID [--once]   (annotate only: prints each new change from the saved position as one line; --once blocks until one batch prints, then exits)
 #   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
 #   annotate-run.sh apply   [--root R] --session ID [--drop KEY]... [--target TS=SELECTOR]...   (annotate only: blocks on stdin; writes them, pushes the page, prints what the page measured)
@@ -31,7 +33,10 @@
 # session) and by sweep (before reaping) as outcome error, status open.
 #
 # begin prints "RUN <start_seq>" (the highest seq on disk), writes run.json and
-# empties session.css. sheet keeps session.css as keyed blocks and prints ONE
+# empties session.css. With --resume RECORD (a record folder whose status is
+# open) session.css starts as a byte copy of that record's sheet and run.json
+# names it as "resumes"; a prior run on the session that has no history past its
+# start seq and an empty sheet is dropped instead of filed as an empty record. sheet keeps session.css as keyed blocks and prints ONE
 # line, a function that makes the page equal the whole file and returns
 # APPLIED, pasted to evaluate_script verbatim; with neither
 # --add nor --drop it only prints. send is for a page that blocks SEND: the
@@ -63,16 +68,28 @@
 #
 # Each armed session owns one listener (annotate-channel.py) on an OS-assigned
 # port, with its state under <root>/.craft/annotations/<session-id>/:
-#   port, listener.pid, owner.pid, listener.log, current.json, history.jsonl,
+#   port, listener.pid, launch, owner.pid, listener.log, current.json, history.jsonl,
 #   run.json, session.css, rearm.streak, changes.jsonl, probes.json, watch.cursor,
 #   watch.pid
 # Any directory holding record.md is a filed record, not a live session: status
 # --all and sweep never list or touch it.
 #
-# arm prints "SESSION <id> PORT <port>". The listener is started detached and
-# lives until its owning session process dies; sweep (run at session start)
-# reaps session dirs whose owner is gone. disarm exists for tests and manual
-# recovery - flows end a review with clear, never disarm.
+# Two ways to start the listener, recorded in <session-dir>/launch:
+#   background  arm --background prepares the folder and prints "SESSION <id>
+#               LISTEN"; listen, run by Claude as a background command, execs the
+#               listener (the process Claude Code tracks and stops is the
+#               listener); ready prints "SESSION <id> PORT <port>" once the
+#               listener has written its port file. ensure never starts one of
+#               these: a dead listener prints "LISTEN STREAK <k>" and Claude
+#               runs listen again.
+#   detached    plain arm prints "SESSION <id> PORT <port>". The listener is
+#               started detached and lives until its owning session process
+#               dies; sweep (run at session start) reaps session dirs whose
+#               owner is gone, and ensure restarts it. arm --background does the
+#               same when CLAUDE_CODE_DISABLE_BACKGROUND_TASKS turns background
+#               commands off.
+# disarm exists for tests and manual recovery - flows end a review with clear,
+# never disarm.
 #
 # Exit: 0 on success; 1 on a usage or runtime error. sweep always exits 0.
 
@@ -112,18 +129,9 @@ read_file() {
   cat "$1" 2>/dev/null || true
 }
 
-# Project root: --root, then CRAFT_PROJECT_ROOT, then the workshop oracle.
-resolve_root() {
-  local given="${1:-}" found=""
-  if [ -n "$given" ]; then
-    found="$given"
-  elif [ -n "${CRAFT_PROJECT_ROOT:-}" ]; then
-    found="$CRAFT_PROJECT_ROOT"
-  else
-    found="$(source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1; echo "${PROJECT_ROOT:-}")" || found=""
-  fi
-  echo "${found%/}"
-}
+# Project folder: --root, then CRAFT_PROJECT_ROOT or the set-up project, then the
+# nearest folder above this one that already holds the named session or record.
+source "$SCRIPT_DIR/annotate-root.sh"
 
 # LOCAL_OPENER_PY - Python source every listener call starts from. The one
 # opener skips the proxy environment, so http_proxy cannot make a healthy
@@ -494,32 +502,101 @@ resolve_owner_pid() {
   return 0
 }
 
+# await_port <session-dir> <tenths-of-a-second> [<pid>] - polls until the listener
+# is alive and has a port; sets LISTENER_PORT. Without a pid it follows
+# listener.pid, which may not exist yet (the listen call has not run). A pid
+# that is known and dead ends the wait at once. The listener writes the port file
+# itself; the PORT line in listener.log is the fallback for an older listener.
+await_port() {
+  local dir="$1" limit="$2" fixed="${3:-}" waited=0 pid line
+  LISTENER_PORT=""
+  while [ "$waited" -lt "$limit" ]; do
+    pid="${fixed:-$(read_file "$dir/listener.pid")}"
+    if [ -n "$pid" ] && ! pid_alive "$pid"; then
+      return 1
+    fi
+    if [ -n "$pid" ]; then
+      line="$(read_file "$dir/port")"
+      if ! is_number "$line"; then
+        line="$(grep -m1 '^PORT ' "$dir/listener.log" 2>/dev/null || true)"
+        line="${line#PORT }"
+      fi
+      if is_number "$line"; then
+        LISTENER_PORT="$line"
+        return 0
+      fi
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# is_listener_pid <pid> - alive and still an annotate-channel process
+is_listener_pid() {
+  pid_alive "${1:-}" && ps -o command= -p "$1" 2>/dev/null | grep -q "annotate-channel"
+}
+
+# is_starting_pid <pid> - a listener, or the listen call in the instant before it
+# becomes one
+is_starting_pid() {
+  pid_alive "${1:-}" && ps -o command= -p "$1" 2>/dev/null | grep -Eq "annotate-channel|annotate-run.sh listen"
+}
+
+# background_disabled - Claude Code's switch that turns background commands off
+background_disabled() {
+  case "$(printf '%s' "${CLAUDE_CODE_DISABLE_BACKGROUND_TASKS:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+  esac
+  return 1
+}
+
 # start_listener <session-dir> - launches the listener detached; sets LISTENER_PID and LISTENER_PORT
 # The child gets no stdin and writes only to listener.log, so no pipe from the
 # caller stays open and this call returns however long the listener lives.
 start_listener() {
-  local dir="$1" waited=0 line=""
+  local dir="$1"
   : > "$dir/listener.log"
+  rm -f "$dir/port"
   nohup python3 "$CHANNEL_PY" --dir "$dir" >"$dir/listener.log" 2>&1 </dev/null &
   LISTENER_PID=$!
   disown "$LISTENER_PID" 2>/dev/null || true
-  LISTENER_PORT=""
-  while [ "$waited" -lt 100 ]; do
-    line="$(grep -m1 '^PORT ' "$dir/listener.log" 2>/dev/null || true)"
-    if [ -n "$line" ]; then
-      LISTENER_PORT="${line#PORT }"
-      break
-    fi
-    kill -0 "$LISTENER_PID" 2>/dev/null || break
-    sleep 0.1
-    waited=$((waited + 1))
-  done
+  await_port "$dir" 100 "$LISTENER_PID" || true
   is_number "$LISTENER_PORT" || die "listener did not report a port (see $dir/listener.log)"
 }
 
+# settle_owner <session-dir> - prints the session's owner pid: --owner-pid, else
+# the one already on disk, else the nearest claude ancestor; nothing when none
+settle_owner() {
+  local dir="$1"
+  if [ -n "$OWNER_PID" ]; then
+    is_number "$OWNER_PID" || die "--owner-pid must be a pid"
+    echo "$OWNER_PID"
+  elif is_number "$(read_file "$dir/owner.pid")"; then
+    read_file "$dir/owner.pid"
+  else
+    resolve_owner_pid
+  fi
+}
+
+# arm_prepare <session-dir> - the background start's first call: records how the
+# listener will start and clears what a dead one left, so the listen call that
+# follows is the only thing that starts it
+arm_prepare() {
+  local dir="$1" owner
+  owner="$(settle_owner "$dir")"
+  [ -z "$owner" ] || write_session_files "$dir/owner.pid" "$owner"
+  write_session_files "$dir/launch" background
+  rm -f "$dir/listener.pid" "$dir/port"
+  : > "$dir/listener.log"
+}
+
 cmd_arm() {
-  local ann_dir ann_existed=0 sid dir listener_pid_file owner
+  local ann_dir ann_existed=0 sid dir listener_pid_file owner background=0
   [ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
+  if [ "$BACKGROUND" = "1" ] && ! background_disabled; then
+    background=1
+  fi
   ann_dir="$ROOT/.craft/annotations"
   [ -d "$ann_dir" ] && ann_existed=1
   mkdir -p "$ann_dir"
@@ -544,29 +621,61 @@ cmd_arm() {
     return 0
   fi
 
-  start_listener "$dir"
-  write_session_files "$dir/port" "$LISTENER_PORT" "$listener_pid_file" "$LISTENER_PID"
-
-  if [ -n "$OWNER_PID" ]; then
-    is_number "$OWNER_PID" || die "--owner-pid must be a pid"
-    owner="$OWNER_PID"
-  elif is_number "$(read_file "$dir/owner.pid")"; then
-    owner="$(read_file "$dir/owner.pid")"
-  else
-    owner="$(resolve_owner_pid)"
-    # No claude ancestor: tie the session to the listener itself. The sweep
-    # then reaps only after that pid is gone - never early, only late.
-    [ -n "$owner" ] || owner="$LISTENER_PID"
+  if [ "$background" = "1" ]; then
+    # A listener that is starting has a pid and no port yet: wait for it.
+    if is_listener_pid "$(read_file "$listener_pid_file")"; then
+      await_port "$dir" 100 || die "listener did not report a port (see $dir/listener.log)"
+      echo "SESSION $sid PORT $LISTENER_PORT"
+      return 0
+    fi
+    arm_prepare "$dir"
+    echo "SESSION $sid LISTEN"
+    return 0
   fi
+
+  start_listener "$dir"
+  write_session_files "$dir/port" "$LISTENER_PORT" "$listener_pid_file" "$LISTENER_PID" "$dir/launch" detached
+
+  owner="$(settle_owner "$dir")"
+  # No claude ancestor: tie the session to the listener itself. The sweep
+  # then reaps only after that pid is gone - never early, only late.
+  [ -n "$owner" ] || owner="$LISTENER_PID"
   write_session_files "$dir/owner.pid" "$owner"
 
   echo "SESSION $sid PORT $LISTENER_PORT"
 }
 
+# listen: the command Claude Code runs in the background. It becomes the
+# listener (exec), so the process Claude Code tracks and stops is the listener.
+cmd_listen() {
+  local dir pid
+  dir="$(session_dir)"
+  pid="$(read_file "$dir/listener.pid")"
+  if is_listener_pid "$pid"; then
+    await_port "$dir" 100 "$pid" || die "listener did not report a port (see $dir/listener.log)"
+    echo "SESSION $SESSION PORT $LISTENER_PORT"
+    return 0
+  fi
+  rm -f "$dir/port"
+  : > "$dir/listener.log"
+  write_session_files "$dir/listener.pid" "$$"
+  is_number "$(read_file "$dir/owner.pid")" || write_session_files "$dir/owner.pid" "$$"
+  exec python3 "$CHANNEL_PY" --dir "$dir" >"$dir/listener.log" 2>&1 </dev/null
+}
+
+# ready: waits for the port the listener writes once it is bound
+cmd_ready() {
+  local dir secs="${TIMEOUT:-10}"
+  dir="$(session_dir)"
+  is_number "$secs" || die "--timeout must be a number of seconds"
+  await_port "$dir" "$((secs * 10))" || die "listener did not report a port (see $dir/listener.log)"
+  echo "SESSION $SESSION PORT $LISTENER_PORT"
+}
+
 session_dir() {
   local dir
-  [ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
   valid_session_id "$SESSION" || die "--session <id> is required"
+  [ -n "$ROOT" ] || die "no such session: $SESSION"
   dir="$ROOT/.craft/annotations/$SESSION"
   [ -d "$dir" ] || die "no such session: $SESSION"
   echo "$dir"
@@ -669,14 +778,70 @@ file_orphan() {
   return 0
 }
 
+# resumable_record <name> - prints the record's folder when it is a saved record
+# whose status is open; otherwise prints nothing and returns 1.
+resumable_record() {
+  local name="$1" folder status
+  case "$name" in
+    ''|*/*|.*) return 1 ;;
+  esac
+  folder="$ROOT/.craft/annotations/$name"
+  [ -f "$folder/record.md" ] || return 1
+  status="$(awk '/^---$/{n++; if (n==2) exit; next} n==1 && /^status:/{sub("^status: *", ""); print; exit}' "$folder/record.md")"
+  [ "$status" = "open" ] || return 1
+  echo "$folder"
+}
+
+# drop_empty_run <session-dir> - a prior run with no history past its start seq
+# and an empty sheet holds nothing to keep; its run.json goes instead of being
+# filed as an empty record.
+drop_empty_run() {
+  local dir="$1" run start
+  run="$dir/run.json"
+  [ -f "$run" ] || return 0
+  [ -z "$(tr -d ' \t\r\n' < "$dir/session.css" 2>/dev/null)" ] || return 0
+  python3 - "$dir" <<'PYEOF' && rm -f "$run"
+import json
+import os
+import sys
+
+dir_path = sys.argv[1]
+try:
+    with open(os.path.join(dir_path, "run.json"), "r", encoding="utf-8") as handle:
+        start = json.load(handle).get("start_seq")
+except (OSError, ValueError, AttributeError):
+    sys.exit(1)
+start = start if isinstance(start, int) and not isinstance(start, bool) else 0
+try:
+    with open(os.path.join(dir_path, "history.jsonl"), "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+except OSError:
+    lines = []
+for line in lines:
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        continue
+    seq = entry.get("seq") if isinstance(entry, dict) else None
+    if isinstance(seq, int) and not isinstance(seq, bool) and seq > start:
+        sys.exit(1)
+sys.exit(0)
+PYEOF
+  return 0
+}
+
 cmd_begin() {
-  local dir start
+  local dir start resume_dir=""
   dir="$(session_dir)"
+  if [ -n "$RESUME" ]; then
+    resume_dir="$(resumable_record "$RESUME")" || die "no open record to resume: $RESUME"
+    drop_empty_run "$dir"
+  fi
   file_orphan "$dir"
   start="$(last_seq_on_disk "$dir")"
   # An earlier run's probes must never resolve this run's pins.
   rm -f "$dir/probes.json"
-  python3 - "$dir" "$start" "$SUBJECT" <<'PYEOF'
+  python3 - "$dir" "$start" "$SUBJECT" "$RESUME" "$resume_dir" <<'PYEOF'
 import fcntl
 import json
 import os
@@ -687,12 +852,21 @@ sys.path.insert(0, os.environ["CRAFT_ANNOTATE_SCRIPTS_DIR"])
 import annotate_write
 del sys.path[0]
 
-dir_path, start, subject = sys.argv[1:4]
+dir_path, start, subject, resumes, resume_dir = sys.argv[1:6]
 run = {
     "start_seq": int(start),
     "subject": subject,
     "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
+sheet = ""
+if resumes:
+    run["resumes"] = resumes
+    try:
+        # newline="" keeps the record's bytes exactly as they are.
+        with open(os.path.join(resume_dir, "session.css"), "r", encoding="utf-8", newline="") as handle:
+            sheet = handle.read()
+    except (OSError, UnicodeDecodeError):
+        sheet = ""
 try:
     log_size = os.path.getsize(os.path.join(dir_path, "changes.jsonl"))
 except OSError:
@@ -703,7 +877,7 @@ except OSError:
 # cannot write between the reset and the run record.
 with open(os.path.join(dir_path, "session.css.lock"), "w") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
-    for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", ""), ("watch.cursor", "%d\n" % log_size)):
+    for name, content in (("run.json", json.dumps(run) + "\n"), ("session.css", sheet), ("watch.cursor", "%d\n" % log_size)):
         annotate_write.write_atomic(os.path.join(dir_path, name), content)
 PYEOF
   echo "RUN $start"
@@ -1523,10 +1697,9 @@ print(count)
 # last beat re-arm?" is exactly what a model forgets.
 cmd_ensure() {
   local dir port pid streak ticks=0 out new_port
-  [ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
   dir="$ROOT/.craft/annotations/$SESSION"
   # A swept or never-armed folder stays gone: re-creating it would apply an empty sheet.
-  if ! valid_session_id "$SESSION" || [ ! -d "$dir" ]; then
+  if [ -z "$ROOT" ] || ! valid_session_id "$SESSION" || [ ! -d "$dir" ]; then
     echo "GONE"
     return 1
   fi
@@ -1538,7 +1711,16 @@ cmd_ensure() {
   fi
 
   pid="$(read_file "$dir/listener.pid")"
-  if is_number "$pid" && ps -o command= -p "$pid" 2>/dev/null | grep -q "annotate-channel"; then
+  # A listener that has a pid and no port yet is still starting: the exit notice
+  # and the watch can both ask for a restart, and the second must not kill it.
+  if ! is_number "$port" && is_starting_pid "$pid"; then
+    if await_port "$dir" 100 "$pid" && http_call GET "$LISTENER_PORT" /health >/dev/null 2>&1; then
+      write_session_files "$dir/rearm.streak" 0
+      echo "OK PORT $LISTENER_PORT"
+      return 0
+    fi
+  fi
+  if is_listener_pid "$pid"; then
     kill -TERM "$pid" 2>/dev/null || true
     while [ "$ticks" -lt 10 ] && pid_alive "$pid"; do
       sleep 0.1
@@ -1548,6 +1730,18 @@ cmd_ensure() {
   fi
   # arm returns early on any live pid in this file, so a recycled pid must not stay in it.
   rm -f "$dir/listener.pid"
+
+  # A background listener is started by Claude, never from in here: Claude Code
+  # would neither stop it at exit nor report it.
+  if [ "$(read_file "$dir/launch")" = "background" ]; then
+    rm -f "$dir/port"
+    streak="$(read_file "$dir/rearm.streak")"
+    is_number "$streak" || streak=0
+    streak=$((streak + 1))
+    write_session_files "$dir/rearm.streak" "$streak"
+    echo "LISTEN STREAK $streak"
+    return 0
+  fi
 
   if ! out="$(cmd_arm 2>/dev/null)"; then
     echo "FAILED"
@@ -1708,7 +1902,7 @@ for owner in sys.argv[1:]:
 }
 
 VERB="${1:-}"
-[ -n "$VERB" ] || die "usage: annotate-run.sh arm|status|wait|clear|announce|begin|watch|sheet|kind|style|apply|stamp|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
+[ -n "$VERB" ] || die "usage: annotate-run.sh arm|listen|ready|status|wait|clear|announce|begin|watch|sheet|kind|style|apply|stamp|loader|bake|strip|ensure|send|review-clear|sweep|disarm [options]"
 shift
 
 ROOT_ARG=""
@@ -1718,6 +1912,7 @@ TIMEOUT=""
 SINCE=""
 ALL=0
 SUBJECT=""
+RESUME=""
 KEY=""
 SHEET_ADD=0
 SHEET_DROP=""
@@ -1726,6 +1921,7 @@ APPLY_TARGETS=()
 RUN_STAMP=0
 NO_RUN=0
 WATCH_ONCE=0
+BACKGROUND=0
 PAGE=""
 FILE=""
 SELECTOR=""
@@ -1739,6 +1935,7 @@ while [ $# -gt 0 ]; do
     --since)     [ $# -ge 2 ] || die "--since needs a value"; SINCE="$2"; shift 2 ;;
     --all)       ALL=1; shift ;;
     --subject)   [ $# -ge 2 ] || die "--subject needs a value"; SUBJECT="$2"; shift 2 ;;
+    --resume)    [ $# -ge 2 ] || die "--resume needs a value"; RESUME="$2"; shift 2 ;;
     --key)       [ $# -ge 2 ] || die "--key needs a value"; KEY="$2"; shift 2 ;;
     --page)      [ $# -ge 2 ] || die "--page needs a value"; PAGE="$2"; shift 2 ;;
     --file)      [ $# -ge 2 ] || die "--file needs a value"; FILE="$2"; shift 2 ;;
@@ -1750,20 +1947,32 @@ while [ $# -gt 0 ]; do
     --run)       RUN_STAMP=1; shift ;;
     --no-run)    NO_RUN=1; shift ;;
     --once)      WATCH_ONCE=1; shift ;;
+    --background) BACKGROUND=1; shift ;;
     *)           die "unknown argument: $1" ;;
   esac
 done
 
 if [ "$VERB" = "sweep" ]; then
-  ROOT="$(resolve_root "$ROOT_ARG" 2>/dev/null || true)"
+  ROOT="$(annotate_root "$ROOT_ARG" "" 2>/dev/null || true)"
   sweep_all 2>/dev/null || true
   exit 0
 fi
 
-ROOT="$(resolve_root "$ROOT_ARG")"
+# A verb that acts on one named session finds it by walking up from here. The
+# verbs that name none never walk: the nearest parent .craft/annotations could
+# belong to an unrelated project.
+LOOKUP_NAME=""
+case "$VERB" in
+  review-clear|kind|style|strip) ;;
+  status) [ "$ALL" = "1" ] || ! valid_session_id "$SESSION" || LOOKUP_NAME="$SESSION" ;;
+  *) ! valid_session_id "$SESSION" || LOOKUP_NAME="$SESSION" ;;
+esac
+ROOT="$(annotate_root "$ROOT_ARG" "$LOOKUP_NAME")"
 
 case "$VERB" in
   arm)    cmd_arm ;;
+  listen) cmd_listen ;;
+  ready)  cmd_ready ;;
   status) cmd_status ;;
   wait)   cmd_wait ;;
   clear)  cmd_clear ;;

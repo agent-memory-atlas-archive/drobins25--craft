@@ -68,7 +68,7 @@ PLAIN_TOOLS = {"ToolSearch", "TaskOutput", "TaskStop"}
 ALLOWED_VERBS = {
     "annotate-run.sh": {
         "arm", "status", "ensure", "begin", "watch", "wait", "sheet", "apply", "stamp",
-        "loader", "kind", "send", "announce", "review-clear", "style",
+        "loader", "kind", "send", "announce", "review-clear", "style", "listen", "ready",
     },
     "annotate-resolve.sh": {"where"},
 }

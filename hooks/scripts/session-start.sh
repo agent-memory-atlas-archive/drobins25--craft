@@ -7,7 +7,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve project root (handles monorepo with multiple .craft/ dirs)
-source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || exit 0
+# Sourcing returns 1 when no project is set up, but the functions it defines
+# are still available. Ended annotate sessions on such a folder are still swept,
+# and the branch exits before anything is created or persisted, so a folder that
+# never ran init is not marked as set up.
+if ! source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null; then
+  _before_init_root=$(craft_before_init_root 2>/dev/null) || _before_init_root=""
+  if [ -n "$_before_init_root" ] && [ -d "$_before_init_root/.craft/annotations" ]; then
+    "$SCRIPT_DIR/annotate-run.sh" sweep --root "$_before_init_root" 2>/dev/null || true
+  fi
+  exit 0
+fi
 
 # No .craft/ found anywhere - not a craft project
 if [ -z "$PROJECT_ROOT" ] || [ ! -d "${PROJECT_ROOT}.craft" ]; then
@@ -227,20 +237,38 @@ if [ -d "${PROJECT_ROOT}.craft/mockups" ]; then
   fi
 fi
 
-# Check for open annotate records (a finished annotate run awaiting a destination); absent entirely at zero
+# Check for open annotate records: finished runs awaiting a destination, and runs cut short
+# (open with outcome error); each half is absent at zero
 if [ -d "${PROJECT_ROOT}.craft/annotations" ]; then
   annotation_count=0
   annotation_names=""
+  cutshort_count=0
+  cutshort_names=""
   for rec in "${PROJECT_ROOT}.craft/annotations"/*/record.md; do
     [ -f "$rec" ] || continue
-    rec_status=$(awk '/^status:/{print $2; exit}' "$rec" 2>/dev/null)
+    rec_fields=$(awk '/^status:/{s=$2} /^outcome:/{o=$2} END{print s, o}' "$rec" 2>/dev/null)
+    rec_status="${rec_fields%% *}"
+    rec_outcome="${rec_fields#* }"
     if [ "$rec_status" = "open" ]; then
-      annotation_count=$((annotation_count + 1))
-      annotation_names="${annotation_names}$(basename "$(dirname "$rec")"), "
+      if [ "$rec_outcome" = "error" ]; then
+        cutshort_count=$((cutshort_count + 1))
+        cutshort_names="${cutshort_names}$(basename "$(dirname "$rec")"), "
+      else
+        annotation_count=$((annotation_count + 1))
+        annotation_names="${annotation_names}$(basename "$(dirname "$rec")"), "
+      fi
     fi
   done
+  annotation_segment=""
   if [ "$annotation_count" -gt 0 ]; then
-    context="$context | Annotations: ${annotation_count} awaiting destination (${annotation_names%, })"
+    annotation_segment="${annotation_count} awaiting destination (${annotation_names%, })"
+  fi
+  if [ "$cutshort_count" -gt 0 ]; then
+    [ -n "$annotation_segment" ] && annotation_segment="${annotation_segment}, "
+    annotation_segment="${annotation_segment}${cutshort_count} cut short (${cutshort_names%, })"
+  fi
+  if [ -n "$annotation_segment" ]; then
+    context="$context | Annotations: ${annotation_segment}"
   fi
 fi
 

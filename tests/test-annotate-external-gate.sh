@@ -171,7 +171,7 @@ assert_eq "quoted CLAUDE_PLUGIN_ROOT prefix" "silent" "$(verdict "$(bash_call "b
 assert_eq "resolve where" "silent" "$(verdict "$(bash_call "bash $SCRIPT_DIR_ABS/annotate-resolve.sh where sel")")"
 assert_eq "quoted argument" "silent" "$(verdict "$(bash_call "bash $RS sheet --key \"a b\"")")"
 assert_eq "watch under Monitor" "silent" "$(verdict "$(pre Monitor "$(jq -n --arg c "bash $RS watch --session x" '{command: $c}')")")"
-for v in arm status ensure begin wait sheet kind announce review-clear style; do
+for v in arm status ensure begin wait sheet kind announce review-clear style listen ready; do
   assert_eq "verb $v" "silent" "$(verdict "$(bash_call "bash $RS $v")")"
 done
 assert_eq "evaluate_script with a line the flow prints" "silent" "$(es "$(bash "$RS" style --selector a --props color)")"
@@ -282,6 +282,7 @@ attack "a relative root" "bash $RS arm --root proj/p1"
 attack "a root inside the project" "bash $RS arm --root $PROJ/.craft"
 attack "a root with no value" "bash $RS arm --root"
 attack "an owner pid with no value" "bash $RS arm --owner-pid"
+attack "a foreign root on a background listen" "bash $RS listen --session rt1 --root $BASE/elsewhere"
 attack "a foreign root on status" "bash $RS status --session rt1 --root $BASE/elsewhere"
 attack "a foreign root on where" "bash $SCRIPT_DIR_ABS/annotate-resolve.sh where --root $BASE/elsewhere --session rt1 --ts 1"
 attack "a foreign root under the plugin root variable" "bash \"\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh\" arm --root \"$BASE/elsewhere\""

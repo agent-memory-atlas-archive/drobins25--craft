@@ -52,7 +52,7 @@ calls() { grep -c 'annotate_write\.write_atomic(' "$SCRIPTS_DIR/$1" || true; }
 assert_eq "annotate-run.sh: write_text, begin, the sheet (two saves), the watch cursor" "5" "$(calls annotate-run.sh)"
 assert_eq "annotate-resolve.sh: the resolutions cache" "1" "$(calls annotate-resolve.sh)"
 assert_eq "annotate-external-gate.sh: the lift" "1" "$(calls annotate-external-gate.sh)"
-assert_eq "annotate-channel.py: replace_json and the token" "2" "$(calls annotate-channel.py)"
+assert_eq "annotate-channel.py: replace_json, the token and the port" "3" "$(calls annotate-channel.py)"
 assert_eq "annotate-record.sh: the graduate rewrite" "1" "$(calls annotate-record.sh)"
 
 # --- what each site did, kept ---------------------------------------------

@@ -731,7 +731,11 @@ def main():
     # the port can stamp the token at once. Callers read it from the file.
     token = load_or_create_token(args.dir)
     server = Channel(args.dir, token, args.socket_timeout)
-    print("PORT %d" % server.server_address[1], flush=True)
+    port = server.server_address[1]
+    # A listener started as a background command prints to its own log, so the
+    # session folder carries the port for every command that needs it.
+    annotate_write.write_atomic(os.path.join(args.dir, "port"), "%d\n" % port)
+    print("PORT %d" % port, flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

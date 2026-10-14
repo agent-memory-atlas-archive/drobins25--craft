@@ -42,18 +42,9 @@ die() {
   exit 1
 }
 
-# Project root: --root, then CRAFT_PROJECT_ROOT, then the workshop oracle.
-resolve_root() {
-  local given="${1:-}" found=""
-  if [ -n "$given" ]; then
-    found="$given"
-  elif [ -n "${CRAFT_PROJECT_ROOT:-}" ]; then
-    found="$CRAFT_PROJECT_ROOT"
-  else
-    found="$(source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1; echo "${PROJECT_ROOT:-}")" || found=""
-  fi
-  echo "${found%/}"
-}
+# Project folder: --root, then CRAFT_PROJECT_ROOT or the set-up project, then the
+# nearest folder above this one that already holds the named session or record.
+source "$SCRIPT_DIR/annotate-root.sh"
 
 VERB="${1:-}"
 case "$VERB" in
@@ -90,8 +81,8 @@ for target in ${TARGETS[@]+"${TARGETS[@]}"}; do
   esac
 done
 
-ROOT="$(resolve_root "$ROOT_ARG")"
-[ -n "$ROOT" ] || die "no craft project root (pass --root or set CRAFT_PROJECT_ROOT)"
+ROOT="$(annotate_root "$ROOT_ARG" "$SESSION")"
+[ -n "$ROOT" ] || die "no session folder for $SESSION"
 SESSION_DIR="$ROOT/.craft/annotations/$SESSION"
 [ -d "$SESSION_DIR" ] || die "no session folder for $SESSION"
 

@@ -341,6 +341,236 @@ CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" sweep >/dev/null 2>&1
 assert_dir_not_exists "reaped" "$ROOT/.craft/annotations/s1"
 assert_eq "nothing filed" "0" "$(find "$ROOT/.craft/annotations" -name record.md | wc -l | tr -d ' ')"
 
+# --- cut-short records: list, close, resume, send ---
+# mkcut <root> <name> <status> <outcome> <pin_count> <subject> [session.css text]
+mkcut() {
+  local dir="$1/.craft/annotations/$2"
+  mkdir -p "$dir"
+  printf -- '---\nsource: annotate\nname: %s\nsubject: %s\nstatus: %s\noutcome: %s\ngraduated_to:\npin_count: %s\n---\n\n# x\n' "$2" "$6" "$3" "$4" "$5" > "$dir/record.md"
+  printf '%s' "${7:-}" > "$dir/session.css"
+}
+# mkpins <root> <name> <pin json list> - appends a Pin Data block to a record
+mkpins() {
+  printf '\n## Pin Data\n\n```json\n%s\n```\n' "$3" >> "$1/.craft/annotations/$2/record.md"
+}
+rec() { # <root> <args...> - runs annotate-record.sh with the root given, sets OUT and RC
+  local root="$1"; shift
+  OUT="$(CRAFT_PROJECT_ROOT="$root" bash "$REC" "$@" 2>&1)"
+  RC=$?
+}
+
+begin_test "cut-short lists only open records with outcome error, newest first"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-old open error 1 "old run"
+mkcut "$ROOT" 2026-10-02-mid open error 3 "mid run"
+mkcut "$ROOT" 2026-10-03-new open error 2 "new run"
+mkcut "$ROOT" 2026-10-04-done open nothing 5 "finished run"
+mkcut "$ROOT" 2026-10-05-dropped abandoned error 4 "dropped run"
+mkcut "$ROOT" 2026-10-06-sent graduated error 6 "sent run"
+touch -t 202610010900 "$ROOT/.craft/annotations/2026-10-01-old/record.md"
+touch -t 202610030900 "$ROOT/.craft/annotations/2026-10-03-new/record.md"
+touch -t 202610020900 "$ROOT/.craft/annotations/2026-10-02-mid/record.md"
+rec "$ROOT" cut-short
+assert_eq "cut-short exits 0" "0" "$RC"
+assert_eq "three cut-short runs, newest first" "CUT 2026-10-03-new PINS 2 new run
+CUT 2026-10-02-mid PINS 3 mid run
+CUT 2026-10-01-old PINS 1 old run" "$OUT"
+
+begin_test "cut-short breaks a tie by name descending, prints nothing when none, and reads a quoted subject"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a open error 0 "first"
+mkcut "$ROOT" 2026-10-01-b open error 0 "fix: the \"hero\""
+touch -t 202610010900 "$ROOT/.craft/annotations/2026-10-01-a/record.md" "$ROOT/.craft/annotations/2026-10-01-b/record.md"
+sed -i.bak 's/^subject: .*/subject: "fix: the \\"hero\\""/' "$ROOT/.craft/annotations/2026-10-01-b/record.md"
+rec "$ROOT" cut-short
+assert_eq "the later name comes first, the subject is decoded" "CUT 2026-10-01-b PINS 0 fix: the \"hero\"
+CUT 2026-10-01-a PINS 0 first" "$OUT"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a open nothing 1 "finished"
+rec "$ROOT" cut-short
+assert_eq "no cut-short runs prints nothing" "" "$OUT"
+assert_eq "and exits 0" "0" "$RC"
+new_root; ROOT="$NEW_ROOT"
+rec "$ROOT" cut-short
+assert_eq "no annotations folder prints nothing" "" "$OUT"
+assert_eq "and exits 0" "0" "$RC"
+
+begin_test "cut-short writes nothing"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a open error 2 "keep me"
+BEFORE="$(cd "$ROOT" && find . -type f -exec cksum {} + | sort)"
+BEFORE_M="$(stat -f '%m' "$ROOT/.craft/annotations/2026-10-01-a/record.md" 2>/dev/null || stat -c '%Y' "$ROOT/.craft/annotations/2026-10-01-a/record.md")"
+rec "$ROOT" cut-short
+AFTER="$(cd "$ROOT" && find . -type f -exec cksum {} + | sort)"
+AFTER_M="$(stat -f '%m' "$ROOT/.craft/annotations/2026-10-01-a/record.md" 2>/dev/null || stat -c '%Y' "$ROOT/.craft/annotations/2026-10-01-a/record.md")"
+assert_eq "no file changed or appeared" "$BEFORE" "$AFTER"
+assert_eq "the record's modification time is unchanged" "$BEFORE_M" "$AFTER_M"
+assert_dir_not_exists "no dashboard graph was made" "$ROOT/.craft/graph"
+
+begin_test "close marks an open record abandoned and keeps its files"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a open error 2 "close me" ".x{}"
+R="$ROOT/.craft/annotations/2026-10-01-a/record.md"
+BEFORE="$(cat "$R")"
+rec "$ROOT" close --record 2026-10-01-a
+assert_eq "close exits 0" "0" "$RC"
+assert_eq "close prints the record path" "$R" "$OUT"
+assert_eq "status is abandoned" "abandoned" "$(fm "$R" status)"
+assert_eq "outcome is untouched" "error" "$(fm "$R" outcome)"
+assert_eq "only the status line changed" "$(printf '%s\n' "$BEFORE" | sed 's/^status: open$/status: abandoned/')" "$(cat "$R")"
+assert_eq "the sheet copy is kept" ".x{}" "$(rd "$ROOT/.craft/annotations/2026-10-01-a/session.css")"
+rec "$ROOT" cut-short
+assert_eq "it is no longer listed" "" "$OUT"
+
+begin_test "close on an abandoned record is a no-op"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a abandoned error 2 "already"
+R="$ROOT/.craft/annotations/2026-10-01-a/record.md"
+BEFORE="$(cat "$R")"
+rec "$ROOT" close --record 2026-10-01-a
+assert_eq "close exits 0" "0" "$RC"
+assert_eq "it prints the path" "$R" "$OUT"
+assert_eq "the record is unchanged" "$BEFORE" "$(cat "$R")"
+
+begin_test "close refuses a graduated record and a missing one"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a graduated error 2 "moved on"
+R="$ROOT/.craft/annotations/2026-10-01-a/record.md"
+BEFORE="$(cat "$R")"
+rec "$ROOT" close --record 2026-10-01-a
+assert_eq "close exits 1" "1" "$RC"
+assert_contains "it says the record stays as it is" "record 2026-10-01-a is graduated, so it stays as it is" "$OUT"
+assert_eq "the record is unchanged" "$BEFORE" "$(cat "$R")"
+rec "$ROOT" close --record nope
+assert_eq "a missing record exits 1" "1" "$RC"
+assert_contains "it says no such record" "no such record: nope" "$OUT"
+rec "$ROOT" close
+assert_eq "close with no record exits 1" "1" "$RC"
+
+begin_test "graduate accepts outcome todo and still refuses others"
+new_root; ROOT="$NEW_ROOT"
+mkcut "$ROOT" 2026-10-01-a open error 2 "send me"
+R="$ROOT/.craft/annotations/2026-10-01-a/record.md"
+rec "$ROOT" graduate --record 2026-10-01-a --to todo-ref --outcome todo
+assert_eq "graduate exits 0" "0" "$RC"
+assert_eq "status graduated" "graduated" "$(fm "$R" status)"
+assert_eq "graduated_to set" "todo-ref" "$(fm "$R" graduated_to)"
+assert_eq "outcome is todo" "todo" "$(fm "$R" outcome)"
+rec "$ROOT" graduate --record 2026-10-01-a --to x --outcome nothing
+assert_eq "an unknown outcome exits 1" "1" "$RC"
+
+# resume fixture: an open record OLD holding one pin and a keyed sheet, and a live session
+OLD_PIN='[{"n":1,"seq":1,"sent_at":"2026-10-04T10:01:00Z","text":"a","selector":"div.a","nearText":"near a","candidate":"c1","page":"http://x/p","box":null,"component":"Hero","ts":1,"x":1,"y":2,"resolved":null}]'
+OLD_SHEET='/* annotate-key 1 */
+.a { color: red; }
+'
+resume_fixture() { # sets ROOT, OLD (record name), LIVE
+  new_root; ROOT="$NEW_ROOT"; OLD=2026-10-01-old-run
+  mkcut "$ROOT" "$OLD" open error 1 "old run" "$OLD_SHEET"
+  mkpins "$ROOT" "$OLD" "$OLD_PIN"
+  live "$ROOT" s1 0 "placeholder"
+  rm -f "$LIVE/run.json"
+}
+begin_run() { # <args...> - runs begin on s1, sets OUT and RC
+  OUT="$(CRAFT_PROJECT_ROOT="$ROOT" bash "$RUN" begin --session s1 "$@" 2>&1)"
+  RC=$?
+}
+
+begin_test "begin --resume seeds the sheet from the record and names it in run.json"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+assert_eq "begin exits 0" "0" "$RC"
+assert_eq "output stays RUN <start_seq>" "RUN 0" "$OUT"
+assert_eq "session.css matches the record byte for byte" "0" "$(cmp -s "$LIVE/session.css" "$ROOT/.craft/annotations/$OLD/session.css"; echo $?)"
+assert_eq "run.json names the resumed record" "$OLD" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["resumes"])' "$LIVE/run.json")"
+assert_eq "run.json keeps the subject" "picked up" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["subject"])' "$LIVE/run.json")"
+
+begin_test "begin --resume refuses a record that is not open and writes nothing"
+resume_fixture
+mkcut "$ROOT" 2026-10-02-closed abandoned error 1 "closed" ".z{}"
+for bad in 2026-10-02-closed no-such-record; do
+  begin_run --subject "x" --resume "$bad"
+  assert_eq "$bad: exits 1" "1" "$RC"
+  assert_contains "$bad: says there is no open record" "no open record to resume: $bad" "$OUT"
+  assert_file_not_exists "$bad: no run.json" "$LIVE/run.json"
+  assert_eq "$bad: the sheet is not seeded" "" "$(cat "$LIVE/session.css")"
+done
+
+begin_test "begin --resume drops an empty prior run instead of filing it"
+resume_fixture
+live "$ROOT" s1 0 "empty prior"
+BEFORE_N="$(find "$ROOT/.craft/annotations" -name record.md | wc -l | tr -d ' ')"
+begin_run --subject "picked up" --resume "$OLD"
+assert_eq "begin exits 0" "0" "$RC"
+assert_eq "no new record folder" "$BEFORE_N" "$(find "$ROOT/.craft/annotations" -name record.md | wc -l | tr -d ' ')"
+assert_eq "the new run names the resumed record" "$OLD" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["resumes"])' "$LIVE/run.json")"
+
+begin_test "begin --resume still files a prior run that has pins"
+resume_fixture
+live "$ROOT" s1 0 "prior with pins"; hist "$LIVE" "$S1"
+begin_run --subject "picked up" --resume "$OLD"
+assert_eq "begin exits 0" "0" "$RC"
+assert_file_exists "the prior run was filed" "$ROOT/.craft/annotations/$TODAY-prior-with-pins/record.md"
+
+begin_test "a resumed run's record carries the old pins first and graduates the old record"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+hist "$LIVE" '{"seq":1,"pins":[{"n":1,"text":"b","x":5,"y":6,"selector":"div.b","nearText":"near b","ts":2,"page":"http://x/p"}],"sent_at":"2026-10-04T10:05:00Z"}'
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+NEWREC="$OUT"; NEWNAME="$(basename "$(dirname "$NEWREC")")"
+assert_eq "two pins in the new record" "2" "$(pins_json "$NEWREC" 'len(p)')"
+assert_eq "the old pin is first" "a" "$(pins_json "$NEWREC" 'p[0]["text"]')"
+assert_eq "the new pin follows" "b" "$(pins_json "$NEWREC" 'p[1]["text"]')"
+assert_eq "n is renumbered" "1,2" "$(pins_json "$NEWREC" '",".join(str(x["n"]) for x in p)')"
+assert_eq "pin_count counts the merge" "2" "$(fm "$NEWREC" pin_count)"
+assert_eq "the new record is open" "open" "$(fm "$NEWREC" status)"
+OLDREC="$ROOT/.craft/annotations/$OLD/record.md"
+assert_eq "the old record is graduated" "graduated" "$(fm "$OLDREC" status)"
+assert_eq "graduated_to names the new record" "$NEWNAME" "$(fm "$OLDREC" graduated_to)"
+assert_eq "the old outcome is untouched" "error" "$(fm "$OLDREC" outcome)"
+assert_eq "the old record keeps its other lines" "1" "$(fm "$OLDREC" pin_count)"
+
+begin_test "a resumed run that re-pins an old pin keeps one copy, the new one"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+hist "$LIVE" '{"seq":1,"pins":[{"n":1,"text":"a, reworded","x":1,"y":2,"selector":"div.a","nearText":"near a","ts":1,"page":"http://x/p"}],"sent_at":"2026-10-04T10:05:00Z"}'
+file_rec "$ROOT" s1 nothing
+assert_eq "one pin, not two" "1" "$(pins_json "$OUT" 'len(p)')"
+assert_eq "it carries the new text" "a, reworded" "$(pins_json "$OUT" 'p[0]["text"]')"
+
+begin_test "a resumed run with no new pins still files the old pins and the sheet"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "the old pin carried" "a" "$(pins_json "$OUT" 'p[0]["text"]')"
+assert_eq "the status is open" "open" "$(fm "$OUT" status)"
+assert_eq "the sheet carried byte for byte" "0" "$(cmp -s "$(dirname "$OUT")/session.css" "$ROOT/.craft/annotations/$OLD/session.css"; echo $?)"
+
+begin_test "filing a resumed run never fails on a missing or unparseable resumed record"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+hist "$LIVE" "$S1"
+printf -- '---\nstatus: open\noutcome: error\n---\n\n## Pin Data\n\n```json\nnot json\n```\n' > "$ROOT/.craft/annotations/$OLD/record.md"
+file_rec "$ROOT" s1 nothing
+assert_eq "an unparseable block files only the new pins" "1" "$(pins_json "$OUT" 'len(p)')"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+hist "$LIVE" "$S1"
+rm -rf "$ROOT/.craft/annotations/$OLD"
+file_rec "$ROOT" s1 nothing
+assert_eq "a missing resumed record files only the new pins" "0" "$RC"
+
+begin_test "a resumed record that is no longer open is left as it is"
+resume_fixture
+begin_run --subject "picked up" --resume "$OLD"
+rec "$ROOT" close --record "$OLD"
+file_rec "$ROOT" s1 nothing
+assert_eq "file exits 0" "0" "$RC"
+assert_eq "the closed record stays abandoned" "abandoned" "$(fm "$ROOT/.craft/annotations/$OLD/record.md" status)"
+assert_eq "graduated_to stays empty" "" "$(fm "$ROOT/.craft/annotations/$OLD/record.md" graduated_to)"
+
 # --- session start ---
 ss() { # <root> - runs session-start from the root, prints its output
   (cd "$1" && unset PROJECT_ROOT CRAFT_PROJECT_ROOT CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$(mktemp)" && bash "$SESSION_SCRIPT" 2>/dev/null) || true

@@ -1,6 +1,6 @@
 # Annotate Flow
 
-The full raw-tab session: arm through teardown. The overlay source, the port stamp, the annotate clear, and the channel protocol live in `${CLAUDE_PLUGIN_ROOT}/commands/references/annotate-overlay.md` - read it before Step 3 and hold it for the session. The capture channel is driven only through `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh`.
+The full raw-tab session: arm through teardown. The overlay source, the port stamp, the annotate clear, and the channel protocol live in `${CLAUDE_PLUGIN_ROOT}/commands/references/annotate-overlay.md` - read it before Step 2 and hold it for the session. The capture channel is driven only through `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh`.
 
 **No question widgets anywhere in this flow - never, at any step, including every exit.** The mode is armed by invocation and steered in plain conversation.
 
@@ -18,22 +18,41 @@ Listing the tabs is the session's first browser call. Right after it run `node "
 
 ## Step 2: Arm or reuse the session listener
 
-The listener is lazy and per-session. It starts the first time a flow needs it and lives until the session ends. Nothing in this flow ever shuts it down.
+The listener is lazy and per-session. It starts the first time a flow needs it and lives until the session ends. Nothing in this flow ever shuts it down. Every start, first or restart, goes through `## Starting the listener` in the overlay reference - nothing in this flow starts one any other way.
 
-- **No session id held in this conversation:** arm one. Pass the project root when `CRAFT_PROJECT_ROOT` is not set.
+**The project folder.** When `CRAFT_PROJECT_ROOT` is set the project is set up and every script finds it; skip this paragraph. Otherwise run this once and hold the folder it prints as `<project root>`:
+
+```bash
+bash -c 'source "$1" >/dev/null 2>&1; craft_refuse_monorepo_top "an annotate session" && exit 1; craft_before_init_root' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh"
+```
+
+When it exits 1 it printed a `nothing written:` line on stderr and no folder: say that line to the user verbatim and stop before `arm`, with nothing armed and nothing written.
+
+**Saved runs.** Once per conversation, before anything else in this step arms or marks a page, list the runs an earlier session left cut short (leave `--root` off when `CRAFT_PROJECT_ROOT` is set):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-record.sh" cut-short --root "<project root>"
+```
+
+It prints one `CUT <name> PINS <n> <subject>` line per run, newest first, or nothing. Hold the lines; Step 4 says the offer. Run it before the loader marks a page: on an outside page the block holds `annotate-record.sh` commands until the user types.
+
+- **No session id held in this conversation:** arm one per `## Starting the listener`, passing `--root "<project root>"` when it is held:
 
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" arm --root "<project root>"
+  bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" arm --background --root "<project root>"
   ```
 
-  It prints `SESSION <id> PORT <port>`. Hold the id and the port.
+  Hold the id and the port it ends with.
 - **A session id is already held** (an earlier `/craft:annotate` or another flow in this conversation armed one): read it back, and reuse it.
 
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" status --session "<id>"
   ```
 
-  If the line shows `PORT none`, or `CLIENTS unreachable` (the listener is not answering), run `arm --session "<id>"` - it is idempotent and prints the current port. Only ever reuse an id this conversation armed: another pane in the same project has its own session, and its listener is not yours.
+  - `no such session: <id>` (typically after the conversation was resumed, when session start already filed the old run): drop the id and arm a new session with no `--session`, without a word. Never `arm --session` that id - its folder is gone and that would recreate it.
+  - `PORT none`, or `CLIENTS unreachable` (the listener is not answering): run `ensure --session "<id>"` and act on its line as the read beat does.
+
+  Only ever reuse an id this conversation armed: another pane in the same project has its own session, and its listener is not yours.
 
 Never arm a second listener while one is held.
 
@@ -70,7 +89,7 @@ On a project page - one served from localhost, 127.0.0.1 or file:// - the listen
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" loader --session "<id>" --page "<tab url>" --run
 ```
 
-It prints ONE line. Pass it to `evaluate_script` verbatim - never edit it, rebuild it, or wrap it in anything. The line stamps the port, the session token and the run, loads the overlay the listener serves, and returns `LOADED` or `SCRIPT-BLOCKED`. On `LOADED` the overlay is on the page and the injection is done. If the command exits 1 because the listener does not answer, run `arm --session "<id>"` and run the loader again.
+It prints ONE line. Pass it to `evaluate_script` verbatim - never edit it, rebuild it, or wrap it in anything. The line stamps the port, the session token and the run, loads the overlay the listener serves, and returns `LOADED` or `SCRIPT-BLOCKED`. On `LOADED` the overlay is on the page and the injection is done. If the command exits 1 because the listener does not answer, run `ensure` (the read beat, Step 5), act on its line, and run the loader again.
 
 **Fallback: `EXTERNAL` or `SCRIPT-BLOCKED`.** An external page (anything but localhost, 127.0.0.1 or file://) never loads a served script, so the loader prints `EXTERNAL` without contacting the listener; and a page whose policy refuses the script returns `SCRIPT-BLOCKED`. Either way, paste the overlay instead, in two `evaluate_script` steps in this order: first the line `stamp` prints (`annotate-run.sh" stamp --session "<id>"`; it stamps the port, the session token and the run), passed verbatim, then the whole `overlay-source` fence from the overlay reference, its text unchanged, passed as the body of `() => { ... }`. Stamp first because the overlay reads the port and the token when the user presses SEND. On either path never stamp the baked flag and never stamp a context: a baked page opens an event stream at load, and an injected page must make no request before the user acts.
 
@@ -90,6 +109,17 @@ Then tell the user ONCE:
 
 > "The sheet is on the page - turn on COMMENT MODE, click anything, and press SEND TO CLAUDE when you want me to read it. Every change I make shows up on the page as you point. Reloading removes the sheet and the changes; tell me and I'll put them back."
 
+**The cut-short offer.** When Step 2 held any `CUT` lines, add this to the same message as the line above - once per conversation, never repeated, never a widget. Name the newest run by its subject and pin count (`1 pin` when n is 1) and add the count of the rest as `, and <m> more` when there are others:
+
+> "There's a run cut short last time - "<subject>", <n> pins<, and <m> more>. Want me to pick it up, send it somewhere (tweak, story or todo), or drop it?"
+
+Answer in plain conversation:
+
+- **Pick it up:** run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" begin --session "<id>" --subject "<record subject>" --resume "<name>"`, then re-inject per Navigation below so the saved sheet goes back on the page, then quote the record's `## Pins` lines as the user's words. The new run's ending files a new record carrying those pins and closes the old one.
+- **Send it somewhere:** the destination runs on the saved record, as the later destinations after "nothing" do: a tweak or a todo graduates it with `annotate-record.sh" graduate --record <name> --to <ref> --outcome tweak|todo`, a story runs story-from-annotate on the record.
+- **Drop it:** `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-record.sh" close --record "<name>"`.
+- **No answer:** the record stays saved and is not raised again this conversation.
+
 ## Step 5: Stand by for SEND
 
 Once the overlay is on the page, start the watch ONCE, under the Monitor tool:
@@ -105,6 +135,8 @@ with `timeout_ms: 1800000`. Each line it prints arrives inside a notification, s
 - `UNDONE <ts> page did not confirm`: the user withdrew a pin and the watch dropped its block, but the page did not take the removal. Run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" sheet --session "<id>"` once and pass its line to `evaluate_script` verbatim. If that returns `APPLIED`, say nothing extra. Anything else: say exactly "That change may still show on the page - a reload clears it." Then go to Step 6.
 - `UNREACHABLE`: the listener died and no SEND can arrive. Run `ensure`, below.
 
+When Claude Code reports that the listener's background command exited, run `ensure` the same way and act on its line.
+
 **The read beat.** Run `ensure` on an `UNREACHABLE` line and when an `annotate-run.sh` command fails, never on a SEND notification:
 
 ```bash
@@ -112,6 +144,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" ensure --session "<id
 ```
 
 - `OK PORT <port>`: the listener is healthy; go on.
+- `LISTEN STREAK <k>`: the listener was dead or hung and nothing is running yet. Start it per `## Starting the listener` (listen, then ready), then treat the result as `REARMED PORT <port> STREAK <k>` with the new port - or as `FAILED` when `ready` fails.
 - `REARMED PORT <port> STREAK <k>`: the listener was dead or hung and is running again on a new port. Re-inject per Navigation below and leave the running watch alone. At `STREAK 1` do all of it silently - say nothing. At `STREAK 2` or more, say exactly one line and carry on:
 
   > "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page."
@@ -195,6 +228,12 @@ Then say:
 - **Tweak** - pre-mint `tweak-<slug>` BEFORE filing, then file with `--outcome tweak --graduated-to tweak-<slug>`. Hand to `craft:adhoc` with the brief: "direction pre-settled, annotate record at [path], record name: tweak-<slug> (use verbatim)". Adhoc ports the look verbatim and carries content stand-ins as requirements quoting the pin.
 - **Story** - file with `--outcome story`, then Read `${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-annotate.md` and execute it inline on the record path (never via the Skill tool - a Skill-tool call ends the turn and control does not come back). It ends by graduating the record.
 - **Todo** - file with `--outcome todo`, then `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notebook-capture.sh" todo "<what the pins asked for, naming the record path>"`.
-- **Abandon** or **error** - file with `--outcome abandon` or `--outcome error` and stop. The record stays open (or abandoned when empty) for a later story.
+- **Abandon** or **error** - file and stop. Abandon files `--outcome abandon` and the run is not offered again. Error files `--outcome error` and the next `/craft:annotate` on the project offers it back.
+
+**Before init.** When `<project root>` is held, every ending above stays available and is handed the folder explicitly; never an init pitch. Say this one ignorable line before the ending resolves into action - plain prose, said once:
+
+> "Heads-up: /craft:init hasn't run here, so this lands in the project's .craft/ and gets picked up by the harness once init wires it in"
+
+Then: prefix the todo capture with the folder - `CRAFT_PROJECT_ROOT="<project root>" bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notebook-capture.sh" todo "<...>"` - and the same prefix on any `annotate-record.sh" graduate` or `close` you run; the tweak brief names `<project root>` and tells adhoc to prefix it on every bash command it runs; and the story ending tells story-from-annotate to write its story at the absolute `<project root>/.craft/backlog/<story-name>.md` instead of its relative target.
 
 The listener stays up until the session ends; a later `/craft:annotate` in this conversation reuses it. Teardown never shuts it down.
