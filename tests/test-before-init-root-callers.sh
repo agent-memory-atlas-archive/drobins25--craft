@@ -80,7 +80,12 @@ R_BUG="$R/.craft/bugs/$TODAY-repo-seeded-bug.md"
 R_BASELINE=$(tree_of "$R")
 
 begin_test "fixture: the repo holds its own records and is not a set-up project"
+# Every seed must land: the "never the repo's records" checks below are only
+# meaningful if the repo really holds a record of each kind.
 assert_file_exists "repo bug record" "$R_BUG"
+assert_file_exists "repo todo record" "$R/.craft/notebook/todos/$TODAY-repo-seeded-todo.md"
+assert_file_exists "repo decision record" "$R/.craft/decisions/$TODAY-repo-seeded-decision.md"
+assert_file_exists "repo dial record" "$R/.craft/dials/$TODAY-repo-seeded-dial.md"
 assert_eq "no .global-state" "no" "$([ -e "$R/.craft/.global-state" ] && echo yes || echo no)"
 assert_eq "no project.md" "no" "$([ -e "$R/.craft/project.md" ] && echo yes || echo no)"
 
