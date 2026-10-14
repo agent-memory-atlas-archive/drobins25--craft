@@ -622,8 +622,9 @@ cmd_arm() {
   fi
 
   if [ "$background" = "1" ]; then
-    # A listener that is starting has a pid and no port yet: wait for it.
-    if is_listener_pid "$(read_file "$listener_pid_file")"; then
+    # A listener that is starting has a pid and no port yet, or holds the
+    # listen lock and has not written its pid yet: wait for it either way.
+    if is_starting_pid "$(read_file "$listener_pid_file")" || [ -d "$dir/listen.lock" ]; then
       await_port "$dir" 100 || die "listener did not report a port (see $dir/listener.log)"
       echo "SESSION $sid PORT $LISTENER_PORT"
       return 0
@@ -648,18 +649,37 @@ cmd_arm() {
 # listen: the command Claude Code runs in the background. It becomes the
 # listener (exec), so the process Claude Code tracks and stops is the listener.
 cmd_listen() {
-  local dir pid
+  local dir pid lock holder
   dir="$(session_dir)"
+  lock="$dir/listen.lock"
   pid="$(read_file "$dir/listener.pid")"
-  if is_listener_pid "$pid"; then
+  # A listener, or a listen call that wrote its pid and has not exec'd yet.
+  if is_starting_pid "$pid"; then
     await_port "$dir" 100 "$pid" || die "listener did not report a port (see $dir/listener.log)"
     echo "SESSION $SESSION PORT $LISTENER_PORT"
     return 0
   fi
+  # One listen at a time. The lock is a directory, so taking it is atomic: of
+  # two calls launched together exactly one gets it. The other waits for the
+  # winner's port and prints it, the line a reused listener prints. A lock whose
+  # holder died before writing its pid is stale and is replaced.
+  if ! mkdir "$lock" 2>/dev/null; then
+    holder="$(read_file "$lock/pid")"
+    if is_number "$holder" && pid_alive "$holder"; then
+      await_port "$dir" 100 || die "listener did not report a port (see $dir/listener.log)"
+      echo "SESSION $SESSION PORT $LISTENER_PORT"
+      return 0
+    fi
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || die "could not take the listen lock in $dir"
+  fi
+  printf '%s\n' "$$" > "$lock/pid"
   rm -f "$dir/port"
   : > "$dir/listener.log"
   write_session_files "$dir/listener.pid" "$$"
   is_number "$(read_file "$dir/owner.pid")" || write_session_files "$dir/owner.pid" "$$"
+  # From here is_starting_pid matches this process, so the lock can go.
+  rm -rf "$lock"
   exec python3 "$CHANNEL_PY" --dir "$dir" >"$dir/listener.log" 2>&1 </dev/null
 }
 
@@ -1692,9 +1712,11 @@ print(count)
 }
 
 # ensure: the read-beat health check. A live listener resets the failure streak;
-# a dead or hung one is terminated (only if the pid is still a listener), restarted
-# through the arm path, and counted. The streak lives in a file because "did the
-# last beat re-arm?" is exactly what a model forgets.
+# a dead or hung one is terminated (only if the pid is still a listener) and
+# counted. A detached listener is restarted here through the arm path (REARMED);
+# a background one is not: ensure prints LISTEN STREAK and Claude runs listen.
+# The streak lives in a file because "did the last beat re-arm?" is exactly what
+# a model forgets.
 cmd_ensure() {
   local dir port pid streak ticks=0 out new_port
   dir="$ROOT/.craft/annotations/$SESSION"
