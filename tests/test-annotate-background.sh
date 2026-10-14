@@ -234,8 +234,9 @@ assert_eq "prints the port line" "SESSION bg7 PORT $P" "$OUT"
 assert_eq "launch marker is detached" "detached" "$(rd "$D/launch")"
 TOKEN="$(rd "$D/token")"
 assert_contains "listener answers" "ok" "$(curl -s --max-time 5 "http://127.0.0.1:$P/health?token=$TOKEN" 2>/dev/null || true)"
-kill "$(rd "$D/listener.pid")" 2>/dev/null || true
-sleep 0.5
+LP="$(rd "$D/listener.pid")"
+kill "$LP" 2>/dev/null || true
+wait_dead "$LP" || true
 OUT="$(run_sh "$R" ensure --session bg7)"
 assert_contains "restarts as today" "REARMED PORT" "$OUT"
 assert_contains "streak 1" "STREAK 1" "$OUT"

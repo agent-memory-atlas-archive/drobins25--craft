@@ -567,14 +567,26 @@ assert_nothing_set_up() {
 
 begin_test "before init, session start sweeps a dead session and writes no state file"
 
-TEST_DIR=$(mktemp -d)
-mkdir -p "$TEST_DIR/.craft/annotations/dead-1"
-echo 999999 > "$TEST_DIR/.craft/annotations/dead-1/owner.pid"
+# A real detached listener whose owner (999999) is dead, with a run that never
+# reached an exit: the sweep must file the run, stop the listener and remove the
+# folder - a bare rm -rf would leave the process and file nothing.
+TEST_DIR=$(cd "$(mktemp -d)" && pwd -P)
+ANNOTATE_RUN="$SCRIPTS_DIR/annotate-run.sh"
+(cd "$TEST_DIR" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CRAFT_ANNOTATE_BOUNDARY_DIR="$TEST_DIR/.boundary-test" \
+  bash "$ANNOTATE_RUN" arm --root "$TEST_DIR" --session dead-1 --owner-pid 999999 >/dev/null 2>&1 \
+  && bash "$ANNOTATE_RUN" begin --root "$TEST_DIR" --session dead-1 --subject "cold run" >/dev/null 2>&1) || true
+DEAD_LISTENER="$(cat "$TEST_DIR/.craft/annotations/dead-1/listener.pid" 2>/dev/null || true)"
+assert_eq "fixture: the listener is running before the sweep" "1" "$(ps -ax -o command= 2>/dev/null | grep -F "annotate-channel.py --dir $TEST_DIR/" | grep -vc grep || true)"
+assert_file_exists "fixture: the run exists before the sweep" "$TEST_DIR/.craft/annotations/dead-1/run.json"
 run_session "$TEST_DIR"
 
 assert_eq "exits 0" "0" "$SESSION_EXIT"
+sleep 0.3
+assert_eq "its listener was stopped" "0" "$(ps -ax -o command= 2>/dev/null | grep -F "annotate-channel.py --dir $TEST_DIR/" | grep -vc grep || true)"
+assert_eq "the empty run was filed as a record" "1" "$(ls "$TEST_DIR"/.craft/annotations/*/record.md 2>/dev/null | wc -l | tr -d ' ')"
 assert_dir_not_exists "the dead session was reaped" "$TEST_DIR/.craft/annotations/dead-1"
 assert_nothing_set_up "$TEST_DIR"
+case "$DEAD_LISTENER" in ''|*[!0-9]*) ;; *) kill "$DEAD_LISTENER" 2>/dev/null || true ;; esac
 
 rm -f "$ENV_FILE"
 cleanup_test_dir

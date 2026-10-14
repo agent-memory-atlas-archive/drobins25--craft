@@ -82,8 +82,24 @@ OUT="$(in_dir "$G/src" "$RUN" clear --session lk2)"
 assert_eq "clear names no missing root or session" "0" "$(echo "$OUT" | grep -c 'no craft project root\|no such session' || true)"
 OUT="$(in_dir "$G/src/deep" "$RUN" loader --session lk2 --page http://localhost:3000/)"
 assert_eq "loader names no missing root or session" "0" "$(echo "$OUT" | grep -c 'no craft project root\|no such session' || true)"
-assert_contains "loader prints a loader" "[A-Za-z]" "$OUT"
+LK2_PORT="$(in_dir "$G/src/deep" "$RUN" status --session lk2 | sed -n 's/^SESSION lk2 PORT \([0-9]*\).*/\1/p')"
+assert_contains "loader prints a loader carrying the port" "$LK2_PORT" "$OUT"
+assert_contains "listen on the live listener finds it from a subfolder and prints the port" "^SESSION lk2 PORT $LK2_PORT" "$(in_dir "$G/src/deep" "$RUN" listen --session lk2)"
+assert_contains "ready finds it from a subfolder and prints the port" "^SESSION lk2 PORT $LK2_PORT" "$(in_dir "$G/src/deep" "$RUN" ready --session lk2)"
+assert_eq "listen on a live listener started no second one" "1" "$(ps -ax -o command= 2>/dev/null | grep -F "annotate-channel.py --dir $G/" | grep -vc grep || true)"
 assert_eq "no .craft appears in the subfolders" "no" "$([ -e "$G/src/.craft" ] || [ -e "$G/src/deep/.craft" ] && echo yes || echo no)"
+
+begin_test "with --root, commands reach the session from an unrelated folder"
+# --since is the session's current seq, so a reached session answers WAITING (nothing newer);
+# a lookup miss would die with a message instead.
+LK2_SEQ="$(grep -o '"seq": *[0-9]*' "$G/.craft/annotations/lk2/current.json" 2>/dev/null | grep -o '[0-9]*$' || echo 0)"
+OUT="$(cd "$BOUNDARY_ROOT" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT bash "$RUN" wait --root "$G" --session lk2 --since "${LK2_SEQ:-0}" --timeout 0 2>&1 || true)"
+assert_eq "the read beat's wait reaches the session from outside the project" "WAITING" "$OUT"
+set +e
+(cd "$BOUNDARY_ROOT" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT bash "$RUN" clear --root "$G" --session lk2 >/dev/null 2>&1)
+CLEAR_RC=$?
+set -e
+assert_eq "the acceptance clear reaches the session from outside the project" "0" "$CLEAR_RC"
 
 begin_test "resolve where and record file find the session with no root"
 OUT="$(in_dir "$G/src" "$RESOLVE" where --session lk2 --ts 1)"

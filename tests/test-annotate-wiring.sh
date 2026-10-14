@@ -1035,6 +1035,12 @@ PLAIN_RC=0
 PLAIN_OUT="$(cd "$FOLDER_FIX/plain/sub" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$CALL_LINE" 2>/dev/null)" || PLAIN_RC=$?
 assert_eq "a plain repo exits 0" "0" "$PLAIN_RC"
 assert_eq "a plain repo prints its git top, not the subfolder" "$(cd "$FOLDER_FIX/plain" && pwd -P)" "$(cd "$PLAIN_OUT" && pwd -P)"
+# arm never refuses a folder it is handed: the refusal lives in the folder call, not in arm.
+ARM_OUT="$(cd "$FOLDER_FIX/mono" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CRAFT_ANNOTATE_BOUNDARY_DIR="$FOLDER_FIX/boundary" bash "$REPO/hooks/scripts/annotate-run.sh" arm --root "$FOLDER_FIX/mono" --session mono1 --owner-pid "$$" 2>&1)" || true
+assert_contains "arm handed the monorepo top as --root arms there instead of refusing" "^SESSION mono1 PORT [0-9]" "$ARM_OUT"
+MONO_LISTENER="$(cat "$FOLDER_FIX/mono/.craft/annotations/mono1/listener.pid" 2>/dev/null || true)"
+case "$MONO_LISTENER" in ''|*[!0-9]*) ;; *) kill "$MONO_LISTENER" 2>/dev/null || true ;; esac
+rm -rf "$FOLDER_FIX/mono/.craft"
 
 begin_test "every annotate-run arm in annotate-inline.md carries --background"
 FLOW_ARMS="$(printf '%s\n' "$FLOW_TEXT" | grep -F 'annotate-run.sh" arm' || true)"
