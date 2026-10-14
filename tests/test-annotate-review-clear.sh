@@ -131,6 +131,35 @@ assert_exit_code "exit 1" "1" "$RC"
 assert_eq "one stderr line" "1" "$(echo "$ERR" | wc -l | tr -d ' ')"
 assert_eq "nothing on stdout" "" "$OUTV"
 
+# bare_clear <dir> - review-clear as adhoc runs it on a project without init:
+# no --root, no CRAFT_PROJECT_ROOT, shell in <dir>
+bare_clear() { ( cd "$1" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT bash "$RUN" review-clear 2>/dev/null ) || true; }
+
+begin_test "before init, an open run in the git project is seen from its top and from a subfolder"
+G="$(mktemp -d)"; TMP_DIRS+=("$G")
+git -C "$G" init -q
+mkdir -p "$G/web"
+make_run "$G" r1 "hero polish"
+echo "$$" > "$G/.craft/annotations/r1/owner.pid"
+OUT="$(bare_clear "$G")"
+assert_eq "from the top: OPEN, no function" "OPEN r1 hero polish" "$OUT"
+OUT="$(bare_clear "$G/web")"
+assert_eq "from a subfolder: OPEN, no function" "OPEN r1 hero polish" "$OUT"
+assert_eq "nothing created in the subfolder" "no" "$([ -e "$G/web/.craft" ] && echo yes || echo no)"
+
+begin_test "before init outside git, an open run in the current folder is seen"
+N="$(mktemp -d)"; TMP_DIRS+=("$N")
+make_run "$N" r2 "nav spacing"
+echo "$$" > "$N/.craft/annotations/r2/owner.pid"
+assert_eq "OPEN, no function" "OPEN r2 nav spacing" "$(bare_clear "$N")"
+
+begin_test "before init with no open run, the clear is still printed"
+E="$(mktemp -d)"; TMP_DIRS+=("$E")
+git -C "$E" init -q
+OUT="$(bare_clear "$E")"
+assert_contains_literal "prints the function" "$FUNC_PREFIX" "$OUT"
+assert_eq "nothing created" "no" "$([ -e "$E/.craft" ] && echo yes || echo no)"
+
 begin_test "the overlay reference carries the review section and no dial literal"
 REF="$PLUGIN_ROOT/$REF_REL"
 assert_file_contains "review section exists" "## Clearing leftovers before a review" "$REF"

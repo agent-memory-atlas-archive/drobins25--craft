@@ -21,7 +21,7 @@
 #   annotate-run.sh strip   --file PATH   (mockup: removes every baked overlay element; needs no session)
 #   annotate-run.sh ensure  [--root R] --session ID   (read beat: OK PORT p | REARMED PORT p STREAK k | GONE | FAILED; restarts a dead or hung listener)
 #   annotate-run.sh send    [--root R] --session ID   (POSTs the JSON pin array on stdin to the listener)
-#   annotate-run.sh review-clear [--root R]   (review flows: OPEN <id> <subject> per open run, else ONE line, a function that clears leftover annotate changes and returns CLEARED; needs no session, writes nothing)
+#   annotate-run.sh review-clear [--root R]   (review flows: OPEN <id> <subject> per open run, else ONE line, a function that clears leftover annotate changes and returns CLEARED; needs no session, writes nothing; before init it looks in the git top, else the current folder)
 #   annotate-run.sh style   --selector CSS --props NAME[,NAME...]   (ONE line for evaluate_script that returns the computed value of each named property on the first element the selector matches, or null; needs no session, writes nothing, contacts no listener)
 #   annotate-run.sh disarm  [--root R] --session ID
 #
@@ -1824,6 +1824,11 @@ unmark_external(sys.argv[1])" "$dir"
 # canonical clear as one function line. Writes nothing and contacts no listener.
 cmd_review_clear() {
   local dir id owner subject open=0 clear
+  # Before /craft:init no root is known: look where the annotate flow arms
+  # then (git top, else this folder), so an open run's page is not cleared.
+  if [ -z "$ROOT" ]; then
+    ROOT="$( (source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1 || true; craft_before_init_root) 2>/dev/null || true)"
+  fi
   if [ -n "$ROOT" ]; then
     for dir in "$ROOT"/.craft/annotations/*/; do
       [ -d "$dir" ] || continue
