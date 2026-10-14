@@ -115,7 +115,7 @@ Then tell the user ONCE:
 
 Answer in plain conversation:
 
-- **Pick it up:** run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" begin --session "<id>" --subject "<record subject>" --resume "<name>"`, then re-inject per Navigation below so the saved sheet goes back on the page, then quote the record's `## Pins` lines as the user's words. The new run's ending files a new record carrying those pins and closes the old one.
+- **Pick it up:** run `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" begin --session "<id>" --subject "<record subject>" --resume "<name>"`, then re-inject per Navigation below so the saved sheet goes back on the page, then quote the record's `## Pins` lines as the user's words. The new run's ending files a new record carrying those pins and marks the old one graduated to it.
 - **Send it somewhere:** the destination runs on the saved record, as the later destinations after "nothing" do: a tweak or a todo graduates it with `annotate-record.sh" graduate --record <name> --to <ref> --outcome tweak|todo`, a story runs story-from-annotate on the record.
 - **Drop it:** `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-record.sh" close --record "<name>"`.
 - **No answer:** the record stays saved and is not raised again this conversation.
@@ -144,7 +144,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" ensure --session "<id
 ```
 
 - `OK PORT <port>`: the listener is healthy; go on.
-- `LISTEN STREAK <k>`: the listener was dead or hung and nothing is running yet. Start it per `## Starting the listener` (listen, then ready), then treat the result as `REARMED PORT <port> STREAK <k>` with the new port - or as `FAILED` when `ready` fails.
+- `LISTEN STREAK <k>`: the listener is dead and `ensure` started nothing; start it as `## Starting the listener` says (listen, then ready), then handle it as `REARMED PORT <port> STREAK <k>` with the new port, or as `FAILED` when it will not come up.
 - `REARMED PORT <port> STREAK <k>`: the listener was dead or hung and is running again on a new port. Re-inject per Navigation below and leave the running watch alone. At `STREAK 1` do all of it silently - say nothing. At `STREAK 2` or more, say exactly one line and carry on:
 
   > "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page."
