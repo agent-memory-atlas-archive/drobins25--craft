@@ -68,7 +68,6 @@ expect_eq "posix: foreign host reads free" "$(held_of "$(posix)")" "false"
 
 lock_with "no-pid-here"
 expect_eq "posix: garbage target reads free" "$(held_of "$(posix)")" "false"
-lock_with ""
 rm -f "$PROF/SingletonLock"
 expect_eq "posix: no lock reads free" "$(held_of "$(posix)")" "false"
 
