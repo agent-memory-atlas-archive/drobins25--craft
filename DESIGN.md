@@ -131,6 +131,7 @@ plugins/craft/
 │   └── orchestration-index.min
 ├── docs/                      ← Human-facing documentation (informational, not auto-loaded)
 │   ├── agent-catalog.md
+│   ├── ci-branch-protection.md
 │   ├── creative-workshop.md
 │   ├── decision-tree.md       ← Routing map: every /craft path, as flowcharts
 │   ├── design-philosophy.md
@@ -139,7 +140,9 @@ plugins/craft/
 │   └── workflow-reference.md
 ├── scripts/                   ← Self-contained toolchains outside hooks/
 │   ├── map/                   ← Living Map structural generator (Node; seam: map-run.sh)
-│   └── dashboard/             ← Dashboard graph data builder (python stdlib; seams: dashboard-run.sh builds the graph data, dashboard-page.sh delivers the page template; output: .craft/graph/, .craft/dashboard.html)
+│   ├── dashboard/             ← Dashboard graph data builder (python stdlib; seams: dashboard-run.sh builds the graph data, dashboard-page.sh delivers the page template; parse_annotation.py reads annotate records for it; output: .craft/graph/, .craft/dashboard.html)
+│   ├── ci/                    ← CI helpers: run-suite-group.sh, annotate-check.sh + annotate-probe.mjs (real-browser annotate check), browser-check.sh + browser-probe.mjs (dashboard page check), check-template-stamp.sh
+│   └── check-doc-drift.sh     ← Doc drift check (changelog vs plugin.json, feat push gate)
 ├── tests/                     ← Bash test suite (30+ bash tests)
 │   ├── run-all.sh
 │   ├── test_helper.sh
@@ -256,7 +259,7 @@ Triggered by `/craft:analyze` after a cycle ships. No restricted write scope - r
 All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 
 ### SessionStart
-- **`session-start.sh`** (once) - Detects active cycle, sets status line, loads context
+- **`session-start.sh`** (once) - Detects active cycle, sets status line, loads context, runs the annotate sweep
 - **`post-compact-reinject.sh`** (on compact) - Re-injects craft context after context compaction
 
 ### PreToolUse (Write|Edit)
@@ -307,7 +310,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 | `update-cycle-state.sh` | Update cycle .state file |
 | `update-story-status.sh` | Change story status in frontmatter |
 | `statusline.sh` | Generate status line display |
-| `find-workshop.sh` | Locate .craft/ directory |
+| `find-workshop.sh` | Locate .craft/ directory. Also owns the shared before-init lookup (`craft_before_init_root`: the set-up project, then the git top level, then the current folder) and the monorepo-top refusal (`craft_refuse_monorepo_top`) that bugs and notebook captures use |
 | `discover-projects.sh` | Find all craft projects |
 | `count-requests.sh` | Count pending items in requests queue |
 | `process-request.sh` | Route a request to a story or cycle |

@@ -114,7 +114,11 @@ run as five grouped jobs (`dashboard`, `hooks`, `lifecycle`, `flows`, `misc`)
 via `scripts/ci/run-suite-group.sh`; a new test file is picked up
 automatically, no CI edit needed. A non-blocking `browser` job additionally
 opens the built dashboard page in headless Chrome over `file://` and asserts
-it renders - the only check that runs the page rather than reading it.
+it renders - the only check that runs the page rather than reading it. A
+second Chrome job, `annotate-browser`, is required and has a 10-minute timeout:
+it runs the annotate loop in a real browser through
+`scripts/ci/annotate-check.sh` and fails, rather than skips, when the runner
+has no Chrome.
 
 ## Documentation integrity
 

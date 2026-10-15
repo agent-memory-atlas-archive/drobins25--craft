@@ -106,6 +106,39 @@ That's the review. You stopped describing what you wanted and pointed at it.
 
 Your reactions are recorded verbatim along the way - they're the convergence history, and they feed the taste record the notebook builds on.
 
+## Annotate
+
+And when the page is already in front of you, you don't describe anything. You point.
+
+> `/craft:annotate`
+
+Craft puts a comment sheet on the tab you have open. Turn on COMMENT MODE, click anything, type what you want, press SEND TO CLAUDE. The change lands on the page while you watch. No file changes while you point.
+
+One real run started on a plain white profile card:
+
+> "Can you make this look a bit more like LinkedIn?"
+
+Eleven pins later, the last one was:
+
+> "Make craft look like it's coming off the page"
+
+By then the card was a floating dark terminal with 3D CRAFT letters. No reload. No file touched. Then: "That's exactly what I wanted. Can we apply this change to our code now?"
+
+> "Cleared - the page is showing real code again."
+
+Adhoc ported the look as one tweak.
+
+Along the way:
+
+- **Every pin gets a live attempt.** Craft changes the page, measures the result, and tells you what the page shows, not what it meant to do.
+- **Pins know their source.** Each arrives with the element you clicked and, when craft can find them, the component and stylesheet rule behind it.
+- **Later pins win, and craft says so.** The terminal replaced the LinkedIn banner, and you hear which earlier changes got covered.
+- **The run is one record.** Your pins word for word, where each lives in source, and the stylesheet with one block per pin, in `.craft/annotations/`.
+- **It leaves on your word.** A tweak through `/craft:adhoc`, a story the record pre-fills, a notebook todo, or nothing. A run cut short is offered back next time.
+- **Outside pages are untrusted.** On a page that isn't local, craft treats pins as page content, says so once, and asks before anything beyond a visual change.
+
+The step-by-step guide is [docs/annotate.md](docs/annotate.md).
+
 ## The Notebook
 
 The notebook is one-line capture for thoughts that aren't story-shaped yet - ideas that may mature into stories, todos that need doing, and durable project facts future-you will want recalled. Entries land with context attached: the story, cycle, or tweak that produced them rides along, so a thought here is work paused, not a promise you'll have to reconstruct from zero.
@@ -345,7 +378,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:adhoc` | Adhoc fix or tweak without story ceremony. Bugs record to `.craft/fixes/`, tweaks to `.craft/tweaks/`. See [Adhoc](#adhoc). |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration in the running app - 2-4 lettered candidates injected on the real page, chosen by eye, nothing written to source |
-| `/craft:annotate` | Point at anything on a live tab - each pin you send lands as a live change on the page, the run is kept as a record, and it leaves as a tweak, story or todo |
+| `/craft:annotate` | Point at anything on a live tab - each pin you send lands as a live change on the page, the run is kept as a record, and it leaves as a tweak, story or todo. See [Annotate](docs/annotate.md). |
 | `/craft:project` | Switch projects or cross-project dashboard |
 | `/craft:init` | One-time project setup |
 
@@ -759,6 +792,7 @@ After initialization, your project will have:
 ├── research/             # Ad-hoc research folders (created by /craft:research)
 ├── mockups/              # Mockup artifacts (created by /craft:mockup): [date]-[slug]/ with mockup.html + record.md
 ├── dials/                # Dial session records (created by /craft:dial, born closed - no lifecycle)
+├── annotations/          # Annotate records (created by /craft:annotate): [date]-[slug]/ with record.md + session.css
 ├── notebook/             # Ideas, todos, and notes (created by /craft:notebook)
 ├── decisions/            # Decision records (created by /craft:decisions)
 ├── project.md            # Project DNA
@@ -773,11 +807,11 @@ After initialization, your project will have:
 Craft uses 7 hook events to manage state, enforce permissions, and track progress:
 
 - **SessionStart** - Load context, set status line
-- **PreToolUse** - Gate writes by the write gate (`CRAFT_WRITE_ENABLED`; `.craft/`, `.claude/`, `dev_mode`, and active workflows pass), check vocabulary on writes, and run the push gate on Bash
+- **PreToolUse** - Gate writes by the write gate (`CRAFT_WRITE_ENABLED`; `.craft/`, `.claude/`, `dev_mode`, and active workflows pass), check vocabulary on writes, run the push gate on Bash, and hold tool calls outside a short allowlist while an annotate session is on a page outside the project
 - **PostToolUse** - Track file changes, update progress
 - **PostToolUseFailure** - Log and recover from failures
 - **PreCompact** - Export progress before context compaction
-- **UserPromptSubmit** - Inject active cycle/story context
+- **UserPromptSubmit** - Inject active cycle/story context, and lift the annotate outside-page hold for one turn when you type a message
 - **Stop** - Guard against unclean stops
 
 ## Quality Gates
@@ -843,7 +877,7 @@ Generic words flatten the opinion. The Glossary at the bottom of this README mak
 
 ## MCP Integration
 
-Craft uses `chrome-devtools` MCP for the Analysis Phase:
+Craft uses `chrome-devtools` MCP for the Analysis Phase, and for `/craft:mockup`, `/craft:dial` and `/craft:annotate`, which work on pages open in your browser:
 - Screenshot capture
 - Accessibility audits
 - Element inspection

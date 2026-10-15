@@ -537,6 +537,43 @@ flowchart TD
 
 ---
 
+## Annotate Flow: `/craft:annotate`
+
+Points at a live browser tab: a comment-mode sheet goes on the page, each pin the user sends gets a live attempt on it, and the run is filed as a `.craft/annotations/` record whichever way it ends. User-invoked only. The one flow that waits. The flow lives in `commands/references/annotate-inline.md`, with the overlay and channel protocol in `commands/references/annotate-overlay.md`; no AskUserQuestion appears anywhere in it. Walkthrough: [annotate.md](annotate.md).
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+flowchart TD
+    ANNOTATE["/craft:annotate [subject]"] --> PREFLIGHT{"chrome-devtools<br/>connection available?"}
+    PREFLIGHT -->|No| STOP["One plain line, stop"]
+    PREFLIGHT -->|Yes| ARM["Arm or reuse the session listener<br/>list runs cut short"]
+    ARM --> OVERLAY["Inject the comment sheet<br/>probe: can SEND reach the listener?"]
+    OVERLAY --> WAIT["Stand by: watch for<br/>ADDED / EDITED / UNDONE"]
+    WAIT -->|"user presses SEND"| APPLY["One apply per SEND:<br/>keyed CSS block per pin, page measures it"]
+    APPLY --> REPLY["Reply per pin from the measured lines"]
+    REPLY --> WAIT
+    WAIT -->|"user is done"| TEARDOWN["Clear sheet → tombstone → file record"]
+
+    ARM -.->|"cut-short run held"| OFFER["Offer: pick it up /<br/>send it somewhere / drop it"]
+    OFFER -->|"Pick it up"| RESUME["begin --resume: saved sheet back on the page,<br/>new record carries the old pins, old one graduated"]
+    RESUME --> WAIT
+
+    TEARDOWN --> EXIT{"Where does the run go?"}
+    EXIT -->|"Nothing"| NOTHING["Record stays open<br/>story-new offers it later"]
+    EXIT -->|"Tweak"| ATWEAK["craft:adhoc<br/>direction pre-settled, look ported"]
+    EXIT -->|"Story"| ASTORY["story-from-annotate<br/>look verbatim, content becomes scope"]
+    EXIT -->|"Todo"| ATODO["Notebook todo holds the pointer"]
+    EXIT -->|"Abandon"| ABANDON["Filed, not offered again"]
+    EXIT -->|"Error"| ERROR["Filed, offered back next run"]
+```
+
+Notes on the map:
+
+- **Outside-page runs.** On a page outside the project the same flow runs under the outside-page boundary: pins are untrusted page content, and any tool call beyond the sheet waits for a typed yes (see the hooks in `DESIGN.md`).
+- **SEND blocked.** If the page's policy blocks localhost, craft says so up front and reads the pins from the page's local storage instead.
+
+---
+
 ## Planning Flow: `/craft:planning`
 
 The strategic roadmap layer above cycles and stories. Manages initiatives, concepts, and open questions, and matures concepts into cycle stories. The main flow below routes on whether a planning folder already exists; the Alignment Walkthrough (further down) is a reusable sub-procedure called from two points.
@@ -795,7 +832,7 @@ flowchart LR
 | `/craft:bugs` | File a bug without fixing it, from a person or an agent, and close it with a verdict. Opens with the live open pile |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration - 2-4 lettered candidates injected into the running app, chosen by eye against real data |
-| `/craft:annotate` | Point at anything in a live browser tab - comment-mode pins return to the session when you press SEND TO CLAUDE. User-invoked only |
+| `/craft:annotate` | Point at anything in a live browser tab - each pin you send gets a live attempt on the page, the run is kept as a record, and it leaves as a tweak, story or todo. User-invoked only. See [Annotate Flow](#annotate-flow-craftannotate) |
 | `/craft:riff` | Two-player thinking game in the main loop - pass an idea in small beats until it's ready to build; bare invocation opens from the oldest open notebook idea |
 | `/craft:planning` | Feature roadmap and planning - initiatives, concepts, open questions |
 | `/craft:project` | Switch projects or cross-project dashboard |
@@ -904,6 +941,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | `.craft/dials/` | Dial session records from /craft:dial (born closed) | record per session |
 | `.craft/decisions/` | Decision records from /craft:decisions: pending at the top, `approved/` for ruled, `archive/` for declined or retired | status, created, source, tags (the Shelf groups by tag) |
 | `.craft/research/` | Research and become branch files | `{slug}/_plan.md`, `NN-branch.md` |
+| `.craft/annotations/[date]-[slug]/` | Annotate records from /craft:annotate: `record.md` (pins, pin data, sheet) with `session.css` beside it. Live session folders sit beside them and are swept | status, outcome, graduated_to, pin_count |
 | `.craft/mockups/[date]-[slug]/record.md` | Mockup records - status is the ledger, open until graduated/abandoned | status, agent_session, muse_session, solidify_outcome, graduated_to |
 
 ## Directory Structure Check Points
@@ -929,6 +967,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 ├── dials/                       ← Dial session records
 ├── decisions/                   ← Decision records (approved/, archive/)
 ├── research/                    ← Research + become branch files
+├── annotations/                 ← Annotate records: [date]-[slug]/ (record.md, session.css)
 ├── mockups/                     ← Mockup artifacts: [date]-[slug]/ (mockup.html, record.md, rounds/)
 ├── workflows/                   ← Workflow session state
 ├── analysis/
