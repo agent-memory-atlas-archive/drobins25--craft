@@ -617,14 +617,14 @@ begin_test "graduate writes through a temp of its own and never touches one anot
 new_root; ROOT="$NEW_ROOT"
 live "$ROOT" g1 0 "held temp"; hist "$LIVE" "$S1"; file_rec "$ROOT" g1 nothing
 RDIR="$(dirname "$OUT")"; NAME="$(basename "$RDIR")"
-NEW_MODE="$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT")"
+NEW_MODE="$(stat -c '%a' "$OUT" 2>/dev/null || stat -f '%Lp' "$OUT")"
 printf 'another writer\n' > "$RDIR/record.md.tmp"
 CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" graduate --record "$NAME" --to held >/dev/null 2>&1; GRC=$?
 assert_eq "graduate exits 0" "0" "$GRC"
 assert_eq "graduated_to set" "held" "$(fm "$OUT" graduated_to)"
 assert_eq "the other writer's record.md.tmp is left as it was" "another writer" "$(rd "$RDIR/record.md.tmp")"
 assert_eq "no temp of its own is left" "record.md.tmp" "$(ls "$RDIR" | grep '\.tmp$' | tr '\n' ' ' | sed 's/ $//')"
-assert_eq "record.md keeps the mode the filer gave it" "$NEW_MODE" "$(stat -f '%Lp' "$OUT" 2>/dev/null || stat -c '%a' "$OUT")"
+assert_eq "record.md keeps the mode the filer gave it" "$NEW_MODE" "$(stat -c '%a' "$OUT" 2>/dev/null || stat -f '%Lp' "$OUT")"
 
 begin_test "two graduate calls on one record at once all succeed, 20 rounds"
 new_root; ROOT="$NEW_ROOT"

@@ -1810,7 +1810,7 @@ arm_session "$ROOT" --session tk1
 TKF="$ROOT/.craft/annotations/tk1/token"
 TK="$(token_of "$ROOT" tk1)"
 assert_contains "the token is 32 lowercase hex characters" '^[0-9a-f]\{32\}$' "$TK"
-assert_eq "mode 600" "600" "$(stat -f '%Lp' "$TKF" 2>/dev/null || stat -c '%a' "$TKF")"
+assert_eq "mode 600" "600" "$(stat -c '%a' "$TKF" 2>/dev/null || stat -f '%Lp' "$TKF")"
 TKP="$(cat "$ROOT/.craft/annotations/tk1/listener.pid")"
 kill "$TKP" 2>/dev/null || true
 wait_dead "$TKP" || true
@@ -1827,7 +1827,7 @@ run_in "$ROOT" ensure --session tk1 >/dev/null
 TK2="$(token_of "$ROOT" tk1)"
 assert_contains "the file now holds a well-formed token" '^[0-9a-f]\{32\}$' "$TK2"
 assert_not_eq "it is a fresh token" "not-a-token" "$TK2"
-assert_eq "mode 600 after replacement" "600" "$(stat -f '%Lp' "$TKF" 2>/dev/null || stat -c '%a' "$TKF")"
+assert_eq "mode 600 after replacement" "600" "$(stat -c '%a' "$TKF" 2>/dev/null || stat -f '%Lp' "$TKF")"
 
 begin_test "the token is absent from the listener's ps command line"
 TKP="$(cat "$ROOT/.craft/annotations/tk1/listener.pid")"
@@ -1882,7 +1882,7 @@ PYEOF
 )"
 assert_contains "the first caller was held inside its write" "^held$" "$OUT"
 assert_contains "both callers return the token the file holds" "^same$" "$OUT"
-assert_eq "the file is mode 600" "600" "$(stat -f '%Lp' "$ROOT/sess/token" 2>/dev/null || stat -c '%a' "$ROOT/sess/token")"
+assert_eq "the file is mode 600" "600" "$(stat -c '%a' "$ROOT/sess/token" 2>/dev/null || stat -f '%Lp' "$ROOT/sess/token")"
 assert_eq "no temp file is left" "0" "$(ls "$ROOT/sess" | grep -c '\.tmp$' || true)"
 
 begin_test "loader, stamp and stamp --no-run carry the token right after the port; stamp --no-run works with no run.json"

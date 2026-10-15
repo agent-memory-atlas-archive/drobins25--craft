@@ -234,8 +234,9 @@ done
 assert_eq "no other file was left beside the page" "page.html page.html.bake-tmp page.html.strip-tmp page.html.tmp" "$(cd "$ROOT4" && ls | tr '\n' ' ' | sed 's/ $//')"
 
 begin_test "bake and strip leave a page with the mode a new file gets, as they always did"
-# mode_of <file> - the permission bits in octal (BSD stat, then GNU stat)
-mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+# mode_of <file> - the permission bits in octal (GNU stat, then BSD stat: GNU
+# accepts -f with another meaning and would succeed with filesystem text)
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 P6="$ROOT4/fresh.html"
 printf '%s' "$PAGE_HTML" > "$P6"
 NEW_MODE="$(mode_of "$P6")"
