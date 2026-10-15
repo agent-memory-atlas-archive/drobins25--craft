@@ -81,7 +81,7 @@ You converge by reacting in plain words. No forms, no pickers.
 - **Diverge.** Say which one pulls and what's wrong with the others. Hybrids are legal: "B with C's cards."
 - **Refine.** Your pick becomes the base and comes back as variations of it.
 - **Polish.** Micro-adjustments land in the open page while you watch. Try, see, keep or discard, seconds each.
-- **A feeling counts.** "B is close but something's off" gets a concrete reading back for you to correct, before a round is spent on a guess.
+- **A feeling counts.** "B is close but something's off" is a feeling, and craft riffs the fuzzy reaction into a sharp direction with you before rebuilding, instead of spending a round on a guess.
 - **Acceptance is explicit.** "That's it, ship it." The new design values land in `tokens.yaml` with their provenance before anything downstream exists, so every later story and validator enforces the design you approved in your browser.
 - **Then it graduates on your call.** Tweak it in now, grow it into a story with its CSS ported as-is, or park it as a notebook todo.
 
@@ -468,7 +468,7 @@ A bug record is something broken that you are not fixing right now, written so a
 
 Bare, it shows every open bug, newest first, with a marker on any that blocks someone's next step. With words, it files what you describe. If the conversation already holds a defect, a bare call files that one instead.
 
-- **Three filers.** You: "log a bug", or a yes to craft's one ignorable offer when you defer something broken mid-story. An agent mid-run, which can't fix what it finds without disturbing the run. And `/craft:analyze`: QA and walkthrough findings file as bugs, except what the analyzer couldn't verify, and walkthrough taste notes, which queue for UX review instead.
+- **Three filers.** You: "log a bug", or a yes to craft's one ignorable offer when you defer something broken mid-story. An agent mid-run, which can't fix what it finds without disturbing the run. And `/craft:analyze`: QA and walkthrough findings file as bugs. A QA finding the analyzer couldn't verify is named in the report and not filed. Walkthrough taste notes queue for UX review instead.
 - **Never summoned.** Filing never pulls you out of what you were doing. The one question craft may ask is "What's broken?", and only when nothing in the conversation says. Then one line: filed, and where.
 - **Seven required fields.** The symptom in your words as the first line, never the guessed cause. Then where it turned up, expected, actual (only what was observed), consequences (what you rank the pile by; there is no severity field), whether it blocks your next step and why, and numbered steps to reproduce from a named starting state. Craft refuses a record missing one; a field the filer can't know says "unknown" and why.
 - **A Done when, if you can write it.** The check that proves it fixed, written now, before the cause is known. Optional.
