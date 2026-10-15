@@ -32,7 +32,7 @@ The page under review stays the hero. There is no tint, dim, or shadow over the 
 - **Text, never markup.** Comments are written with `textContent`. A comment containing `<` must render as typed, not execute.
 - **Storage keyed by page path.** Pins rehydrate from local storage under a key that includes the page path, plus the hash route when the app routes with the hash: a fragment that starts with `#/` or `#!/` is a route, its own query cut off; any other fragment is an in-page anchor and changes nothing. The pin's `page` carries the same hash route, so a pin names the route it was made on. Browsers treat all local files as one storage origin, so an unkeyed store bleeds stale pins across unrelated pages. The key is read from the path and hash route at every access, so it follows client-side navigation, by path or by hash: the old path's pins are hidden and wait in storage until the user returns, and the new path's pins show without a click. Storage is best-effort: unavailable storage means memory-only pins and no error.
 - **One component lookup.** The source sets `window.__craftAnnotateComponentOf = componentOf;` right after defining it, so the pin-to-source probe asks the page for the component of any element, an ancestor included, instead of carrying a second copy of the fiber walk that would drift. The rule walker is the same: the source sets `window.__craftAnnotateProbe` to the one walker that finds the stylesheet rules matching a pin's element, and the resolver's probe line only calls it, so the walk lives once. The annotate clear deletes neither: the next install overwrites them.
-- **Measure, never guess.** On a sheet event a run-stamped page re-fetches the session sheet, then reports to the channel what the page itself measured for each changed block: the computed values, the first matching element's box in document coordinates, the view and the page size, whether that element's center is inside the view, and what is painted on top of it. The hit test skips the overlay's own nodes, so a pin dropped where the user clicked never reads as covering the element. An element with `pointer-events: none` is not hit-tested, and a center outside the view is reported as such rather than tested. The page never scrolls to measure: the user's view is theirs.
+- **Measure, never guess.** On a sheet event a run-stamped page re-fetches the session sheet, waits until the change has landed, then reports to the channel what the page itself measured for each changed block: the computed values, the first matching element's box in document coordinates, the view and the page size, whether that element's center is inside the view, and what is painted on top of it. The hit test skips the overlay's own nodes, so a pin dropped where the user clicked never reads as covering the element. An element with `pointer-events: none` is not hit-tested, and a center outside the view is reported as such rather than tested. The page measures once the page's own fades and other finite animations have finished, waiting at most a second; endless animations are not waited on, and the page's motion is never changed to get a reading. The page never scrolls to measure: the user's view is theirs.
 - **Undo is explicit.** Deleting a pin that was sent in this run puts its timestamp on an undo list kept in local storage, posted with the next SEND so its change is withdrawn. Clearing pins empties the list and adds nothing, so a clear can never read as "undo everything". The readout names pending undos until the next SEND.
 - **Stale sent pins drop.** A page stamped with a run id discards stored pins that were sent in another run, or in none; unsent pins always stay. A page without the stamp drops nothing.
 - **Total teardown.** Every document-level handler, the page-change observer and the stream stop themselves the moment the strip is no longer attached, so a clear followed by a re-install never leaves a ghost handler creating pins.
@@ -458,11 +458,31 @@ The whole block is one self-invoking expression: served as a script it runs as i
     }).catch(() => {});
   };
 
+  // Resolves once the page's running animations and transitions that have an end are finished,
+  // or after SETTLE_CAP_MS, so a change is measured at its applied value rather than mid-fade.
+  // Endless animations and the overlay's own are not waited on; the page's motion is left alone.
+  const SETTLE_CAP_MS = 1000;
+  const fadesDone = () => {
+    let pending = [];
+    try {
+      pending = (typeof document.getAnimations === 'function' ? document.getAnimations() : []).filter(a => {
+        const t = a.effect ? a.effect.target : null;
+        if (!t || a.playState !== 'running' || (t.closest && t.closest(OWN))) return false;
+        return isFinite(a.effect.getComputedTiming().endTime);
+      });
+    } catch (e) { pending = []; }
+    if (!pending.length) return Promise.resolve();
+    return Promise.race([
+      Promise.all(pending.map(a => a.finished.catch(() => null))),
+      new Promise(resolve => setTimeout(resolve, SETTLE_CAP_MS))
+    ]);
+  };
+
   const onSheet = ev => {
     let job = null;
     try { job = JSON.parse(ev.data); } catch (e) { return; }
     if (!job || typeof job.id !== 'string') return;
-    fetchSheet().then(text => report(job, text, null), () => report(job, '', 'sheet fetch failed'));
+    fetchSheet().then(text => fadesDone().then(() => report(job, text, null)), () => report(job, '', 'sheet fetch failed'));
   };
 
   const boxOf = el => {
