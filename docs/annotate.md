@@ -66,7 +66,7 @@ Later pins layer on earlier ones, and craft tells you when one covers another. B
 >
 > "This replaced two earlier changes: Banner gone: the purple LinkedIn-style banner from pin #1 is gone, because the terminal title bar took its place. Shadow replaced: the card's drop shadow from pin #2 is replaced by the terminal's green glow plus a deeper black shadow."
 
-Craft also reads values twice when the first reading lands mid-animation. The card's styles fade every change over 150ms, so a value read right away can be halfway through a fade. When a pin is ambiguous, it asks. "Topography" on a name row was read as "typography", and craft said so.
+Craft waits for a change to finish fading before it reads the values back. The card's styles fade every change over 150ms, so a value read right away would be halfway through the fade. When a pin is ambiguous, it asks. "Topography" on a name row was read as "typography", and craft said so.
 
 Ten more pins took the card from a LinkedIn-style header to a dark terminal with 3D letters and a floating card.
 
