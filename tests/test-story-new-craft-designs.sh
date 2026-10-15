@@ -316,6 +316,6 @@ begin_test "annotate never promises a cut-short run to a later story"
 assert_eq "no later-story promise" "0" "$(grep -c "for a later story" "$REPO/commands/references/annotate-inline.md" || true)"
 
 begin_test "the changelog history line is untouched"
-assert_eq "line 266" '- Changed story creation: the source question now also offers "From mockup" when converged mockup records exist' "$(sed -n 266p "$REPO/CHANGELOG.md")"
+assert_eq "history line kept" "1" "$(grep -cF -- '- Changed story creation: the source question now also offers "From mockup" when converged mockup records exist' "$REPO/CHANGELOG.md" || true)"
 
 finish_tests
