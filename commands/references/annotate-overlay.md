@@ -514,8 +514,9 @@ The whole block is one self-invoking expression: served as a script it runs as i
 
   // A pin's anchor: the element it was dropped on while that is still in the page, else the match of
   // its stored path nearest the box stored at click time, since a short path matches every look-alike
-  // element. A nearest match more than a screen from that box is not trusted (near: false), and the
-  // pin then sits at its click spot. No match at all is null: the pin is DETACHED.
+  // element. Matches that render no box are skipped, so a hidden copy never wins. A nearest match more
+  // than a screen from that box is not trusted (near: false), and the pin then sits at its click spot.
+  // No match at all is null: the pin is DETACHED.
   const anchorOf = en => {
     if (en.el && en.el.isConnected) return { el: en.el, near: true };
     const d = en.d;
@@ -528,9 +529,11 @@ The whole block is one self-invoking expression: served as a script it runs as i
     let gap = Infinity;
     list.forEach(c => {
       const r = c.getBoundingClientRect();
+      if (!r.width && !r.height) return;
       const g = Math.hypot(r.left + window.scrollX - b.x, r.top + window.scrollY - b.y);
       if (g < gap) { gap = g; best = c; }
     });
+    if (!best) return { el: list[0], near: false };
     return { el: best, near: gap <= Math.max(window.innerHeight || 0, 800) };
   };
 
@@ -550,6 +553,9 @@ The whole block is one self-invoking expression: served as a script it runs as i
     entries.forEach(en => {
       const found = anchorOf(en);
       const detached = !found;
+      // A trusted match is kept like a dropped element, so the pin follows it through later moves
+      // instead of being looked up again each frame; a stale or untrusted one is let go.
+      en.el = found && found.near ? found.el : null;
       en.node.classList.toggle('ca-detached', detached);
       en.node.classList.toggle('ca-sent', en.sent);
       en.node.title = en.d.text;

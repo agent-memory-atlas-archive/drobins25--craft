@@ -88,6 +88,7 @@ if (scenario === "static-shift") {
   console.log(before + " -> " + at());
 } else if (scenario === "detached") {
   api.settle();
+  avatar.isConnected = false;
   anchors[".avatar"] = [];
   api.settle();
   console.log([pin.node.classList.contains("ca-detached"), pin.node.style.left, pin.node.style.top, pin.node.style.right, pin.node.style.bottom].join(" "));
@@ -107,6 +108,23 @@ if (scenario === "static-shift") {
   mine.isConnected = false;
   api.settle();
   console.log(held + " / " + at());
+} else if (scenario === "restored-then-shift") {
+  // Six look-alike rows 100px apart; the restored pin was clicked on row 5. A live change then pushes
+  // the list down by more than half a row: the pin must stay on row 5, not hop to where row 4 now sits.
+  const rows = [1, 2, 3, 4, 5, 6].map(i => el(100, i * 100, 80, 80));
+  anchors[".row"] = rows;
+  pin.d.selector = ".row"; pin.d.box = { x: 100, y: 540, width: 80, height: 80 }; pin.d.x = 110; pin.d.y = 548;
+  api.settle();
+  rows.forEach(r => { r.box.top += 120; });
+  api.settle();
+  console.log(at());
+} else if (scenario === "hidden-lookalike") {
+  // A display:none copy of the element reports a zero box at the top-left of the page. The real element
+  // has moved 200px down since the click, so the hidden copy is now the nearer match; it must not win.
+  anchors[".avatar"] = [el(0, 0, 0, 0), avatar];
+  avatar.box.top += 200;
+  api.settle();
+  console.log(at());
 } else if (scenario === "far-match") {
   // Only look-alikes screens away from the click: the pin holds its click spot, not DETACHED.
   anchors[".avatar"] = [el(100, 3060, 80, 80), el(100, 5060, 80, 80)];
@@ -157,6 +175,12 @@ assert_eq "marker sits on the middle row, not the first" "110px 2408px" "$(run_c
 
 begin_test "a pin keeps the element it was dropped on until that element leaves the page"
 assert_eq "dropped element first, then the path lookup" "310px 548px / 110px 108px" "$(run_case dropped-element)"
+
+begin_test "a restored pin keeps the row it resolved to when a live change shifts the whole list"
+assert_eq "marker stays on row 5 after a 120px shift" "110px 668px" "$(run_case restored-then-shift)"
+
+begin_test "a hidden look-alike at the page's top-left never wins the lookup"
+assert_eq "marker sits on the visible element, not the hidden copy" "110px 308px" "$(run_case hidden-lookalike)"
 
 begin_test "a pin whose only look-alikes are screens away holds its click spot"
 assert_eq "not detached, drawn at the stored click" "false 110px 108px" "$(run_case far-match)"
