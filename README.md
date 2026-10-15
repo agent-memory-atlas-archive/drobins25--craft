@@ -70,41 +70,36 @@ Same machinery, different domain. You point `/craft:become` at the expertise you
 
 ## The Mockup Funnel
 
-`/craft:mockup` is the fastest way to feel what craft is. Name something visual - a card, a hero, a whole page - and craft's alchemist builds three genuinely different live HTML options. Stances, not variations: at most one option may stay inside your current design language, and at least one has to go further than you dared to ask. Three safe layouts in the current palette counts as a failed round.
-
-You just ask:
+`/craft:mockup` is the fastest way to feel what craft is. Name something visual and ask:
 
 > "Can we create a craft mockup of the ecosystem cards?"
 
-and craft opens the funnel - three live options, in your browser, at real scale.
+Three live HTML options open in your browser, at real scale, in real surrounding context. Stances, not variations: at most one may stay inside your current design language, and at least one has to go further than you asked. Three safe layouts in the current palette is a failed round.
 
-From there you converge by reacting in plain words - no forms, no pickers:
+You converge by reacting in plain words. No forms, no pickers.
 
-- **Diverge.** Three options at real scale, embedded in real surrounding context. Say which one pulls and what's wrong with the others. Hybrids are legal briefs: "B with C's cards."
-- **Refine.** Your pick becomes the base; the alchemist builds variations of it.
-- **Polish.** The live loop: micro-adjustments are injected straight into the open page while you watch in your own browser. React, keep or discard, next one - seconds per iteration.
+- **Diverge.** Say which one pulls and what's wrong with the others. Hybrids are legal: "B with C's cards."
+- **Refine.** Your pick becomes the base and comes back as variations of it.
+- **Polish.** Micro-adjustments land in the open page while you watch. Try, see, keep or discard, seconds each.
+- **A feeling counts.** "B is close but something's off" gets a concrete reading back for you to correct, before a round is spent on a guess.
+- **Acceptance is explicit.** "That's it, ship it." The new design values land in `tokens.yaml` with their provenance before anything downstream exists, so every later story and validator enforces the design you approved in your browser.
+- **Then it graduates on your call.** Tweak it in now, grow it into a story with its CSS ported as-is, or park it as a notebook todo.
 
-And when a reaction is only a feeling - "B is close but something's off" - craft riffs the fuzzy reaction into a sharp direction with you before rebuilding, instead of burning a round on its own guess about what you meant.
-
-Acceptance is explicit - "that's it, ship it" - and then the important part happens: the new design values solidify into `tokens.yaml` with provenance, before any downstream artifact exists. Every later story, validator, and analyzer now enforces the design you approved in your own browser. The converged mockup then graduates on your call: tweak it in now, grow it into a story (its CSS ports as-is, never reinterpreted), or park it as a notebook todo that remembers everything.
-
-And the mockup isn't the only door into your project's DNA. A two-minute tweak takes the same one:
+The same door takes a two-minute tweak:
 
 > "Tweak the rim around the Start button - gradient glow, maybe?"
 
-craft routes it to `/craft:adhoc`, makes the change in place, shows you, and records what you said. Accepted tweaks reconcile the same way a mockup does: when a tweak's final values drift from your tokens or outgrow a lock, craft asks once - at acceptance, never mid-flow - whether the new taste becomes the documented standard. Say yes and it can snowball, offering to sweep the settled rule across every surface it fits. Whether the change arrived through a mockup or a two-minute tweak, your design system ends the session already agreeing with what you approved.
+`/craft:adhoc` makes the change in place, shows you, and records what you said. If the accepted values drift from your tokens or outgrow a lock, craft asks once, at acceptance, whether the new taste becomes the standard. Say yes and it offers a sweep to find the other surfaces that could inherit it.
 
-And when the live page is almost there - just a notch off:
+And when the page is almost there, a notch off:
 
 > "Can we dial down the login text and try a different color perhaps?"
 
-You don't have to finish that sentence.
+`/craft:dial` drops A, B, C, D into your running app, in a small panel on the page you were already looking at. You click until one stops bugging you. "Oh I like B." Nothing is written to source.
 
-`/craft:dial` drops the options into your running app - A, B, C, D, in a little grey panel on the page you were already looking at. You click until one stops bugging you. "Oh I like B."
+Your reactions are recorded word for word along the way. They are the convergence history, and they feed the taste record.
 
 That's the review. You stopped describing what you wanted and pointed at it.
-
-Your reactions are recorded verbatim along the way - they're the convergence history, and they feed the taste record the notebook builds on.
 
 ## Annotate
 
@@ -141,31 +136,23 @@ The step-by-step guide is [docs/annotate.md](docs/annotate.md).
 
 ## The Notebook
 
-The notebook is one-line capture for thoughts that aren't story-shaped yet - ideas that may mature into stories, todos that need doing, and durable project facts future-you will want recalled. Entries land with context attached: the story, cycle, or tweak that produced them rides along, so a thought here is work paused, not a promise you'll have to reconstruct from zero.
-
-You never fill out a form. You just talk:
+The notebook is one-line capture for thoughts that aren't story-shaped yet. You never fill out a form. You just talk:
 
 > "Can you check our notebook todos?"
 
 > "Create a notebook entry for a `craft:reskin` command with optional token extraction."
 
-That second one doesn't exist yet - it's an idea, and ideas in the book can graduate into anything: a tweak, a story, an entire cycle.
+- **Three kinds of entry.** Ideas that may mature into stories, todos that need doing, and notes: durable project facts future-you will want recalled.
+- **Context rides along.** The active story or cycle and the code you were discussing land in the entry, so a thought here is work paused, not a promise to reconstruct from zero.
+- **Craft offers, never interrupts.** Say "later", "don't let me forget", "side note", "unrelated but", "before I forget", "for next time" or "remember to" mid-story, and craft offers the notebook in one ignorable line. Never a popup.
+- **Entries graduate.** An idea or todo becomes a story on your word, and the entry is stamped with the story it turned into. A todo that an adhoc tweak happens to satisfy is offered for closing when you accept the tweak.
+- **Some entries won't be yours.** When enough tweaks you loved have stacked up, three by default, craft offers a victory lap: its scout looks for the other surfaces that taste belongs on and writes one todo per surface, origin tweak attached, ready for `/craft:mockup`.
 
-And soon, some entries won't be yours at all. When tweaks you loved stack up, craft's scout goes looking for the other places that taste belongs - and writes the todo itself:
-
-> *Run `/craft:mockup` on the pricing cards - your last three tweaks kept warming the palette, and these are still cold. Creative direction and origin tweak attached.*
+> *Pricing cards - spread the hero card's taste. Your last three tweaks kept warming the palette, and these are still cold.*
 
 You didn't ask for that one. Craft was paying attention.
 
-That's the real reason the notebook exists: **your taste compounds.** Every design you love is recorded, not spent - a vote for what "good" means in your project. And it climbs: the morphing glow you tweaked onto one flat card becomes the move craft proposes for the row of cards, then the page, then the DNA of a site-wide experience - every step still linked back to the card where it started. Most tools forget what you liked the moment the session ends. Craft keeps score and builds upward from it, until the work isn't just more you - it's you, *refined*.
-
-Craft holds up its end, too. Drop a deferral mid-story and craft offers the notebook - one ignorable line, never a popup:
-
-`"later"` · `"don't let me forget"` · `"side note"` · `"unrelated but"` · `"before I forget"` · `"for next time"` · `"remember to"`
-
-The entry lands stamped with the story, cycle, or tweak that produced it. And when a build reaches a step only you can do - a deploy setting, a DNS record - Claude writes the full walkthrough into the book, tied to the work it belongs to, waiting for your hands.
-
-And the book remembers. Every entry knows when it was written and what it became - the one-line thought from three weeks ago is stamped with the story it turned into, and the story knows the line it grew from. Nothing in it is locked into a shape - a line can become a tweak, a story, an entire cycle, a mockup session - and nothing in it forgets where it came from.
+That's the real reason the notebook exists: **your taste compounds.** Every design you love is recorded, not spent, and every move craft proposes from it links back to the tweak where it started. Most tools forget what you liked when the session ends. Craft keeps score.
 
 *Capture syntax, lifecycle, and where files live: [Notebook](#notebook), below.*
 
@@ -326,9 +313,15 @@ This captures a focused unit of work - we call it a [**story**](#story) - and la
 
 A [**cycle**](#cycle) is a batch of related stories you ship together. Design it first (which stories, in what order), then activate it.
 
-**Planning-sourced cycles:** If you have planning docs in `.craft/planning/` (files with `concept:` or `initiative:` frontmatter), `cycle-design` detects them. Mention a specific planning doc in conversation before invoking the command and the orchestrator confirms via a safety gate, captures the source on the cycle, and routes story creation through the From planning protocol so each story's spark draws from the planning content. Cycles created without planning sources work exactly as before.
+**Planning-sourced cycles.** If `.craft/planning/` holds concept or initiative docs, `cycle-design` detects them. Name one in conversation before you invoke, and craft confirms it, records the source on the cycle, and draws each story's spark from the planning content. Cycles without a planning source work as before.
 
-**Planning alignment (`/craft:planning`):** Concepts in `.craft/planning/` have their own alignment walkthrough — a structured way to resolve a concept's strategic sub-decisions before it becomes stories. Sub-decisions are walked one at a time via conversation (the orchestrator's TaskTool queue keeps it atomic — no bundled multi-decision questions). Each sub-decision resolves to one of three destinations: **Locked** (written to `## Locked decisions` only when the orchestrator asks "Want me to lock this as X?" and you give an explicit affirmative), **Deferred** (`pending_decisions[]` frontmatter — comes back next session), or **Blocked** (`## Open questions` with the owner annotated — doesn't auto-nag you). A destination-coverage gate at story-creation time blocks the next step if any task closed without filing. Depth ceiling is built in: planning is for strategic decisions, not implementation detail.
+**Planning alignment (`/craft:planning`).** A concept's strategic sub-decisions get settled before it becomes stories, one at a time, in conversation. Each lands in one of three places:
+
+- **Locked** only after craft asks "Want me to lock this as: [its read]?" and you say yes.
+- **Deferred** to `pending_decisions` in the concept's frontmatter, back next session.
+- **Blocked** into `## Open questions` with the owner named. It never nags you.
+
+A coverage gate at story creation stops if any decision closed without landing in one of the three. Planning stays strategic: implementation detail waits for story-new and plan-chunks.
 
 ### Implement
 
@@ -384,97 +377,38 @@ You rarely type these. Craft routes plain English to the right one - this table 
 
 ## Notebook
 
-The notebook is the upstream of craft's compounding system. Catch thoughts that aren't story-shape yet, before they get lost or forced into premature stories.
-
-User-typed shapes:
-
-```
-/craft:notebook idea "compounding kb for decisions"
-/craft:notebook todo "rename verifier error wording"
-/craft:notebook note "project deploys on Vercel"
-/craft:notebook                              # bare → list view
-```
-
-That's the whole user-typed surface. Capture is one-Enter past zero-ceremony: after you provide text, you get exactly one AskUserQuestion ("Anything to add for future-you, or skip?") and a single Enter to dismiss.
-
-### Inline tags
-
-Drop `#tag` tokens anywhere in the capture text. They're extracted into frontmatter, scrubbed from the body, and shown inline in the bare list view:
-
-```
-/craft:notebook idea "compounding kb for decisions #architecture #knowledge"
-```
-
-writes the body as just "compounding kb for decisions" and the frontmatter `tags: [architecture, knowledge]`.
-
-### Graduate and done are conversational
-
-You won't type `/craft:notebook graduate 3`. Just tell Claude what you want:
+The notebook is the upstream of craft's compounding system: thoughts that aren't story-shaped yet, caught before they get lost or forced into stories too early. You never type a lifecycle command. You say what you want:
 
 > **You:** "Turn the compounding kb idea into a story."
 >
 > **Claude:** "Graduate 'compounding kb idea' to a story? I'll run /craft:craft-story-new with it as the spark."
 >
 > **You:** "Yes."
->
-> **Claude:** *runs story-new, flags the source idea on success*
-> "Graduated 'compounding-kb-decisions' → story 'compounding-kb-decisions'."
-
-Todos graduate too - and graduating a todo also closes it, because the story owns the tracking from that point. The offer names both effects, and that one yes covers both; no second confirmation:
-
-> **You:** "Turn the ecosystem closing beat todo into a story."
->
-> **Claude:** "Graduate 'ecosystem closing beat' todo to a story? I'll create the story and mark the todo done."
->
-> **You:** "Yes."
->
-> **Claude:** "Done 'ecosystem-closing-beat' -> tracked by story 'ecosystem-closing-beat'."
-
-The closed todo lands in `todos/done/` with `graduated_to` pointing at its story - so "where did this story come from" stays answerable.
-
-For done, Claude always confirms first - the file moves silently from active view to `todos/done/`, so the two-second confirmation prevents you from losing track of state:
 
 > **You:** "I took care of the verifier todo."
 >
-> **Claude:** "Mark 'rename verifier error wording' as done? [Yes / No]"
->
-> **You:** "Yes."
->
-> **Claude:** "Marked done: 'rename-verifier-error-wording'."
+> **Claude:** "Mark 'rename verifier error wording' as done?"
 
-Claude won't silently mark things done from passing mentions. If the trigger isn't clear, Claude does nothing.
+Capture is one line, typed or spoken:
 
-### When Claude offers notebook
+```
+/craft:notebook idea "compounding kb for decisions #architecture"
+/craft:notebook todo "rename verifier error wording"
+/craft:notebook note "project deploys on Vercel"
+/craft:notebook                              # bare: list view
+```
 
-When you use deferral language ("later," "don't let me forget," "side note") in conversation, Claude may offer an inline mention as an ignorable closing line:
+After your text, one question, "Anything to add for future-you, or skip?", and one Enter dismisses it. A `#tag` anywhere in the text moves into frontmatter and shows in the list.
 
-> *"Worth dropping in /craft:notebook? I'd tag it #verifier #cycle-9. Otherwise I'll continue."*
+- **Idea.** Half-formed, wants to mature into a story or get pruned. Graduated ideas stay in place with `graduated_to` pointing at the story.
+- **Todo.** A concrete action. Done ones move to `todos/done/`. Graduating a todo to a story also closes it, and the one yes covers both.
+- **Note.** A durable project fact, "project deploys on Vercel", kept for recall, not action. Notes never graduate and are never done. Each carries a facet (infrastructure, tooling, ownership, process, convention, gotcha) that decides when it resurfaces.
+- **Done always confirms first,** because the file moves out of view. Passing mentions never mark anything done.
+- **Craft offers, you decide.** On "later", "don't let me forget" or "side note", one ignorable line: "Worth dropping in /craft:notebook? I'd tag it #verifier #cycle-9. Otherwise I'll continue." Yes captures silently with the conversation as context.
+- **Notes come back as "as of".** Every session loads a one-line index of your notes, and craft reads the full note when the work matches. A recalled note is true as of its date: verify before acting.
+- **Not TaskCreate.** TaskCreate lasts one conversation. Notebook todos persist across sessions and survive cycle completion.
 
-Ignore the line, the conversation flows on. Say "yes" or "do it" and Claude captures silently with the conversation as context - no follow-up AUQ.
-
-### Idea vs todo vs note
-
-- **Idea** - half-formed, wants to mature into a story (or get pruned). Graduate when ready.
-- **Todo** - concrete action, wants to get done. Mark done when finished.
-- **Note** - a durable, project/team-local fact ("project deploys on Vercel," "Sarah owns billing - loop her in before touching invoicing"). Its value is future recall, not action. Notes don't graduate and don't get "done" - they're reference, not work.
-
-Different lifecycles, different storage: ideas accumulate as history (graduated ones stay in place with a `graduated_to: <story-slug>` flag), todos clear as inbox (done ones move to `todos/done/`), and notes are permanent reference in `notebook/notes/` with no lifecycle at all.
-
-### Notes: durable facts you want recalled
-
-A note captures the **distilled standing fact**, never the event that revealed it. "Kevin ran the vercel CLI today" is the trigger; the note is "Project deploys on Vercel." Each note carries a `facet` (`infrastructure | tooling | ownership | process | convention | gotcha`) that tells Claude when to resurface it - an `infrastructure` note fires when you touch deploys, an `ownership` note fires when you touch that person's domain.
-
-Recall is hybrid: every session loads a lightweight one-line index of your notes, and Claude reads the full note on demand when the current work matches. Recalled notes are framed as "as of {date}" - true when written, verify before acting - so a note that has gone stale gets corrected, not blindly trusted. There's no expiry machinery; the dated filename plus the always-loaded index is the staleness defense (the same model Claude's own file memory uses).
-
-Claude offers a note proactively only for solidly durable facts with no built-in expiry - the same high-bar-for-Claude / low-bar-for-you discipline as the deferral-marker offer. Provisional or soft-timelined facts stay silent unless you capture them yourself.
-
-### Not the same as TaskCreate
-
-`TaskCreate` is ephemeral (current conversation only); notebook todos persist across sessions and survive cycle completion. If the thought is "track this for the next 30 minutes," that's TaskCreate. If it's "don't lose this," that's the notebook.
-
-### Forward: backlinks (Story 23)
-
-A future story adds `[[wikilink]]` syntax and a craft-wide graph helper that resolves backlinks across `.craft/`. The notebook is the prove-it surface for that pattern. Until then, tags handle retrieval.
+Entries link. `graduated_to` can point at a story, fix, tweak or dial, and a `source` written as `[[slug]]` points back at the record that spawned the entry. `/craft:dashboard` resolves them into one graph.
 
 ## Decisions
 
@@ -525,52 +459,24 @@ When a story ships, every decision it carries turns `✓` on the Shelf. The Shel
 
 ## Bugs
 
-A bug record is a report of something broken that you are not fixing right now. It is written so a session with none of today's context can reproduce it, fix it, and prove it fixed.
+A bug record is something broken that you are not fixing right now, written so a session with none of today's context can reproduce it, fix it, and prove it fixed.
 
 ```
-/craft:bugs                                      # bare → the open pile
+/craft:bugs                                      # bare: the open pile
 /craft:bugs save button does nothing on Safari   # file one
 ```
 
-Bare `/craft:bugs` shows every open bug, newest first. A marker on a line means that bug blocks someone's next step. Add the words and craft files what you describe. (If the conversation already holds a defect, a bare call files that one instead of showing the pile.)
+Bare, it shows every open bug, newest first, with a marker on any that blocks someone's next step. With words, it files what you describe. If the conversation already holds a defect, a bare call files that one instead.
 
-It sits next to two neighbors. `/craft:adhoc` fixes something now. [`/craft:notebook`](#notebook) holds ideas and todos. A bug is the thing that's broken and has to wait.
+- **Three filers.** You: "log a bug", or a yes to craft's one ignorable offer when you defer something broken mid-story. An agent mid-run, which can't fix what it finds without disturbing the run. And `/craft:analyze`: QA and walkthrough findings file as bugs, except what the analyzer couldn't verify, and walkthrough taste notes, which queue for UX review instead.
+- **Never summoned.** Filing never pulls you out of what you were doing. The one question craft may ask is "What's broken?", and only when nothing in the conversation says. Then one line: filed, and where.
+- **Seven required fields.** The symptom in your words as the first line, never the guessed cause. Then where it turned up, expected, actual (only what was observed), consequences (what you rank the pile by; there is no severity field), whether it blocks your next step and why, and numbered steps to reproduce from a named starting state. Craft refuses a record missing one; a field the filer can't know says "unknown" and why.
+- **A Done when, if you can write it.** The check that proves it fixed, written now, before the cause is known. Optional.
+- **Repeats hit, they don't refile.** The same bug seen again bumps the open record's count and logs where it recurred. A bug that keeps hitting is a pattern and usually outranks the queue. A closed bug that comes back files new.
+- **Closing is one confirmation.** Say it's fixed, won't be fixed, or should close. Craft matches your words to one open bug, asks which if several fit, confirms once, and moves it to `closed/`. A reason you give becomes the verdict: "that's intended" and "can't make it happen again" are both kept outcomes. Craft never argues with a close and never reopens.
+- **Judgment calls need a human eye.** A bug where the code was right but the model drew, chose, or phrased the wrong thing is never closed as fixed on an agent's word.
 
-### Three ways a bug gets filed
-
-- **You.** Say "log a bug" or "file a bug" and craft files it from the conversation. If you use deferral language about something broken ("don't let me forget"), craft makes one ignorable offer first. Nothing is filed until you say yes. A bare defect named mid-story or mid-chunk gets the same offer, so a side sighting doesn't pull the work off course.
-- **An agent mid-run.** A test pass can't fix bugs as it finds them, because the run depends on the code staying still. An agent that meets a defect it won't fix now can file what it saw and carry on.
-- **The analyzers.** When `/craft:analyze` or the cycle-complete walkthrough hands back a QA or walkthrough report, craft files the findings as bug records itself - the analyzers only find and describe. A QA finding the analyzer couldn't verify is named in the report and not filed. Walkthrough findings split: `blocks-ship` and `looks-wrong` file as bugs, while `feels-off` and `nitpick` are taste, so they queue for UX review instead. A run that couldn't proceed (no browser tool, dev server down) files nothing.
-
-Filing never pulls you out of what you were doing and never summons you. The one question craft may ask: if you ask to file a bug and nothing in the conversation says what's broken, it asks "What's broken?" once. Craft says in one line what was filed and where, then goes back to work. A filed bug is read when you choose to read it.
-
-### What a record holds
-
-One file per bug. The first line is the symptom in your words, never the guessed cause, because a wrong guess would rename the file into a lie.
-
-- **Where it turned up** - the session, story, or test run that found it.
-- **Expected vs actual** - what should have happened, and only what was observed.
-- **Consequences** - what it breaks or costs. There is no severity field. This is what you rank the pile by.
-- **Blocks my next step** - `yes` or `no`, and why.
-- **Reproduce** - numbered steps from a named starting state.
-
-Those five and the symptom line are required: craft refuses to file a record missing one. A field the filer can't know is written plainly ("unknown - why"), never left as a placeholder.
-
-A record can also carry a **Done when** - the check that proves it fixed, written now, before the cause is known. It is optional, and bugs the analyzers file leave it out.
-
-### Repeats
-
-The same bug seen again is never filed twice. Craft names the open match and records a hit on it: the count goes up and the log gets a line saying where it recurred. A bug seen once is a report. A bug that keeps hitting is a pattern, and usually outranks the queue. A bug that was closed and has come back files new.
-
-### Closing a bug
-
-Say a bug is fixed, won't be fixed, or should close. Craft matches your words to one open bug (it asks which if several fit), confirms once, and moves it to `closed/`. A verdict is optional: a plain "won't fix" changes only the status, and a reason you give becomes the verdict: "that's intended" and "can't make it happen again" are both real outcomes worth keeping. Say no at the confirmation and nothing is written.
-
-Craft never argues with a close and never reopens. And a bug recorded as a judgment call (the code was right, but the model drew, chose, or phrased the wrong thing) is never closed as fixed on an agent's own word. Only a human eye on the redraw can close one.
-
-### Where they live
-
-`.craft/bugs/`, named `<date>-<slug>.md`, with `closed/` for the done ones. The folder is the truth for open versus closed. Bugs also show up on the `/craft:dashboard` graph.
+They live in `.craft/bugs/`, named `<date>-<slug>.md`, with `closed/` for the done ones. The folder is the truth for open versus closed, and bugs show on the `/craft:dashboard` graph. [`/craft:adhoc`](#adhoc) fixes something now; [`/craft:notebook`](#notebook) holds ideas and todos.
 
 ### What it looks like
 
@@ -578,62 +484,26 @@ Craft never argues with a close and never reopens. And a bug recorded as a judgm
 > A week later, `/craft:bugs` - *the pile, newest first, the blocker marked.*
 > "The checkout one is fixed." *Craft names it, you say yes, it moves to `closed/`.*
 
-<!-- TODO: add the CHANGELOG pointer once the release version is cut, e.g. *What shipped in X.Y.Z: [CHANGELOG](CHANGELOG.md#...).* -->
-
 ## Adhoc
 
-Adhoc is a small change to something that already exists, made now, without the story ceremony. A button that doesn't respond, an icon you'd rather swap, a heading that's too loud.
+Adhoc is a small change to something that already exists, made now, without the story ceremony.
 
 ```
 /craft:adhoc the settings button does nothing on Safari
 /craft:adhoc swap the settings icon for something more like a hammer
 ```
 
-It isn't for new features, and it isn't for choosing between creative directions. Adding something that wasn't there before is a story. If you're mid-story, craft warns you first and asks you to apply the change within that story's scope or to complete or pause the story.
+Craft sorts every request into one of two flavors and runs the matching path:
 
-### Fix or tweak
+- **A fix.** Something is broken: a symptom and a root cause. Craft investigates, writes the root cause down, and asks itself one question before editing: am I 100% certain this resolves it? A hedge stops the edit and offers a story. A yes applies the fix and checks the symptom is gone, on the page where you can see it, not just in the build.
+- **A tweak.** It works as built, you want it different. The gate is fit, not certainty: craft looks at the element's neighbors, matches their visual family, and checks your tokens and locks before it edits. A real design question, several plausible directions and no clear fit, isn't edited. Craft says so and suggests a mockup first.
+- **"The icon looks wrong" could be either.** Craft looks before it asks. Clipped or misaligned is a fix. Renders as built but displeasing is a tweak.
+- **Only your reaction closes a tweak.** Each attempt ends with "How does it look?" Your answer is recorded word for word. "Not quite" is the brief for the next attempt. Passing tests never close one.
+- **Everything leaves a record.** Fixes in `.craft/fixes/`, with the workflow lesson if you say there was one, read by `/craft:reflect`'s rule pass. Tweaks in `.craft/tweaks/`, counted toward the taste pass that spreads a loved look to other surfaces.
+- **It closes todos, never silently.** If the change does what an open notebook todo asked, craft names the todo and asks before closing it.
+- **It stays small.** Around five files, craft stops and asks whether to make it a story. Each validated fix and each tweak attempt is committed with only the files it touched, prefixed `fix:` or `tweak:`.
 
-Craft sorts every request into one of two flavors:
-
-- **A fix.** Something is broken: there's a symptom and a root cause. "The button doesn't respond."
-- **A tweak.** It works as built, but you want it different. Nothing is broken; your taste or intent changed. "That heading is too loud."
-
-When your words could mean either ("the icon looks wrong"), craft looks at the thing first. Clipped, overflowing, or misaligned reads as a fix. Renders as built but displeasing reads as a tweak. It asks only if what it sees doesn't settle it.
-
-### The fix path
-
-Craft investigates, writes down the root cause, and then asks itself one question before it edits anything: am I 100% certain this solution resolves that root cause? If the answer hedges, or its understanding shifted a lot while it dug, it stops without editing code and offers to make it a story.
-
-If it's certain, it applies the fix and checks that the original symptom is gone. "The build passes" isn't the test. For anything you can see, craft looks at the page. Then it asks whether the fix taught a workflow lesson. If you say yes, the lesson goes on the record.
-
-The record is a file in `.craft/fixes/`.
-
-### The tweak path
-
-A tweak's gate is fit, not certainty. Before editing, craft looks at what sits next to the element, matches its visual family, and checks your design tokens and locked decisions. A real design question (several plausible directions, no clear fit) isn't edited. Craft says so and suggests a mockup first.
-
-Then comes the attempt loop. Craft makes a change, validates it, and asks how it looks. Your answer is recorded word for word. "Not quite" or a typed criticism is the brief for the next attempt. An accepting answer closes the record.
-
-The record stays open until you say it's accepted. Passing tests never close a tweak. Only your reaction does. If you drop it, it closes as abandoned. Tweak records live in `.craft/tweaks/`.
-
-### Why the records matter
-
-Both kinds leave a permanent record. Fix records are what `/craft:reflect`'s rule pass reads, mining them for rules worth keeping. Tweaks you loved are counted, and enough of them lets craft offer a taste pass: it points at other surfaces where that taste could spread, with one seed move for each, and hands the making to `/craft:mockup`. Your reactions are kept word for word for a later pass that groups tweaks into project-level taste.
-
-### Todos it closes
-
-If the change does what an open notebook todo asked for, craft names the todo and asks before closing it. A fix asks once it has found the match. A tweak adds it to the "How does it look?" question, so accepting closes both. Nothing is closed silently, and declining leaves the todo open.
-
-### Staying small
-
-If a change reaches about five files, craft stops and asks whether you want to keep going or make it a story.
-
-Each validated fix, and each tweak attempt, is committed with only the files the change touched. The message starts with `fix:` or `tweak:`.
-
-### Neighbors
-
-- [`/craft:bugs`](#bugs) records something broken to fix later.
-- A story is for new or bigger work.
+Not for new features or for choosing between creative directions; adding something that wasn't there is a story. Mid-story, craft warns first. [`/craft:bugs`](#bugs) records something broken to fix later.
 
 ### What it looks like
 
@@ -835,16 +705,16 @@ Failures route to `refine-chunk` (build/lint) or `test-fix` (tests). FAIL is FAI
 
 ### Beyond npm: verified command gates
 
-The built-ins auto-detect npm-shaped projects. For everything else - .NET, Go, Python, Rust, Make, multi-stack monorepos - craft never guesses. It measures what it can see and tells you the truth about the rest:
+The built-ins auto-detect npm-shaped projects. For everything else, .NET, Go, Python, Rust, Make, monorepos, craft never guesses. It measures what it can see and says what it can't.
 
-- **The coverage line.** Every validation report carries one `Gates` row. A fast filesystem probe (`gate-signals.sh`) fingerprints which toolchain manifests your repo actually has; when every signal is measured by some gate, the row reads `full coverage`, otherwise it names what's unmeasured (`1 uncovered: *.csproj`). Coverage is judged by what actually ran - a package.json whose checks all skipped counts as uncovered, not covered.
-- **The reconcile offer.** When a chunk passes validation while a toolchain sits unmeasured, craft asks - a real question, not a footnote: wire up a gate for *.csproj? There are two answers. Accept, and the setup beat runs. Decline, and craft confirms once what you're waiving ("craft doesn't normally let quality go unwatched, but this is your call") - then never asks about that toolchain again. No answer just means the question returns at the next attended validation; a timeout is not a decision. Autonomous runs ask at launch instead - the pre-flight closes the question while you're still at the keyboard, so a hands-off run never validates toolchains nobody agreed to leave unmeasured.
-- **Declined stays visible, never nagged.** A declined toolchain shows in every coverage row and in `/craft:status` as your choice - `uncovered: *.csproj (declined 2026-07-08)` - so "ungated by decision" is never confusable with "ungated by accident." Reopening costs one sentence ("wire up the csproj") any time. New toolchain = new question; more of a declined toolchain = still declined.
-- **The setup beat.** Accept, and craft proposes a command from the evidence - as an editable draft, not a take-it-or-leave-it. Your edits become the candidate, and every candidate is run once to prove it starts before anything is written. Pre-existing failures are surfaced honestly with a `blocking: false` option so the gate catches new breakage only. The result lands in `quality.yaml` with a `verified:` date stamp.
-- **Only verified commands run.** A `command:` in quality.yaml with no `verified:` stamp is inert. You can also wire gates by hand: write the command, run it yourself, add your own `verified:` stamp - honored without ceremony.
-- **Rot detection.** If a verified command stops *starting* (toolchain removed, script renamed), that's broken verification, not a failure - the report WARNs and craft offers to re-verify. A gate that can't start never fails your chunk and never goes silent.
+- **A coverage line on every report.** A fast probe fingerprints which toolchain manifests your repo has. When every one is measured, the `Gates` row reads `full coverage`; otherwise it names what isn't.
+- **One real question, once.** When a chunk passes while a toolchain sits unmeasured, craft asks whether to wire up a gate for it. Decline and it confirms what you're waiving, then never asks about that toolchain again. No answer means the question returns next time; a timeout is not a decision. Autonomous runs ask at launch, while you're still at the keyboard.
+- **Declined stays visible.** A waived toolchain shows in every coverage row and in `/craft:status` as your choice, never as an accident. "Wire up the csproj" reopens it any time.
+- **Setup is a draft, not a dictate.** Accept and craft proposes a command from the evidence. Your edits become the candidate, which runs once to prove it starts before anything is written. Pre-existing failures get a `blocking: false` option, so the gate catches new breakage only.
+- **Only verified commands run.** The result lands in `quality.yaml` with a `verified:` date. A command without the stamp is inert. Write and verify one by hand and it's honored the same way.
+- **Rot is a warning, not a failure.** If a verified command stops starting, the report warns and offers to re-verify. A gate that can't start never fails your chunk and never goes silent.
 
-Two things worth knowing. **Trust model:** quality.yaml commands execute with your shell - treat a cloned `.craft/` like you treat package.json scripts, because a hand-stamped `verified:` command in a cloned repo runs at first validation. **Per-machine memory:** declined signals are recorded in `.craft/.gate-signals`; on projects that gitignore `.craft/`, each teammate is asked once per machine - by design, since gate choices ride with the workspace that runs them.
+Two things worth knowing: `quality.yaml` commands run in your shell, so treat a cloned `.craft/` the way you treat package.json scripts. And declined signals live in `.craft/.gate-signals`, per machine, so on projects that gitignore `.craft/` each teammate is asked once.
 
 ### Reviewer-enforced polish
 
