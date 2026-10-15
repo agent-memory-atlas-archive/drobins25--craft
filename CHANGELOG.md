@@ -2,6 +2,30 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.9.0 - 2026-10-14
+
+Craft now lets you point at a live page. Put a comment sheet on the tab you have open, click anything, say what you want, and press SEND TO CLAUDE. Every pin gets a live attempt on the page while you watch, nothing is written to your files until you say so, and the run leaves as a tweak, a story or a todo.
+
+- Crafted `/craft:annotate`. Craft puts the sheet on your open tab, tries each pin on the page, and reports what the page measured, not what it meant to do. Pins stay on their element as the page moves, and the run is kept as one record: your pins word for word beside the look you approved. A run cut short is offered back next time. The guide is `docs/annotate.md`.
+- Added a source for every pin. Each pin names the component and stylesheet rule behind the element you clicked, when craft can find them, and a story made from the run names those files.
+- Added the ways a run leaves. "Make it a story" pre-fills a story from the record, the look carried over as approved and anything drawn in CSS as a stand-in for real content turned into scope. "Apply this" hands the whole run to `/craft:adhoc` as one tweak. Or it becomes a notebook todo, or nothing, and `/craft:story-new` offers it later.
+- Added comment pins to mockup and dial pages. Leave notes on the options you are reviewing and they reach craft as your reaction.
+- Added a trust boundary for pages outside your project. On a site that isn't local, pins are treated as page content, not your instructions. Craft says so once, makes visual changes through the sheet, and asks in chat before anything else. Only craft's own page scripts run there without your yes, and anything that would save a file waits for it too.
+- Added a plain answer when a site blocks SEND. If the page's policy stops it from reaching craft, craft says so up front and reads your pins from the page instead.
+- Added annotate before `/craft:init`. The sheet, the record and picking up a cut-short run all work on a project craft has never set up.
+- Added annotate runs to the dashboard. Each run sits on the project graph with its record, linked to the tweak or story it became.
+- Sparked one "craft designs" answer when you start a story or design a cycle. It lists every mockup and annotate run waiting to be built, says what it found, and skips the question when the conversation already answers it. Cycle design lists waiting designs as story candidates, so a converged mockup can no longer sit unread while its stories are written by hand.
+- Changed how craft reaches your browser. Craft starts the browser connection itself: two sessions each get their own window, the second is told it may need to sign in, no usage statistics are sent, and review pages are cleared of craft's overlays before a reviewer looks at them.
+- Changed where craft files land before `/craft:init`. Mockups, dials, bugs, decisions, notebook entries, research and annotate runs share one rule: the set-up project if there is one, else the repo's top level, else the current folder. A dial that ends in "make it a story" before init now saves the story.
+- Changed filing from a monorepo's top level. `/craft:bugs` and `/craft:notebook` now refuse and name the projects they found, instead of writing a record where no project would ever list it.
+- Fixed an adhoc change on a project that never ran `/craft:init` locking Claude out of editing that project's files.
+- Fixed `/craft:status` reporting a set-up project as not initialized when run from one of its subfolders.
+- Fixed a stuck craft hook holding a turn for up to 83 minutes. A hung hook now gives up in seconds, and a test keeps it that way.
+- Fixed the creative options step making a fifth option you were never shown. It now gives 3 to 4 options, and the picker has room for all of them.
+- Fixed an approved design vibe ending the session unsaved. It now lands in your locked decisions.
+- Fixed the repair step after a failed validation claiming to re-run checks it cannot run. It now makes the edit and hands back to validation.
+- Fixed `/craft:research-verify` judging web-sourced claims without web access. Its checker can now search and read primary sources.
+
 ## 2.8.0 - 2026-10-04
 
 Craft now keeps its bugs. A person mid-conversation or an agent mid-run walks through one door and a complete record lands on disk, without anyone being pulled out of what they were doing. Bug then adhoc is the fix path now.
