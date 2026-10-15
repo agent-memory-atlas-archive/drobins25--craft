@@ -496,27 +496,75 @@ The whole block is one self-invoking expression: served as a script it runs as i
     try { return d.selector ? document.querySelector(d.selector) : null; } catch (e) { return null; }
   };
 
-  // Attached pins sit at their page coordinates; pins whose anchor is gone dock above the strip.
-  const settle = () => {
+  // An attached pin keeps the click's offset inside its anchor's box, so it rides along when a live
+  // change or an animation moves the anchor. No stored box, or an anchor that renders no box, holds the last place.
+  const placeOf = (d, el, last) => {
+    const b = d.box;
+    const r = el.getBoundingClientRect();
+    if (!b || typeof b.x !== 'number' || typeof b.y !== 'number' || (!r.width && !r.height)) return last || { x: d.x, y: d.y };
+    return { x: r.left + window.scrollX + (d.x - b.x), y: r.top + window.scrollY + (d.y - b.y) };
+  };
+
+  // Places every pin and reports whether an attached one moved; pins whose anchor is gone dock above the strip.
+  const place = () => {
     let docked = 0;
+    let moved = false;
     entries.forEach(en => {
-      const detached = !anchorOf(en.d);
+      const anchor = anchorOf(en.d);
+      const detached = !anchor;
       en.node.classList.toggle('ca-detached', detached);
       en.node.classList.toggle('ca-sent', en.sent);
       en.node.title = en.d.text;
       if (detached) {
+        en.at = null;
         en.node.style.left = 'auto';
         en.node.style.top = 'auto';
         en.node.style.right = (60 + docked * 70) + 'px';
         en.node.style.bottom = '64px';
         docked++;
       } else {
-        en.node.style.left = en.d.x + 'px';
-        en.node.style.top = en.d.y + 'px';
+        const at = placeOf(en.d, anchor, en.at);
+        if (!en.at || Math.abs(at.x - en.at.x) > 0.1 || Math.abs(at.y - en.at.y) > 0.1) moved = true;
+        en.at = at;
+        en.node.style.left = at.x + 'px';
+        en.node.style.top = at.y + 'px';
         en.node.style.right = '';
         en.node.style.bottom = '';
       }
     });
+    return moved;
+  };
+
+  // True while a running animation or transition is on an anchor or one of its ancestors.
+  const anchorAnimating = () => {
+    if (typeof document.getAnimations !== 'function') return false;
+    const anchors = entries.map(en => anchorOf(en.d)).filter(Boolean);
+    return anchors.length > 0 && document.getAnimations().some(a => {
+      const t = a.playState === 'running' && a.effect ? a.effect.target : null;
+      return !!t && anchors.some(el => t === el || (typeof t.contains === 'function' && t.contains(el)));
+    });
+  };
+
+  // Re-places pins each frame while something may be moving them, one frame pending at a time.
+  // Stops after FOLLOW_STILL frames with no pin moved, unless an anchor is still animating.
+  const FOLLOW_STILL = 10;
+  let followFrame = 0;
+  let stillFrames = 0;
+  const follow = () => {
+    stillFrames = 0;
+    if (followFrame) return;
+    const step = () => {
+      followFrame = 0;
+      if (!strip.isConnected) return;
+      stillFrames = place() ? 0 : stillFrames + 1;
+      if (stillFrames < FOLLOW_STILL || anchorAnimating()) followFrame = requestAnimationFrame(step);
+    };
+    followFrame = requestAnimationFrame(step);
+  };
+
+  const settle = () => {
+    place();
+    follow();
   };
 
   const closePopover = () => {
@@ -806,7 +854,12 @@ The whole block is one self-invoking expression: served as a script it runs as i
   on(window, 'hashchange', checkPath, false);
   if (window.navigation) on(window.navigation, 'currententrychange', checkPath, false);
 
+  // Animations, transitions and resizes move anchors without touching the DOM, so each one wakes the follow loop.
+  ['animationstart', 'animationiteration', 'animationend', 'transitionrun', 'transitionstart', 'transitionend'].forEach(type => on(document, type, follow, true));
+  on(window, 'resize', follow, false);
+
   // pushState is not promised to fire an event, so any DOM change also checks the path.
+  // Head changes (the session sheet, a dev server's style swap) restyle the page, so they re-settle too.
   // One frame of debounce; the observer stops with the strip.
   let framePending = false;
   const watcher = new MutationObserver(() => {
@@ -820,6 +873,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
     });
   });
   watcher.observe(document.body, { childList: true, subtree: true });
+  watcher.observe(document.head, { childList: true, subtree: true, characterData: true });
 
   // A baked page holds the reload stream; a page injected for a run holds the change stream;
   // any other page holds none.
@@ -847,7 +901,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
 })();
 ```
 
-Two details of the source worth knowing before editing it. Pins hold their page coordinates and are re-checked against the live page each time the set is settled, which is how a pin whose anchor was removed moves to the dock without being lost. Pins that were part of an acknowledged SEND stay stamped until they are edited, so sent-versus-new always reads at a glance; the strip's `RETURNED` is cleared by the next add, edit, or delete.
+Two details of the source worth knowing before editing it. Pins keep the click's offset inside their element's box and are re-placed from the live page each time the set is settled, so a marker follows its element when a live change or an animation moves it, and a pin whose anchor was removed moves to the dock without being lost. Pins that were part of an acknowledged SEND stay stamped until they are edited, so sent-versus-new always reads at a glance; the strip's `RETURNED` is cleared by the next add, edit, or delete.
 
 ## The canonical annotate clear
 
