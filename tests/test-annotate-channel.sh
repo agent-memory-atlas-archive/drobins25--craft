@@ -1984,8 +1984,9 @@ raw POST "$PORT" /pins -H 'Content-Type: text/plain' --data "[$(pin_json 8 lefto
 assert_eq "the listener still answers" "200" "$(status_of "$(raw GET "$PORT" "/health?token=$RFTOKEN")")"
 
 begin_test "a refused POST with a large body still delivers the 403"
-BIG="$(python3 -c 'print("[" + ",".join(["0"] * 200000) + "]")')"
-RESP="$(raw POST "$PORT" /pins -H 'Origin: https://evil.example' -H 'Content-Type: text/plain' --data "$BIG")"
+# The body goes through a file: Linux caps one argv string at 128 KB, so 400 KB as --data never starts curl
+BIGF="$ROOT/big-body.json"; python3 -c 'print("[" + ",".join(["0"] * 200000) + "]")' > "$BIGF"
+RESP="$(raw POST "$PORT" /pins -H 'Origin: https://evil.example' -H 'Content-Type: text/plain' --data-binary "@$BIGF")"
 assert_eq "the 403 arrives intact" "403" "$(status_of "$RESP")"
 
 begin_test "a chunked POST is 411 and closed"
