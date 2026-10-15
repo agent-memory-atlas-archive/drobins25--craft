@@ -241,7 +241,7 @@ options:
   - label: "Tweak it in now"
     description: "Hand to craft:adhoc - direction is pre-settled, this is a port"
   - label: "Make it a story"
-    description: "story-new's 'From mockup' source pre-fills the story from this record"
+    description: "story-new's craft designs source pre-fills the story from this record"
   - label: "Park it"
     description: "A notebook todo holds the pointer; pick it up whenever"
 ```
@@ -249,7 +249,7 @@ options:
 The fork records the graduation, writes BOTH backlinks - record.md `graduated_to:` + the destination artifact's `mockup:` field - updates `status` (`graduated-tweak` / `graduated-story` / `parked`), completes Choose destination, and ENDS. The destination flow (adhoc, story-new, notebook) runs as its own thread with its own tasks:
 
 - **Tweak:** the handoff brief states "direction pre-settled, converged mockup at [path]" so adhoc's classification doesn't re-open exploration. When the record carries an `origin`, the brief ALSO forwards it ("grew from [origin]") so the ported tweak can stamp its `grew_from` - the read side that keeps lineage alive on the tweak ramp. When `## Materials` is non-empty, the brief forwards the materials spec too: the direction uses real material the port must acquire through the project's idiom, never by porting the inlined base64.
-- **Story:** story-new's "From mockup" source (commands/references/story-from-mockup.md) does the pre-fill. The mockup's CSS is NORMATIVE there - ported, never reinterpreted. It also reads `## Materials` and forwards the material spec into the produced story.
+- **Story:** story-new's craft designs source (commands/references/story-from-mockup.md) does the pre-fill. The mockup's CSS is NORMATIVE there - ported, never reinterpreted. It also reads `## Materials` and forwards the material spec into the produced story.
 - **Park:** capture a notebook todo naming the mockup path. Pickup = todo done, then re-enter THIS destination choice against the still-converged record. Graduating a long-parked mockup first re-verifies the target surface still exists as mocked - structural drift is surfaced before porting.
 
 **Cold path (project not onboarded):** all three destinations stay available. Say ONE ignorable line before the destination question resolves into action - "Heads-up: /craft:init hasn't run here, so this lands in the project's .craft/ and gets picked up by the harness once init wires it in" - plain prose, never an extra AskUserQuestion, said once. When invoking notebook-capture.sh or create-story.sh, pass the funnel's root explicitly as a command-scoped env var - `CRAFT_PROJECT_ROOT="<cold root>" ...` - so their root resolution never guesses. The Tweak destination needs the same anchoring by a different route: the handoff to adhoc is a skill session, not a single script call, and on the cold path no session-persistent `CRAFT_PROJECT_ROOT` exists for its later bash commands to fall back on. Include the resolved root in the handoff brief ("cold project, root: [<cold root>]") and instruct adhoc to prefix `CRAFT_PROJECT_ROOT="<cold root>"` on every bash command it runs for this invocation - otherwise its bare `${CRAFT_PROJECT_ROOT:-.}` expansions resolve to whatever directory it happens to run from. Each destination creates its own subdirectory on demand (`.craft/backlog/`, `.craft/notebook/`, `.craft/tweaks/`; the dashboard refresh may also add `.craft/graph/`) - still no `.global-state`, no `project.md`, no scaffold. A later `/craft:init` discovers these artifacts; it never deletes them.

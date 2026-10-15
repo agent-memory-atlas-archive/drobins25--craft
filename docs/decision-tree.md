@@ -73,13 +73,16 @@ flowchart TD
 
     CLARIFY -->|No| ASK_CLARIFY["Clarify with user"]
     ASK_CLARIFY --> CLARIFY
-    CLARIFY -->|Yes| SCAN{"Step 2.5: Story Source Detection<br/>concepts in .craft/planning/ OR<br/>non-abandoned .craft/mockups/ records?"}
+    CLARIFY -->|Yes| SKIP{"Step 2.5 skip rule:<br/>does the idea name a design,<br/>or is it freeform?"}
+    SKIP -->|"Freeform"| CHOOSE_PATH
+    SKIP -->|"Names a design"| FROM_CRAFT_DESIGNS
+    SKIP -->|"Unclear"| SCAN{"Step 2.5: Story Source Detection<br/>concepts in .craft/planning/ OR<br/>craft designs: converged or parked mockups,<br/>open annotate runs not cut short?"}
 
     SCAN -->|"Both empty — zero behavior change"| CHOOSE_PATH
     SCAN -->|"Either has matches"| SOURCE{"AskUserQuestion:<br/>where does this story come from?<br/>(only options whose scan hit, plus Freeform)"}
 
     SOURCE -->|Freeform| CHOOSE_PATH
-    SOURCE -->|"From mockup"| FROM_MOCKUP["Pre-fill from converged record<br/>mockup CSS is normative"]
+    SOURCE -->|"craft designs"| FROM_CRAFT_DESIGNS["Read commands/references/story-from-craft-designs.md<br/>one search, pick and hand-off, then the graduation reference:<br/>story-from-mockup.md or story-from-annotate.md<br/>mockup CSS is normative"]
     SOURCE -->|"From planning"| FROM_PLANNING["Read commands/references/story-from-planning.md<br/>execute phases 1-7 INLINE<br/>(NOT the Skill tool — chain break)"]
 
     FROM_PLANNING --> FP_WRITE["Concept select → Explore-agent extraction →<br/>gap-fill → write story with ## Reference Materials,<br/>source_concept, alignment: pending →<br/>forward-link active.md + consumed concepts"]
@@ -255,9 +258,11 @@ flowchart TD
     ADJUST --> LIST
     CONFIRM_LIST -->|Yes| FOR_EACH["FOR EACH STORY (Step 3)"]
 
-    FOR_EACH --> MOMENT{"Step 2.7 Planning-Source Routing<br/>cycle.yaml source_concept populated?"}
+    FOR_EACH --> MOMENT{"Step 2.7 Story-Source Routing<br/>cycle.yaml source_concept populated?"}
     MOMENT -->|"Empty — freeform cycle"| STORY_SPARK
     MOMENT -->|"Add-a-separate-story moment"| STORY_SPARK
+    MOMENT -->|"Design-extraction moment"| DESIGN_STORY["Read commands/references/story-from-craft-designs.md<br/>pick a waiting design, graduate it,<br/>move the story into this cycle"]
+    DESIGN_STORY --> SAVE_STORY
     MOMENT -->|"Planning-extraction moment"| EXTRACT_STORY["Read commands/references/story-from-planning.md<br/>execute inline with the INVOCATION marker<br/>(Phase 1 auto-resolves from cycle.yaml)"]
     EXTRACT_STORY --> SAVE_STORY
 
@@ -292,7 +297,7 @@ flowchart TD
     ROADMAP --> ROADMAP_DONE["Story titles sketched.<br/>Detail later via<br/>/craft:cycle-design [name]<br/>(re-enters via Detailing Mode)"]
 ```
 
-**Planning-source routing (Step 2.7)** applies in all three modes (default, roadmap, detailing). For each story, the moment is determined independently: a *planning-extraction* story is drawn from the cycle's `source_concept` via `story-from-planning.md` (Read inline, with the `INVOCATION` marker so Phase 1 auto-resolves), while an *add-a-separate-story* story is freeform and gets no `source_concept`. Mixed cycles work natively. Existing stories are never retroactively stamped — populating `source_concept` on an existing story is a user-initiated recovery affordance, never silent.
+**Story-source routing (Step 2.7)** applies in all three modes (default, roadmap, detailing). For each story, the moment is determined independently: a *planning-extraction* story is drawn from the cycle's `source_concept` via `story-from-planning.md` (Read inline, with the `INVOCATION` marker so Phase 1 auto-resolves), while an *add-a-separate-story* story is freeform and gets no `source_concept`. Mixed cycles work natively. Existing stories are never retroactively stamped — populating `source_concept` on an existing story is a user-initiated recovery affordance, never silent. In default mode a *design-extraction* moment is also possible: when a converged or parked mockup or an open annotate run is waiting, the story is drawn from it via `story-from-craft-designs.md` and moved into the cycle once written.
 
 ---
 
@@ -504,7 +509,7 @@ flowchart TD
     SAVE --> DEST{"Destination AUQ"}
 
     DEST -->|"Tweak"| TWEAK["craft:adhoc<br/>direction pre-settled, CSS ported"]
-    DEST -->|"Story"| STORY["story-new 'From mockup'<br/>pre-filled, CSS normative"]
+    DEST -->|"Story"| STORY["story-new 'craft designs'<br/>pre-filled, CSS normative"]
     DEST -->|"Park"| PARK["Notebook todo holds the pointer<br/>pickup re-enters this fork"]
     DEST -->|"No choice"| OPEN["Record stays converged<br/>task pending, never nagged"]
 ```

@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-annotate-graduation.sh - Structural contracts on the two ramps that carry
-# an annotate record out of the browser: story-new's "From annotate" source and
+# an annotate record out of the browser: story-new's "craft designs" source and
 # story-from-annotate.md, plus adhoc's annotate-sourced tweak paragraph. These
 # are prompts, so the rules that keep them honest are frozen as facts about text.
 # Usage: bash tests/test-annotate-graduation.sh
@@ -15,23 +15,26 @@ TWEAK="$REPO/skills/adhoc/references/tweak.md"
 # step25 - the Step 2.5 section of story-new, up to Step 3
 step25() { awk '/^### Step 2.5:/ {on=1; next} /^### Step 3:/ {on=0} on {print}' "$STORY_NEW"; }
 
-begin_test "story-new scans open annotate records and offers From annotate only when matched"
+CRAFT_DESIGNS_REF="$REPO/commands/references/story-from-craft-designs.md"
+
+begin_test "story-new searches open annotate runs through the craft designs reference and offers the source only when found"
 S=$(step25)
-assert_contains_literal "scan greps open records" 'grep -l "^status: open" "$CRAFT_PROJECT_ROOT"/.craft/annotations/*/record.md 2>/dev/null | head -20' "$S"
+assert_contains_literal "Step 2.5 names the reference" 'commands/references/story-from-craft-designs.md' "$S"
+assert_contains_literal "the reference excludes cut-short runs" "'^outcome: error'" "$(cat "$CRAFT_DESIGNS_REF")"
 assert_contains_literal "skip rule covers all three scans" 'If all come back empty' "$S"
-assert_contains_literal "option labelled From annotate" 'label: "From annotate"' "$S"
-assert_contains_literal "option is conditional on a match" '(only if annotate records matched)' "$S"
+assert_contains_literal "option labelled craft designs" 'label: "craft designs"' "$S"
+assert_contains_literal "option is conditional on a match" '(only if the craft designs search found any)' "$S"
 assert_contains_literal "question names the annotation count" 'annotations in .craft/annotations/' "$S"
 
-begin_test "the Step 2.5 option set has at most four labels"
+begin_test "the Step 2.5 option set has at most three labels"
 LABELS=$(printf '%s\n' "$S" | grep -c '^  - label: ')
-assert_eq "planning, mockup, annotate, Freeform" "4" "$LABELS"
+assert_eq "planning, craft designs, Freeform" "3" "$LABELS"
 
-begin_test "the From annotate branch reads the reference inline and forbids the Skill tool"
-BRANCH=$(printf '%s\n' "$S" | awk '/^\*\*If "From annotate":\*\*/ {on=1} /^\*\*If "Freeform":\*\*/ {on=0} on {print}')
-assert_contains_literal "branch exists" 'If "From annotate"' "$BRANCH"
+begin_test "the craft designs branch reads the reference inline and forbids the Skill tool"
+BRANCH=$(printf '%s\n' "$S" | awk '/^\*\*If "craft designs":\*\*/ {on=1} /^\*\*If "Freeform":\*\*/ {on=0} on {print}')
+assert_contains_literal "branch exists" 'If "craft designs"' "$BRANCH"
 assert_contains_literal "chain-break rule" 'never via the Skill tool' "$BRANCH"
-assert_contains_literal "reads the reference" 'Read "${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-annotate.md"' "$BRANCH"
+assert_contains_literal "reads the reference" 'commands/references/story-from-craft-designs.md' "$BRANCH"
 assert_contains_literal "parent flow is done" 'the parent flow is DONE' "$BRANCH"
 
 begin_test "story-from-annotate delegates frontmatter to Step 10 and carries no fence"
@@ -97,9 +100,7 @@ assert_file_not_contains "no longer NORMATIVE for every block" 'is NORMATIVE' "$
 assert_file_not_contains "no row for every block" 'one row per `annotate-key` block in' "$REF"
 SCOPE_LINE=$(grep '^- \*\*`## Scope`\*\*' "$REF")
 assert_contains_literal "Scope adds content stand-ins beside blockless pins" 'content stand-in' "$SCOPE_LINE"
-assert_contains_literal "story-new option says the look becomes the binding table" 'becomes the binding table' "$(grep -A1 'label: "From annotate"' "$STORY_NEW")"
-assert_contains_literal "story-new option sends content stand-ins to requirements" 'content stand-ins become requirements' "$(grep -A1 'label: "From annotate"' "$STORY_NEW")"
-assert_not_contains "story-new option drops normative" 'normative' "$(grep -A1 'label: "From annotate"' "$STORY_NEW")"
+assert_not_contains "the craft designs description has no normative" 'normative' "$(grep -A1 'label: "craft designs"' "$STORY_NEW")"
 
 begin_test "tweak.md's annotate-sourced paragraph carries the same split and keeps the pre-minted name"
 PARA=$(grep '^\*\*Annotate-sourced tweaks:\*\*' "$TWEAK")

@@ -81,6 +81,7 @@ plugins/craft/
 │       ├── dial-inject.md         ← Dial injection contract (handles, MEASURE/INJECT/TOGGLE/CLEAR, canonical clear)
 │       ├── dial-inline.md         ← The dial flow logic (single source of truth, read inline)
 │       ├── mockup-inline.md       ← The mockup funnel logic (single source of truth, read inline)
+│       ├── story-from-craft-designs.md ← Story source: search, list, pick and hand-off for the mockups and annotate runs waiting to be built (read by story-new and cycle-design)
 │       ├── story-from-annotate.md ← Story ramp: pre-fill a story from an annotate record (the look carries verbatim, content becomes scope; selector and component are anchors)
 │       └── story-from-mockup.md   ← Story ramp: pre-fill a story from a converged mockup (CSS normative)
 ├── skills/                    ← Orchestrator-context skills (11 skills)

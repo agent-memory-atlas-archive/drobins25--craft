@@ -1,4 +1,4 @@
-# Story From Annotate (reference - read inline by craft:story-new Step 2.5 and by the annotate "story" exit)
+# Story From Annotate (reference - read inline by story-from-craft-designs.md and by the annotate "story" exit)
 
 Transforms an annotate record into a story. The annotate run IS the extraction - no Explore agent, no gap-fill interview. The user pointed at a live page, watched changes land on it, and approved what they saw. Scope and data shape still go through the normal story machinery (content-spark and alignment run on the created story like any other).
 
@@ -8,10 +8,16 @@ This flow asks no questions through a widget - there is no AskUserQuestion anywh
 
 ## Phase 1: Select the record
 
-If the caller handed a specific record path (the usual case - this flow was entered from the annotate story exit), use it. Otherwise list open records:
+If the caller handed a specific record path (the usual case - this flow was entered from the annotate story exit), use it. Otherwise list open records that were not cut short (the same list `story-from-craft-designs.md` searches). The project is `$CRAFT_PROJECT_ROOT` when set, else the folder the before-init lookup prints:
 
 ```bash
-grep -l "^status: open" "$CRAFT_PROJECT_ROOT"/.craft/annotations/*/record.md 2>/dev/null
+ROOT="${CRAFT_PROJECT_ROOT:-}"
+[ -n "$ROOT" ] || ROOT=$(bash -c 'source "$1" >/dev/null 2>&1; craft_before_init_root' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh")
+ROOT="${ROOT%/}"
+for r in "$ROOT"/.craft/annotations/*/record.md; do
+  [ -f "$r" ] || continue
+  if grep -q '^status: open' "$r" && ! grep -q '^outcome: error' "$r"; then echo "$r"; fi
+done
 ```
 
 One record: use it, confirm conversationally ("Building the story from [name]"). Several: ask conversationally which one - no AskUserQuestion; the fork already spent the flow's question budget.
