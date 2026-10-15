@@ -140,7 +140,7 @@ PLUGIN_ROOT: ${CLAUDE_PLUGIN_ROOT}
 - [For project mode: add "pattern" severity for consistency observations]
 - Categorize each finding: security, logic, performance, consistency, or doc-drift
 - doc-drift = stale references in docs/comments, terminology that doesn't match current code, outdated examples, references to renamed/removed symbols
-- Lead with the finding, include file:line and category, provide a fix diff
+- Lead with the finding. Every finding carries Symptom, Expected (requirement quoted), Actual (observed, or read in code and not run), Consequences, Reproduce from a named starting state, Evidence (raw), and the fix diff with file:line and category
 - Focus on: [focus areas]
 - Do NOT comment on formatting/style if linters exist
 - If the diff is clean and you have no real findings, say so - do not manufacture issues
@@ -260,7 +260,7 @@ from the codebase. You have full context - use it.
 
 ## Instructions
 - Answer each question with a clear YES (problem found) or NO (code is safe) + evidence
-- For each YES: include the specific file:line, explain the issue, provide a fix diff
+- For each YES: a finding with Symptom, Expected (requirement quoted), Actual (observed, or read in code and not run), Consequences, Reproduce from a named starting state, Evidence (raw), and the fix diff with file:line
 - For each NO: briefly explain why the code handles this correctly
 - You may also record BREADCRUMB findings - issues you notice along the way that aren't
   part of the architect's questions. List these separately at the end. These are lower
