@@ -4,7 +4,8 @@
 # The overlay's placement functions are cut from the one reference file that carries
 # its source and run under node against stubbed element boxes and a stubbed frame
 # queue: a live change that shifts an anchor moves its marker by the same amount,
-# a pin whose anchor is gone docks as DETACHED, and the follow loop keeps one frame
+# a pin whose anchor is gone docks as DETACHED, a pin found by its stored path takes
+# the look-alike nearest where it was clicked, and the follow loop keeps one frame
 # pending at a time and stops once nothing moves.
 # Usage: bash tests/test-annotate-pin-follow.sh
 
@@ -34,6 +35,7 @@ top_line() { printf '%s\n' "$SRC" | grep -m1 -F -- "  $1" || true; }
 PLACEMENT="$(top_line 'const FOLLOW_STILL = ')
 $(top_line 'let followFrame = ')
 $(top_line 'let stillFrames = ')
+$(fn_body anchorOf)
 $(fn_body placeOf)
 $(fn_body place)
 $(fn_body anchorAnimating)
@@ -55,26 +57,26 @@ const strip = { isConnected: true };
 const entries = [];
 const anchors = {};
 let animations = [];
-const doc = { getAnimations: () => animations };
+const doc = { getAnimations: () => animations, querySelectorAll: sel => anchors[sel] || [], querySelector: sel => (anchors[sel] || [])[0] || null };
 const raf = fn => { frames.push(fn); return frames.length; };
-const anchorOf = d => anchors[d.selector] || null;
 const el = (left, top, width, height) => {
   const box = { left, top, width, height };
-  return { box, getBoundingClientRect: () => ({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height, width: box.width, height: box.height }) };
+  return { box, isConnected: true, getBoundingClientRect: () => ({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height, width: box.width, height: box.height }) };
 };
 const pinNode = () => {
   const set = new Set();
   return { title: "", style: { left: "", top: "", right: "", bottom: "" }, classList: { toggle: (c, on) => { if (on) set.add(c); else set.delete(c); }, contains: c => set.has(c) } };
 };
-const api = new Function("window", "document", "requestAnimationFrame", "strip", "entries", "anchorOf",
+const api = new Function("window", "document", "requestAnimationFrame", "strip", "entries",
   code + "\nreturn { settle: typeof settle === \"function\" ? settle : null, follow: typeof follow === \"function\" ? follow : null };"
-)(win, doc, raf, strip, entries, anchorOf);
+)(win, doc, raf, strip, entries);
 const runFrames = max => { let n = 0; while (frames.length && n < max) { frames.shift()(); n++; } return n; };
 
 // Avatar at viewport (100, 60) => document (100, 100); the click landed 10px in, 8px down.
+// The pin carries no dropped element, as one restored from storage, so its path is looked up.
 const avatar = el(100, 60, 80, 80);
-anchors[".avatar"] = avatar;
-const pin = { d: { n: 1, text: "x", x: 110, y: 108, selector: ".avatar", box: { x: 100, y: 100, width: 80, height: 80 } }, sent: false, node: pinNode() };
+anchors[".avatar"] = [avatar];
+const pin = { d: { n: 1, text: "x", x: 110, y: 108, selector: ".avatar", box: { x: 100, y: 100, width: 80, height: 80 } }, sent: false, node: pinNode(), el: null };
 entries.push(pin);
 const at = () => pin.node.style.left + " " + pin.node.style.top;
 
@@ -86,9 +88,48 @@ if (scenario === "static-shift") {
   console.log(before + " -> " + at());
 } else if (scenario === "detached") {
   api.settle();
-  delete anchors[".avatar"];
+  avatar.isConnected = false;
+  anchors[".avatar"] = [];
   api.settle();
   console.log([pin.node.classList.contains("ca-detached"), pin.node.style.left, pin.node.style.top, pin.node.style.right, pin.node.style.bottom].join(" "));
+} else if (scenario === "nearest-match") {
+  // Three look-alike rows at document y 0, 2400 and 4800; the pin was clicked on the middle one.
+  anchors[".row"] = [el(100, -40, 80, 80), el(100, 2360, 80, 80), el(100, 4760, 80, 80)];
+  pin.d.selector = ".row"; pin.d.box = { x: 100, y: 2400, width: 80, height: 80 }; pin.d.x = 110; pin.d.y = 2408;
+  api.settle();
+  console.log(at());
+} else if (scenario === "dropped-element") {
+  // The element the pin was dropped on wins while it is in the page, even over a closer look-alike.
+  const mine = el(300, 500, 80, 80);
+  anchors[".avatar"] = [avatar, mine];
+  pin.el = mine;
+  api.settle();
+  const held = at();
+  mine.isConnected = false;
+  api.settle();
+  console.log(held + " / " + at());
+} else if (scenario === "restored-then-shift") {
+  // Six look-alike rows 100px apart; the restored pin was clicked on row 5. A live change then pushes
+  // the list down by more than half a row: the pin must stay on row 5, not hop to where row 4 now sits.
+  const rows = [1, 2, 3, 4, 5, 6].map(i => el(100, i * 100, 80, 80));
+  anchors[".row"] = rows;
+  pin.d.selector = ".row"; pin.d.box = { x: 100, y: 540, width: 80, height: 80 }; pin.d.x = 110; pin.d.y = 548;
+  api.settle();
+  rows.forEach(r => { r.box.top += 120; });
+  api.settle();
+  console.log(at());
+} else if (scenario === "hidden-lookalike") {
+  // A display:none copy of the element reports a zero box at the top-left of the page. The real element
+  // has moved 200px down since the click, so the hidden copy is now the nearer match; it must not win.
+  anchors[".avatar"] = [el(0, 0, 0, 0), avatar];
+  avatar.box.top += 200;
+  api.settle();
+  console.log(at());
+} else if (scenario === "far-match") {
+  // Only look-alikes screens away from the click: the pin holds its click spot, not DETACHED.
+  anchors[".avatar"] = [el(100, 3060, 80, 80), el(100, 5060, 80, 80)];
+  api.settle();
+  console.log(pin.node.classList.contains("ca-detached") + " " + at());
 } else if (scenario === "hidden-anchor") {
   api.settle();
   avatar.box.left = 0; avatar.box.top = 0; avatar.box.width = 0; avatar.box.height = 0;
@@ -129,6 +170,21 @@ assert_eq "marker keeps its offset inside the anchor" "110px 108px -> 134px 228p
 begin_test "a pin whose anchor is gone docks as DETACHED"
 assert_eq "detached dock above the strip" "true auto auto 60px 64px" "$(run_case detached)"
 
+begin_test "a pin found by a path that matches many elements takes the one nearest where it was clicked"
+assert_eq "marker sits on the middle row, not the first" "110px 2408px" "$(run_case nearest-match)"
+
+begin_test "a pin keeps the element it was dropped on until that element leaves the page"
+assert_eq "dropped element first, then the path lookup" "310px 548px / 110px 108px" "$(run_case dropped-element)"
+
+begin_test "a restored pin keeps the row it resolved to when a live change shifts the whole list"
+assert_eq "marker stays on row 5 after a 120px shift" "110px 668px" "$(run_case restored-then-shift)"
+
+begin_test "a hidden look-alike at the page's top-left never wins the lookup"
+assert_eq "marker sits on the visible element, not the hidden copy" "110px 308px" "$(run_case hidden-lookalike)"
+
+begin_test "a pin whose only look-alikes are screens away holds its click spot"
+assert_eq "not detached, drawn at the stored click" "false 110px 108px" "$(run_case far-match)"
+
 begin_test "an anchor that renders no box leaves the marker where it was"
 assert_eq "marker holds its last place" "110px 108px" "$(run_case hidden-anchor)"
 
@@ -159,5 +215,6 @@ begin_test "the overlay rule states that pins follow their element"
 assert_not_contains "no comment says pins sit at page coordinates" "sit at their page coordinates" "$SRC"
 assert_not_contains "no paragraph says pins hold page coordinates" "Pins hold their page coordinates" "$(cat "$REF")"
 assert_contains_literal "the paragraph states the new rule" "Pins keep the click's offset inside their element's box" "$(cat "$REF")"
+assert_contains_literal "the paragraph states the nearest-match rule" "takes the match nearest where it was clicked" "$(cat "$REF")"
 
 finish_tests "test-annotate-pin-follow"

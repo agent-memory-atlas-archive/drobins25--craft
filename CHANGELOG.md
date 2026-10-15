@@ -2,6 +2,10 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.9.1 - 2026-10-15
+
+- Fixed annotate pins jumping to the wrong element on pages with repeated structure. A pin dropped far down a list, a set of cards or a form now stays on the element you clicked, after you save it, after SEND, and after a reload.
+
 ## 2.9.0 - 2026-10-14
 
 Craft now lets you point at a live page. Put a comment sheet on the tab you have open, click anything, say what you want, and press SEND TO CLAUDE. Every pin gets a live attempt on the page while you watch, nothing is written to your files until you say so, and the run leaves as a tweak, a story or a todo.

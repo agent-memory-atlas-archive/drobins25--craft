@@ -512,8 +512,29 @@ The whole block is one self-invoking expression: served as a script it runs as i
     return d;
   };
 
-  const anchorOf = d => {
-    try { return d.selector ? document.querySelector(d.selector) : null; } catch (e) { return null; }
+  // A pin's anchor: the element it was dropped on while that is still in the page, else the match of
+  // its stored path nearest the box stored at click time, since a short path matches every look-alike
+  // element. Matches that render no box are skipped, so a hidden copy never wins. A nearest match more
+  // than a screen from that box is not trusted (near: false), and the pin then sits at its click spot.
+  // No match at all is null: the pin is DETACHED.
+  const anchorOf = en => {
+    if (en.el && en.el.isConnected) return { el: en.el, near: true };
+    const d = en.d;
+    let list = [];
+    try { list = d.selector ? Array.from(document.querySelectorAll(d.selector)) : []; } catch (e) { list = []; }
+    if (!list.length) return null;
+    const b = d.box;
+    if (list.length === 1 || !b || typeof b.x !== 'number' || typeof b.y !== 'number') return { el: list[0], near: true };
+    let best = null;
+    let gap = Infinity;
+    list.forEach(c => {
+      const r = c.getBoundingClientRect();
+      if (!r.width && !r.height) return;
+      const g = Math.hypot(r.left + window.scrollX - b.x, r.top + window.scrollY - b.y);
+      if (g < gap) { gap = g; best = c; }
+    });
+    if (!best) return { el: list[0], near: false };
+    return { el: best, near: gap <= Math.max(window.innerHeight || 0, 800) };
   };
 
   // An attached pin keeps the click's offset inside its anchor's box, so it rides along when a live
@@ -530,8 +551,11 @@ The whole block is one self-invoking expression: served as a script it runs as i
     let docked = 0;
     let moved = false;
     entries.forEach(en => {
-      const anchor = anchorOf(en.d);
-      const detached = !anchor;
+      const found = anchorOf(en);
+      const detached = !found;
+      // A trusted match is kept like a dropped element, so the pin follows it through later moves
+      // instead of being looked up again each frame; a stale or untrusted one is let go.
+      en.el = found && found.near ? found.el : null;
       en.node.classList.toggle('ca-detached', detached);
       en.node.classList.toggle('ca-sent', en.sent);
       en.node.title = en.d.text;
@@ -543,7 +567,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
         en.node.style.bottom = '64px';
         docked++;
       } else {
-        const at = placeOf(en.d, anchor, en.at);
+        const at = found.near ? placeOf(en.d, found.el, en.at) : { x: en.d.x, y: en.d.y };
         if (!en.at || Math.abs(at.x - en.at.x) > 0.1 || Math.abs(at.y - en.at.y) > 0.1) moved = true;
         en.at = at;
         en.node.style.left = at.x + 'px';
@@ -558,7 +582,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
   // True while a running animation or transition is on an anchor or one of its ancestors.
   const anchorAnimating = () => {
     if (typeof document.getAnimations !== 'function') return false;
-    const anchors = entries.map(en => anchorOf(en.d)).filter(Boolean);
+    const anchors = entries.map(en => anchorOf(en)).filter(Boolean).map(found => found.el);
     return anchors.length > 0 && document.getAnimations().some(a => {
       const t = a.playState === 'running' && a.effect ? a.effect.target : null;
       return !!t && anchors.some(el => t === el || (typeof t.contains === 'function' && t.contains(el)));
@@ -675,8 +699,9 @@ The whole block is one self-invoking expression: served as a script it runs as i
     });
   };
 
-  const adopt = (d, sent, node) => {
-    const en = { d: d, sent: sent, node: node };
+  // el is the element the pin was dropped on; a pin restored from storage has none and is found by its path.
+  const adopt = (d, sent, node, el) => {
+    const en = { d: d, sent: sent, node: node, el: el || null };
     node.addEventListener('click', e => {
       e.stopPropagation();
       if (openPop && openPop.en === en) { closePopover(); return; }
@@ -714,7 +739,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
     const commit = () => {
       const text = ta.value.trim();
       if (!text) { cancel(); return; }
-      adopt(makeData(n, text, x, y, target), false, pin);
+      adopt(makeData(n, text, x, y, target), false, pin, target);
       finish();
       persist();
       settle();
@@ -921,7 +946,7 @@ The whole block is one self-invoking expression: served as a script it runs as i
 })();
 ```
 
-Two details of the source worth knowing before editing it. Pins keep the click's offset inside their element's box and are re-placed from the live page each time the set is settled, so a marker follows its element when a live change or an animation moves it, and a pin whose anchor was removed moves to the dock without being lost. Pins that were part of an acknowledged SEND stay stamped until they are edited, so sent-versus-new always reads at a glance; the strip's `RETURNED` is cleared by the next add, edit, or delete.
+Two details of the source worth knowing before editing it. Pins keep the click's offset inside their element's box and are re-placed from the live page each time the set is settled, so a marker follows its element when a live change or an animation moves it. A pin keeps the element it was dropped on while that element is in the page; one found again by its stored path, as after a reload, takes the match nearest where it was clicked, since a short path matches every look-alike element, and a pin whose anchor was removed moves to the dock without being lost. Pins that were part of an acknowledged SEND stay stamped until they are edited, so sent-versus-new always reads at a glance; the strip's `RETURNED` is cleared by the next add, edit, or delete.
 
 ## The canonical annotate clear
 
