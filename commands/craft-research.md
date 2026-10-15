@@ -10,11 +10,11 @@ Ad-hoc research tool. Not part of the craft pipeline - use it whenever you want 
 
 ## Project Root
 
-Use `$CRAFT_PROJECT_ROOT` (set at session start) as the base path for all `.craft/` references. If not set, resolve by walking up from PWD to find the nearest `.craft/.global-state`.
+Use `$CRAFT_PROJECT_ROOT` (set at session start) as the base path for all `.craft/` references. When it is not set, run `bash -c 'source "$1" >/dev/null 2>&1; craft_before_init_root' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh"` and use the folder it prints.
 
-**Cold fallback (uninitialized project):** if neither resolves, anchor to the git toplevel (`git rev-parse --show-toplevel`) when in a repo, else PWD - never a subdirectory. Research runs fine before `/craft:init`; artifacts land under the repo-root `.craft/research/`, not wherever the shell happens to sit.
+Research runs fine before `/craft:init`; artifacts land under that folder's `.craft/research/`, not wherever the shell happens to sit.
 
-Set `PROJECT` to the resolved root - env var, then walk-up, then git toplevel, then PWD, in that order. Never default to bare `.`.
+Set `PROJECT` to that folder. Never default to bare `.`.
 
 ## Flow
 

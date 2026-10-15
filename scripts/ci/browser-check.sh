@@ -3,22 +3,31 @@
 #
 # Builds a real dashboard.html from the tracked fixture corpus in a temp dir,
 # opens it in headless Chrome over file:// (the way a user double-clicks
-# .craft/dashboard.html - no server), and asserts the page actually loaded
-# its data and rendered a record card:
+# .craft/dashboard.html - no server), lets the page run its own render loop in
+# real time, and asserts the page loaded its data, rendered, and behaves:
 #
 #   1.  window.CRAFT_GRAPH.nodes.length > 0            (data reached the page)
 #   2.  GraphInstance.sim.nodes.length === that count  (the view consumed it)
 #   2b. every sim node has finite x/y/homeX/homeY      (the layout fit never
 #                                                       produced NaN)
-#   2c. GraphInstance.heatCanvas.width === innerWidth  (the cluster heat baked
-#       by the probe's late stage                       on its early beat)
+#   2c. GraphInstance.heatCanvas.width === innerWidth  (the cluster heat baked)
 #   3.  goTo(sim.nodes[0]) renders that node's label   (a card really rendered)
 #       in #panel .p-title
 #   4.  #panel .p-summary has >= 1 element child        (the parse produced
 #       after that goTo, when the probed node has a     real DOM, not raw text
 #       summary - otherwise this prints a guarded SKIP)
+#   5-7. a synthetic drag engages a node, pins it where it is dropped, and the
+#       render loop parks again (rafId === null)
+#   8-9. the four authored insight cards render, each with a leader that ends
+#       at finite coordinates
+#   10. the page runs one render loop: its ticks never outnumber real frames
 #
-
+# scripts/ci/browser-probe.mjs drives Chrome over its DevTools protocol with
+# node's built-in WebSocket (no packages). It never calls the page's frame
+# callback and never runs under an artificial clock: an earlier probe that
+# pushed tick() from a timer stacked ~150 render loops, took 45-90s, and
+# passed its own checks only because of that artifact.
+#
 # All 135 assertions in tests/test-dashboard-template.sh read the template as
 # text and would pass on a page that throws on load; this one cannot.
 #
@@ -26,11 +35,11 @@
 #   browser-check.sh               full run (skips legibly when no Chrome)
 #   browser-check.sh --build-only  build + artifact verification, no Chrome
 #
-# With no Chrome binary found the full run prints a SKIP line and exits 0 -
-# the CI job is non-blocking by decision, so a missing browser must read as
-# a legible log line, and the test suite must run on any contributor machine.
-# CRAFT_CI_CHROME overrides discovery entirely (a nonexistent value forces
-# the SKIP path).
+# With no Chrome binary (or no node) found the full run prints a SKIP line and
+# exits 0 - the CI job is non-blocking by decision, so a missing browser must
+# read as a legible log line, and the test suite must run on any contributor
+# machine. CRAFT_CI_CHROME and CRAFT_CI_NODE override discovery entirely (a
+# nonexistent value forces the SKIP path).
 #
 # Chrome writes noise to stderr on file:// loads that is expected and not a
 # defect (scripts/dashboard/README.md documents the Chromium bug) - only the
@@ -81,6 +90,28 @@ if [ "$MODE" = "full" ]; then
     exit 0
   fi
   echo "using Chrome: $CHROME"
+  if [ -n "${CRAFT_CI_NODE:-}" ]; then
+    NODE="$CRAFT_CI_NODE"
+    [ -x "$NODE" ] || { echo "SKIP: no node binary found (looked for: \$CRAFT_CI_NODE=$CRAFT_CI_NODE)"; exit 0; }
+  else
+    NODE="$(command -v node || true)"
+    [ -n "$NODE" ] || { echo "SKIP: no node binary found (looked for: node on PATH)"; exit 0; }
+  fi
+  # The probe uses node's built-in WebSocket: on by default from node 22, behind
+  # --experimental-websocket on 20.10 to 21 (GitHub's ubuntu runners ship 20).
+  NODE_VERSION="$("$NODE" -p 'process.versions.node' 2>/dev/null || echo 0.0.0)"
+  NODE_MAJOR="${NODE_VERSION%%.*}"
+  NODE_MINOR="${NODE_VERSION#*.}"; NODE_MINOR="${NODE_MINOR%%.*}"
+  NODE_FLAGS=()
+  if [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
+    :
+  elif [ "$NODE_MAJOR" -eq 21 ] 2>/dev/null || { [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -ge 10 ]; } 2>/dev/null; then
+    NODE_FLAGS=(--experimental-websocket)
+  else
+    echo "SKIP: node $NODE_VERSION is too old for the probe (needs 20.10 or later)"
+    exit 0
+  fi
+  echo "using node: $NODE ($NODE_VERSION)"
 fi
 
 # --- Build the page from the tracked fixture corpus, never in the repo ------
@@ -149,159 +180,21 @@ if [ "$RC" -ne 0 ]; then
 fi
 echo "authored fixture insights.js (4 cards from real record ids)"
 
-# --- Inject the probe into a COPY beside the real page ----------------------
-# Beside, so the sibling <script src="graph/*.js"> tags still resolve. The
-# probe reports through document.title, which --dump-dom captures. It reads
-# GraphInstance.sim.nodes (NOT GraphInstance.nodes, which silently falls
-# through to raw graph nodes that carry no .label). Page globals are
-# published on purpose for exactly this kind of probe (template/index.html
-# documents window.NS/window.LT; window.GraphInstance is assigned the same
-# way).
-python3 - "$TMP/.craft/dashboard.html" "$TMP/.craft/ci-probe.html" <<'PYEOF'
-import sys
-src, dst = sys.argv[1], sys.argv[2]
-probe = """
-<script>
-(function () {
-  'use strict';
-  function report(o) { document.title = 'CRAFTCI ' + JSON.stringify(o); }
-  setTimeout(function () {
-    var res = {};
-    try {
-      var g = window.CRAFT_GRAPH || {};
-      res.graphNodeCount = (g.nodes || []).length;
-      var gi = window.GraphInstance;
-      if (!gi || !gi.sim || !gi.sim.nodes) {
-        res.error = 'GraphInstance.sim.nodes not reachable';
-        report(res);
-        return;
-      }
-      res.simNodeCount = gi.sim.nodes.length;
-      var nonFinite = 0;
-      for (var fi = 0; fi < gi.sim.nodes.length; fi++) {
-        var fn = gi.sim.nodes[fi];
-        if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.homeX) || !isFinite(fn.homeY)) nonFinite++;
-      }
-      res.nonFiniteNodes = nonFinite;
-      var n = gi.sim.nodes[0];
-      res.expected = n ? n.label : null;
-      gi.goTo(n);
-      // Headless --dump-dom never pumps requestAnimationFrame past the first
-      // couple of frames, so the clock-driven behaviour (entrance, heat beat,
-      // reveal, settle) would silently never run. The probe therefore drives
-      // the page's OWN tick() with real timestamps under virtual time - the
-      // exact production frame path, just externally clocked. The stray real
-      // rAF frames that DO fire use the vsync timebase, which can sit ahead
-      // of performance.now() - a mixed clock would hand tick() a negative dt,
-      // so the pump clamps its timestamps monotonic the way rAF guarantees.
-      function pumpTick() {
-        var t = performance.now();
-        if (gi.lastT && t <= gi.lastT) t = gi.lastT + 16;
-        gi.tick(t);
-      }
-      var pumpStart = performance.now();
-      var PUMP_MS = 2600;
-      (function pump() {
-        try {
-          pumpTick();
-        } catch (e) { res.error = 'tick threw: ' + String(e); report(res); return; }
-        if (performance.now() - pumpStart < PUMP_MS) { setTimeout(pump, 16); return; }
-        try {
-          var t = document.querySelector('#panel .p-title');
-          res.titleText = t ? t.textContent : null;
-          var p = document.querySelector('#panel');
-          res.panelLen = p ? p.textContent.length : 0;
-          var s = document.querySelector('#panel .p-summary');
-          res.summaryChildren = s ? s.childElementCount : -1;
-          res.probedHasSummary = !!(n && n.summary);
-          res.heatW = gi.heatCanvas ? gi.heatCanvas.width : -1;
-          res.innerW = window.innerWidth;
-          dragStage();
-        } catch (e) { res.error = String(e); report(res); }
-      })();
+# --- Run the page in real time and read the verdict back ------------------
+VERDICT="$("$NODE" ${NODE_FLAGS[@]+"${NODE_FLAGS[@]}"} "$SCRIPT_DIR/browser-probe.mjs" "$CHROME" "file://$TMP/.craft/dashboard.html" "$TMP/chrome-profile" 2>/dev/null | tail -1)"
 
-      // Synthetic drag-release over a real node, then pump until the render
-      // loop parks. This is the story's highest-value runtime assertion: a
-      // node pinned where it was dropped must coexist with true stillness -
-      // rafId === null - or the page burns the GPU forever while every text
-      // assertion still passes.
-      function dragStage() {
-        // Leaders share the reading panel's suppression seam - close the
-        // panel the selection probe opened, so the leader pass can draw
-        // and derive its contacts during the settle.
-        gi.selectedNode = null;
-        gi.setPanelVisible(false);
-        var canvas = document.getElementById('canvas');
-        var w = window.innerWidth, h = window.innerHeight;
-        var target = gi.sim.nodes[0];
-        var sx = (target.x - gi.camera.x) * gi.camera.scale + w / 2;
-        var sy = (target.y - gi.camera.y) * gi.camera.scale + h / 2;
-        function mev(type, x, y) {
-          return new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true });
-        }
-        canvas.dispatchEvent(mev('mousedown', sx, sy));
-        canvas.dispatchEvent(mev('mousemove', sx + 12, sy + 8));
-        canvas.dispatchEvent(mev('mousemove', sx + 30, sy + 18));
-        var dragged = gi.dragNode;
-        res.dragEngaged = !!dragged;
-        window.dispatchEvent(mev('mouseup', sx + 30, sy + 18));
-        var settleStart = performance.now();
-        var SETTLE_CAP_MS = 9000;
-        (function settlePump() {
-          try {
-            pumpTick();
-          } catch (e) { res.error = 'settle tick threw: ' + String(e); report(res); return; }
-          var parked = gi.rafId === null;
-          if (!parked && performance.now() - settleStart < SETTLE_CAP_MS) { setTimeout(settlePump, 16); return; }
-          res.pinnedFx = !!(dragged && dragged.fx != null);
-          res.pinnedAtDrop = !!(dragged && dragged.fx != null && dragged.fx === dragged.x);
-          res.loopParked = parked;
-          res.settleMs = Math.round(performance.now() - settleStart);
-          res.cardCount = gi.cardMeta.length;
-          var leaders = 0, finiteLeaders = 0;
-          gi.cardMeta.forEach(function (m) {
-            if (!m.leader) return;
-            leaders++;
-            var L = m.leader;
-            if (isFinite(L.x1) && isFinite(L.y1) && isFinite(L.tx) && isFinite(L.ty) &&
-                isFinite(L.cx) && isFinite(L.cy)) finiteLeaders++;
-          });
-          res.leaders = leaders;
-          res.finiteLeaders = finiteLeaders;
-          report(res);
-        })();
-      }
-    } catch (e) { res.error = String(e); report(res); }
-  }, 600);
-})();
-</script>
-"""
-html = open(src, encoding="utf-8").read()
-if "</body>" not in html:
-    sys.exit("probe injection failed: no </body> in " + src)
-open(dst, "w", encoding="utf-8").write(html.replace("</body>", probe + "</body>", 1))
-PYEOF
-
-# --- Run Chrome over file:// and read the verdict back ----------------------
-DOM="$("$CHROME" --headless=new --disable-gpu --no-sandbox \
-  --window-size=1400,900 --virtual-time-budget=15000 \
-  --dump-dom "file://$TMP/.craft/ci-probe.html" 2>/dev/null)"
-
-TITLE_JSON="$(printf '%s' "$DOM" | grep -o '<title>CRAFTCI [^<]*</title>' | head -1 \
-  | sed -e 's/^<title>CRAFTCI //' -e 's#</title>$##')"
-
-if [ -z "$TITLE_JSON" ]; then
-  echo "FAIL: probe reported nothing (no CRAFTCI title in dumped DOM, $(printf '%s' "$DOM" | wc -c | tr -d ' ') bytes dumped)"
+if [ -z "$VERDICT" ]; then
+  echo "FAIL: the probe printed no verdict"
   exit 1
 fi
 
-echo "probe verdict: $TITLE_JSON"
+echo "probe verdict: $VERDICT"
 
-python3 - "$TITLE_JSON" <<'PYEOF'
-import html, json, sys
+python3 - "$VERDICT" <<'PYEOF'
+import json, sys
 raw = sys.argv[1].strip()
 try:
-    data = json.loads(html.unescape(raw))
+    data = json.loads(raw)
 except ValueError as e:
     sys.exit("FAIL: probe verdict is not parseable JSON: %s (%s)" % (raw, e))
 failures = []
@@ -331,7 +224,7 @@ else:
 heat_w = data.get("heatW", -1)
 inner_w = data.get("innerW", 0)
 if heat_w > 0 and heat_w == inner_w:
-    print("assert 2c OK: cluster heat baked at the viewport's width (%d) after the early beat" % heat_w)
+    print("assert 2c OK: cluster heat baked at the viewport's width (%d)" % heat_w)
 else:
     failures.append("assert 2c FAILED: heat canvas width is %s, viewport is %s" % (heat_w, inner_w))
 summary_children = data.get("summaryChildren", -1)
@@ -366,6 +259,12 @@ if leaders == card_count and finite_leaders == leaders and leaders > 0:
     print("assert 9 OK: every card carries a leader terminating at finite coordinates (%d leaders)" % leaders)
 else:
     failures.append("assert 9 FAILED: %s leaders for %s cards, %s finite" % (leaders, card_count, finite_leaders))
+frames = data.get("frames", 0)
+ticks = data.get("ticks", -1)
+if frames > 0 and 0 < ticks <= frames:
+    print("assert 10 OK: the page runs one render loop (%d ticks across %d frames)" % (ticks, frames))
+else:
+    failures.append("assert 10 FAILED: %s ticks across %s frames - more ticks than frames means stacked render loops" % (ticks, frames))
 if failures:
     for f in failures:
         print(f)

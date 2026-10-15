@@ -102,6 +102,7 @@ After a full cycle of implementation, config files, entry points, and dependenci
 4. Wait for it to be ready (curl until 200)
 5. Navigate to the app URL
 6. Clear any leftover craft:dial injection - via `evaluate_script`, remove the `craft-dial-style` style element, the `craft-dial-panel` element, every `[data-craft-dial-injected]` node, and delete `documentElement.dataset.craftDial`; idempotent on a clean page, and a stale dial would make you report fake chrome as the product (see `commands/references/dial-inject.md`)
+7. Clear leftover annotate changes: run `bash "<PLUGIN_ROOT>/hooks/scripts/annotate-run.sh" review-clear` (`PLUGIN_ROOT` is in your brief). A printed `() => { ... }` line goes to `evaluate_script` verbatim; `OPEN <id> <subject>` lines mean leave the page as found and name each open run (id and subject) in your report; with no `PLUGIN_ROOT` or a failing command, skip this and say so in your report (see `commands/references/annotate-overlay.md`, "Clearing leftovers before a review")
 
 ## Phase 1: Preflight Checklist (MANDATORY - 6 checks, never skip)
 
@@ -111,10 +112,10 @@ After a full cycle of implementation, config files, entry points, and dependenci
 Capture the initial state. Note: What looks clickable? Is the layout clear? Anything cut off or overlapping?
 
 ### Check 2: Overflow Scan (`evaluate_script`)
-Run this single script that combines vertical, horizontal, and truncation scans:
+Run this single script that combines vertical, horizontal, and truncation scans: `evaluate_script` takes a function and calls it, so each script goes in as written - a function - and a self-calling script runs but the tool reports `fn is not a function` and the data is lost.
 
 ```javascript
-(() => {
+() => {
   const results = { vertical: [], horizontal: [], truncated: [] };
   document.querySelectorAll('*').forEach(el => {
     if (el.children.length > 0) {
@@ -136,7 +137,7 @@ Run this single script that combines vertical, horizontal, and truncation scans:
       results.truncated.push({ tag: el.tagName, text: el.textContent?.slice(0, 50), class: el.className });
   });
   return results;
-})()
+}
 ```
 
 **Any element in vertical or horizontal results is a finding.** Report with exact dimensions and parent class/id - the fix is often on the parent.
@@ -155,7 +156,7 @@ The brief may include locked patterns to verify (e.g., "all interactive elements
 If the brief includes a `locked_patterns` section, check each pattern. If not, run this baseline check:
 
 ```javascript
-(() => {
+() => {
   const interactive = document.querySelectorAll('button, a[href], input, [role="button"], [tabindex]');
   return {
     total_interactive: interactive.length,
@@ -167,7 +168,7 @@ If the brief includes a `locked_patterns` section, check each pattern. If not, r
       class: el.className, role: el.getAttribute('role')
     }))
   };
-})()
+}
 ```
 
 This also produces the **interactive element inventory** that Phase 2 uses for its interaction matrix.

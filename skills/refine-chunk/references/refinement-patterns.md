@@ -60,10 +60,13 @@ Common validation errors and their surgical fixes, organized by error type.
 
 ## Build Errors
 
-**Missing module:**
-```bash
-npm install missing-package
+**Missing module (wrong import path):**
+```diff
+- import { helper } from './utils/helpr'
++ import { helper } from './utils/helper'
 ```
+
+**Missing module (package not installed):** installing a package is a shell step, and refine-chunk runs no commands. Report it with the Complex Fix (Needs Review) template, naming the package and the install command, so the person can run the install before validate-chunk re-validates.
 
 **Export issue:**
 ```diff

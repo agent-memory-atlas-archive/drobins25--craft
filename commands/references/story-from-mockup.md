@@ -1,4 +1,4 @@
-# Story From Mockup (reference - read inline by craft:story-new Step 2.5)
+# Story From Mockup (reference - read inline by craft:story-new Step 2.5 and by story-from-craft-designs.md)
 
 Transforms a converged mockup record into a story. The mockup IS the extraction - no Explore agent, no gap-fill interview. It settles look and motion; scope and data shape still go through the normal story machinery (content-spark and alignment run on the created story like any other).
 
@@ -6,10 +6,16 @@ Transforms a converged mockup record into a story. The mockup IS the extraction 
 
 ## Phase 1: Select the record
 
-If the destination fork handed a specific mockup path (the usual case - this flow was entered from a graduation), use it. Otherwise list non-abandoned records:
+If the destination fork handed a specific mockup path (the usual case - this flow was entered from a graduation), use it. Otherwise list the mockups waiting for a destination, converged or parked (the same list `story-from-craft-designs.md` searches). The project is `$CRAFT_PROJECT_ROOT` when set, else the folder the before-init lookup prints:
 
 ```bash
-grep -L "^status: abandoned" "$CRAFT_PROJECT_ROOT"/.craft/mockups/*/record.md 2>/dev/null
+ROOT="${CRAFT_PROJECT_ROOT:-}"
+[ -n "$ROOT" ] || ROOT=$(bash -c 'source "$1" >/dev/null 2>&1; craft_before_init_root' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh")
+ROOT="${ROOT%/}"
+for r in "$ROOT"/.craft/mockups/*/record.md; do
+  [ -f "$r" ] || continue
+  if grep -qE '^status: (converged|parked)$' "$r"; then echo "$r"; fi
+done
 ```
 
 One record: use it, confirm conversationally ("Building the story from [slug]"). Several: ask conversationally which one - no AskUserQuestion; the fork already spent the flow's question budget.

@@ -33,7 +33,7 @@ project's live graph into 13 single edges once the parsers read this file
 instead of naming kinds themselves.
 """
 
-# The ten record types that become nodes, in registry.PARSERS's order.
+# The eleven record types that become nodes, in registry.PARSERS's order.
 RECORD_TYPES = (
     "story",
     "cycle",
@@ -45,6 +45,7 @@ RECORD_TYPES = (
     "mockup",
     "dial",
     "bug",
+    "annotation",
 )
 
 # The closed set of reasons a reference-shaped value can fail to become an
@@ -87,6 +88,25 @@ NOT_RECORDS = {
     "folder before 2026-08-21; the build writes .craft/graph/ now, but a "
     "leftover copy must still never be read as a record source "
     "(registry.py skip list)",
+    "annotations/*/current.json": "a live annotate session's latest pin set "
+    "- runtime state, not an authored record",
+    "annotations/*/history.jsonl": "a live annotate session's ledger of "
+    "every SEND - runtime state, read only by the record writer",
+    "annotations/*/run.json": "a live annotate session's run marker - "
+    "runtime state, deleted when the run is filed",
+    "annotations/*/port": "a live annotate session's listener port - "
+    "runtime state",
+    "annotations/*/listener.pid": "a live annotate session's listener "
+    "process id - runtime state",
+    "annotations/*/owner.pid": "a live annotate session's owner process "
+    "id - runtime state the sweep reads",
+    "annotations/*/rearm.streak": "a live annotate session's count of "
+    "consecutive listener restarts - runtime state",
+    "annotations/*/resolutions.json": "a live annotate session's cache of "
+    "resolved pin locations - runtime state, copied onto the record pins "
+    "when the run is filed",
+    "annotations/*/listener.log": "a live annotate session's listener log "
+    "- runtime churn",
     "checkpoints": "state, not records - not nodes (alignment)",
     "requests": "queued user requests are not nodes in v1 (alignment)",
     "design": "visual DNA (tokens, locked patterns) - values, not records "
@@ -183,7 +203,7 @@ KINDS = {
     "graduated_to": {
         "out": "Graduated into",
         "in": "Graduated from",
-        "sources": frozenset({"mockup", "notebook", "dial"}),
+        "sources": frozenset({"mockup", "notebook", "dial", "annotation"}),
         "targets": frozenset({"story", "tweak", "notebook", "fix", "dial"}),
         "membership": False,
         "lineage": True,
@@ -209,6 +229,14 @@ KINDS = {
         "in": "Design for",
         "sources": frozenset({"story", "tweak"}),
         "targets": frozenset({"mockup"}),
+        "membership": False,
+        "lineage": False,
+    },
+    "annotate": {
+        "out": "Annotated in",
+        "in": "Annotation for",
+        "sources": frozenset({"story"}),
+        "targets": frozenset({"annotation"}),
         "membership": False,
         "lineage": False,
     },
@@ -263,6 +291,8 @@ FIELDS = {
         {"kind": "belongs_to", "expect": frozenset({"cycle"})},
     ("story", "mockup"):
         {"kind": "mockup", "expect": frozenset({"mockup"})},
+    ("story", "annotate"):
+        {"kind": "annotate", "expect": frozenset({"annotation"})},
     ("story", "grew_from"):
         {"kind": "grew_from", "expect": frozenset({"tweak"})},
     ("story", "blocked_by"): {
@@ -307,6 +337,10 @@ FIELDS = {
     },
     ("mockup", "origin"):
         {"kind": "origin", "expect": frozenset({"tweak"})},
+    ("annotation", "graduated_to"): {
+        "kind": "graduated_to",
+        "expect": frozenset({"story", "tweak"}),
+    },
     ("notebook", "graduated_to"): {
         "kind": "graduated_to",
         "expect": frozenset({"fix", "tweak", "story", "dial"}),

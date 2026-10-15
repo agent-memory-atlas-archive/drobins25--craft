@@ -22,17 +22,14 @@ if [ -n "$CRAFT_PROJECT_ROOT" ]; then
 else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   source "$SCRIPT_DIR/find-workshop.sh" 2>/dev/null || true
-  ROOT="${PROJECT_ROOT%/}"
-fi
-
-# Cold fallback: no initialized project resolved. Anchor to the git toplevel
-# (never a subdirectory), else PWD, so one-line capture works before /craft:init.
-# A non-git landing spot is announced - an orphaned capture must be loud, since
-# nothing recalls it until the project is initialized.
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -z "$ROOT" ]; then
-    ROOT="$PWD"
+  # A monorepo's top level is no project: refuse before anything is written.
+  if craft_refuse_monorepo_top "a notebook entry"; then exit 1; fi
+  # The shared lookup picks the folder, so one-line capture works before
+  # /craft:init. A non-git landing spot is announced - an orphaned capture must
+  # be loud, since nothing recalls it until the project is initialized.
+  craft_before_init_root >/dev/null
+  ROOT="$CRAFT_BEFORE_INIT_ROOT"
+  if [ "$CRAFT_BEFORE_INIT_FROM" = "folder" ]; then
     echo "not a git repo - capturing to $ROOT/.craft/notebook/ (local to this directory)" >&2
   fi
 fi

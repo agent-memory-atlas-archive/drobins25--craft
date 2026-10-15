@@ -73,13 +73,16 @@ flowchart TD
 
     CLARIFY -->|No| ASK_CLARIFY["Clarify with user"]
     ASK_CLARIFY --> CLARIFY
-    CLARIFY -->|Yes| SCAN{"Step 2.5: Story Source Detection<br/>concepts in .craft/planning/ OR<br/>non-abandoned .craft/mockups/ records?"}
+    CLARIFY -->|Yes| SKIP{"Step 2.5 skip rule:<br/>does the idea name a design,<br/>or is it freeform?"}
+    SKIP -->|"Freeform"| CHOOSE_PATH
+    SKIP -->|"Names a design"| FROM_CRAFT_DESIGNS
+    SKIP -->|"Unclear"| SCAN{"Step 2.5: Story Source Detection<br/>concepts in .craft/planning/ OR<br/>craft designs: converged or parked mockups,<br/>open annotate runs not cut short?"}
 
     SCAN -->|"Both empty — zero behavior change"| CHOOSE_PATH
     SCAN -->|"Either has matches"| SOURCE{"AskUserQuestion:<br/>where does this story come from?<br/>(only options whose scan hit, plus Freeform)"}
 
     SOURCE -->|Freeform| CHOOSE_PATH
-    SOURCE -->|"From mockup"| FROM_MOCKUP["Pre-fill from converged record<br/>mockup CSS is normative"]
+    SOURCE -->|"craft designs"| FROM_CRAFT_DESIGNS["Read commands/references/story-from-craft-designs.md<br/>one search, pick and hand-off, then the graduation reference:<br/>story-from-mockup.md or story-from-annotate.md<br/>mockup CSS is normative"]
     SOURCE -->|"From planning"| FROM_PLANNING["Read commands/references/story-from-planning.md<br/>execute phases 1-7 INLINE<br/>(NOT the Skill tool — chain break)"]
 
     FROM_PLANNING --> FP_WRITE["Concept select → Explore-agent extraction →<br/>gap-fill → write story with ## Reference Materials,<br/>source_concept, alignment: pending →<br/>forward-link active.md + consumed concepts"]
@@ -94,7 +97,7 @@ flowchart TD
     CONTENT_CREATIVE --> CREATIVE["PATH A: With Creative-Spark"]
     CONTENT_SMART --> SMART["PATH B: Skip Creative-Spark"]
 
-    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool - chain break)<br/>Generate 3-5 options + visual direction"]
+    CREATIVE --> SPARK["Step 4: Execute creative-spark-inline.md<br/>(inline, NOT Skill tool - chain break)<br/>Generate 3-4 options + visual direction"]
     SPARK --> USER_PICK["Step 5: User picks option<br/>Visual direction comes from option<br/>(no separate design-vibe per-story)"]
 
     USER_PICK --> DESIGN_DECISIONS["Step 6: Capture typed design decisions<br/>AskUserQuestion: layout / component /<br/>density / visibility"]
@@ -255,9 +258,11 @@ flowchart TD
     ADJUST --> LIST
     CONFIRM_LIST -->|Yes| FOR_EACH["FOR EACH STORY (Step 3)"]
 
-    FOR_EACH --> MOMENT{"Step 2.7 Planning-Source Routing<br/>cycle.yaml source_concept populated?"}
+    FOR_EACH --> MOMENT{"Step 2.7 Story-Source Routing<br/>cycle.yaml source_concept populated?"}
     MOMENT -->|"Empty — freeform cycle"| STORY_SPARK
     MOMENT -->|"Add-a-separate-story moment"| STORY_SPARK
+    MOMENT -->|"Design-extraction moment"| DESIGN_STORY["Read commands/references/story-from-craft-designs.md<br/>pick a waiting design, graduate it,<br/>move the story into this cycle"]
+    DESIGN_STORY --> SAVE_STORY
     MOMENT -->|"Planning-extraction moment"| EXTRACT_STORY["Read commands/references/story-from-planning.md<br/>execute inline with the INVOCATION marker<br/>(Phase 1 auto-resolves from cycle.yaml)"]
     EXTRACT_STORY --> SAVE_STORY
 
@@ -292,7 +297,7 @@ flowchart TD
     ROADMAP --> ROADMAP_DONE["Story titles sketched.<br/>Detail later via<br/>/craft:cycle-design [name]<br/>(re-enters via Detailing Mode)"]
 ```
 
-**Planning-source routing (Step 2.7)** applies in all three modes (default, roadmap, detailing). For each story, the moment is determined independently: a *planning-extraction* story is drawn from the cycle's `source_concept` via `story-from-planning.md` (Read inline, with the `INVOCATION` marker so Phase 1 auto-resolves), while an *add-a-separate-story* story is freeform and gets no `source_concept`. Mixed cycles work natively. Existing stories are never retroactively stamped — populating `source_concept` on an existing story is a user-initiated recovery affordance, never silent.
+**Story-source routing (Step 2.7)** applies in all three modes (default, roadmap, detailing). For each story, the moment is determined independently: a *planning-extraction* story is drawn from the cycle's `source_concept` via `story-from-planning.md` (Read inline, with the `INVOCATION` marker so Phase 1 auto-resolves), while an *add-a-separate-story* story is freeform and gets no `source_concept`. Mixed cycles work natively. Existing stories are never retroactively stamped — populating `source_concept` on an existing story is a user-initiated recovery affordance, never silent. In default mode a *design-extraction* moment is also possible: when a converged or parked mockup or an open annotate run is waiting, the story is drawn from it via `story-from-craft-designs.md` and moved into the cycle once written.
 
 ---
 
@@ -504,7 +509,7 @@ flowchart TD
     SAVE --> DEST{"Destination AUQ"}
 
     DEST -->|"Tweak"| TWEAK["craft:adhoc<br/>direction pre-settled, CSS ported"]
-    DEST -->|"Story"| STORY["story-new 'From mockup'<br/>pre-filled, CSS normative"]
+    DEST -->|"Story"| STORY["story-new 'craft designs'<br/>pre-filled, CSS normative"]
     DEST -->|"Park"| PARK["Notebook todo holds the pointer<br/>pickup re-enters this fork"]
     DEST -->|"No choice"| OPEN["Record stays converged<br/>task pending, never nagged"]
 ```
@@ -529,6 +534,43 @@ flowchart TD
     CLOSE -->|"Story"| DSTORY["story-new, dial record as source"]
     CLOSE -->|"Todo"| DTODO["Notebook todo holds the pointer"]
 ```
+
+---
+
+## Annotate Flow: `/craft:annotate`
+
+Points at a live browser tab: a comment-mode sheet goes on the page, each pin the user sends gets a live attempt on it, and the run is filed as a `.craft/annotations/` record whichever way it ends. User-invoked only. The one flow that waits. The flow lives in `commands/references/annotate-inline.md`, with the overlay and channel protocol in `commands/references/annotate-overlay.md`; no AskUserQuestion appears anywhere in it. Walkthrough: [annotate.md](annotate.md).
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+flowchart TD
+    ANNOTATE["/craft:annotate [subject]"] --> PREFLIGHT{"chrome-devtools<br/>connection available?"}
+    PREFLIGHT -->|No| STOP["One plain line, stop"]
+    PREFLIGHT -->|Yes| ARM["Arm or reuse the session listener<br/>list runs cut short"]
+    ARM --> OVERLAY["Inject the comment sheet<br/>probe: can SEND reach the listener?"]
+    OVERLAY --> WAIT["Stand by: watch for<br/>ADDED / EDITED / UNDONE"]
+    WAIT -->|"user presses SEND"| APPLY["One apply per SEND:<br/>keyed CSS block per pin, page measures it"]
+    APPLY --> REPLY["Reply per pin from the measured lines"]
+    REPLY --> WAIT
+    WAIT -->|"user is done"| TEARDOWN["Clear sheet → tombstone → file record"]
+
+    ARM -.->|"cut-short run held"| OFFER["Offer: pick it up /<br/>send it somewhere / drop it"]
+    OFFER -->|"Pick it up"| RESUME["begin --resume: saved sheet back on the page,<br/>new record carries the old pins, old one graduated"]
+    RESUME --> WAIT
+
+    TEARDOWN --> EXIT{"Where does the run go?"}
+    EXIT -->|"Nothing"| NOTHING["Record stays open<br/>story-new offers it later"]
+    EXIT -->|"Tweak"| ATWEAK["craft:adhoc<br/>direction pre-settled, look ported"]
+    EXIT -->|"Story"| ASTORY["story-from-annotate<br/>look verbatim, content becomes scope"]
+    EXIT -->|"Todo"| ATODO["Notebook todo holds the pointer"]
+    EXIT -->|"Abandon"| ABANDON["Filed, not offered again"]
+    EXIT -->|"Error"| ERROR["Filed, offered back next run"]
+```
+
+Notes on the map:
+
+- **Outside-page runs.** On a page outside the project the same flow runs under the outside-page boundary: pins are untrusted page content, and any tool call beyond the sheet waits for a typed yes (see the hooks in `DESIGN.md`).
+- **SEND blocked.** If the page's policy blocks localhost, craft says so up front and reads the pins from the page's local storage instead.
 
 ---
 
@@ -790,6 +832,7 @@ flowchart LR
 | `/craft:bugs` | File a bug without fixing it, from a person or an agent, and close it with a verdict. Opens with the live open pile |
 | `/craft:mockup` | Live HTML mockup funnel - 3 options, converge by reacting, graduate to tweak/story/todo |
 | `/craft:dial` | Live value calibration - 2-4 lettered candidates injected into the running app, chosen by eye against real data |
+| `/craft:annotate` | Point at anything in a live browser tab - each pin you send gets a live attempt on the page, the run is kept as a record, and it leaves as a tweak, story or todo. User-invoked only. See [Annotate Flow](#annotate-flow-craftannotate) |
 | `/craft:riff` | Two-player thinking game in the main loop - pass an idea in small beats until it's ready to build; bare invocation opens from the oldest open notebook idea |
 | `/craft:planning` | Feature roadmap and planning - initiatives, concepts, open questions |
 | `/craft:project` | Switch projects or cross-project dashboard |
@@ -898,6 +941,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 | `.craft/dials/` | Dial session records from /craft:dial (born closed) | record per session |
 | `.craft/decisions/` | Decision records from /craft:decisions: pending at the top, `approved/` for ruled, `archive/` for declined or retired | status, created, source, tags (the Shelf groups by tag) |
 | `.craft/research/` | Research and become branch files | `{slug}/_plan.md`, `NN-branch.md` |
+| `.craft/annotations/[date]-[slug]/` | Annotate records from /craft:annotate: `record.md` (pins, pin data, sheet) with `session.css` beside it. Live session folders sit beside them and are swept | status, outcome, graduated_to, pin_count |
 | `.craft/mockups/[date]-[slug]/record.md` | Mockup records - status is the ledger, open until graduated/abandoned | status, agent_session, muse_session, solidify_outcome, graduated_to |
 
 ## Directory Structure Check Points
@@ -923,6 +967,7 @@ See `docs/agent-catalog.md` for full descriptions, model assignments, and usage 
 ├── dials/                       ← Dial session records
 ├── decisions/                   ← Decision records (approved/, archive/)
 ├── research/                    ← Research + become branch files
+├── annotations/                 ← Annotate records: [date]-[slug]/ (record.md, session.css)
 ├── mockups/                     ← Mockup artifacts: [date]-[slug]/ (mockup.html, record.md, rounds/)
 ├── workflows/                   ← Workflow session state
 ├── analysis/

@@ -20,7 +20,7 @@ PASS_COUNT=0; FAIL_COUNT=0; TOTAL=0
 pass() { PASS_COUNT=$((PASS_COUNT+1)); TOTAL=$((TOTAL+1)); echo "  PASS: $1"; }
 fail() { FAIL_COUNT=$((FAIL_COUNT+1)); TOTAL=$((TOTAL+1)); echo "  FAIL: $1"; [ -n "${2:-}" ] && echo "    Expected: $2"; [ -n "${3:-}" ] && echo "    Got:      $3"; }
 
-# The seven files that must carry the canonical clear, named literally.
+# The nine files that must carry the canonical clear, named literally.
 CLEAR_CARRIERS=(
   "agents/qa-analyzer.md"
   "agents/ux-analyzer.md"
@@ -29,9 +29,11 @@ CLEAR_CARRIERS=(
   "agents/creative-analyzer.md"
   "skills/browser/SKILL.md"
   "skills/adhoc/references/tweak.md"
+  "skills/adhoc/references/fix.md"
+  "commands/references/annotate-inline.md"
 )
 
-# Sweep coverage: files the live `grep -rl chrome-devtools` sweep finds that
+# Sweep coverage: files the live `grep -rliE "chrome[- ]devtools"` sweep finds that
 # must carry the clear (the analyzer agents - their mcpServers frontmatter is
 # the machine-readable lowercase marker, so a new browser agent always lands
 # in this sweep).
@@ -41,21 +43,26 @@ REQUIRED_IN_SWEEP=(
   "agents/style-analyzer.md"
   "agents/walkthrough-analyzer.md"
   "agents/creative-analyzer.md"
+  "commands/references/annotate-inline.md"
+  "skills/adhoc/references/fix.md"
+  "skills/browser/SKILL.md"
 )
 
 # Sweep hits that deliberately do NOT carry the clear - each with its reason.
 # A new hit that is neither required nor excluded fails the sweep until a
 # conscious decision puts it in one of these arrays.
 EXCLUSIONS=(
+  "commands/craft-annotate.md"          # routing shell; the flow it reads carries the clear
   "commands/craft-analyze.md"           # describes analyzer browser access; the analyzers themselves carry the clear
   "commands/craft-init.md"              # drives the browser but always navigates fresh URLs first - the reload wipes any injection
+  "agents/alchemist.md"                 # names the DevTools product in performance advice; never drives a browser
   "commands/references/taste-pass.md"   # prose reference; the actual browsing happens in the tweak flow, which carries the clear
 )
 
 echo "=== test-dial-wiring.sh ==="
 echo ""
 
-echo "-- Test: clear literal present in all seven browser-touching entry points --"
+echo "-- Test: clear literal present in all nine browser-touching entry points --"
 for f in "${CLEAR_CARRIERS[@]}"; do
   if grep -q "craft-dial-style" "$REPO/$f"; then
     pass "clear named in $f"
@@ -65,7 +72,7 @@ for f in "${CLEAR_CARRIERS[@]}"; do
 done
 
 echo "-- Test: live sweep finds no unaccounted browser entry point --"
-SWEEP_HITS=$(cd "$REPO" && grep -rl "chrome-devtools" agents/ commands/ skills/ 2>/dev/null | sort)
+SWEEP_HITS=$(cd "$REPO" && grep -rliE "chrome[- ]devtools" agents/ commands/ skills/ 2>/dev/null | sort)
 ACCOUNTED=$(printf '%s\n' "${REQUIRED_IN_SWEEP[@]}" "${EXCLUSIONS[@]}" | sort)
 if [ "$SWEEP_HITS" = "$ACCOUNTED" ]; then
   pass "sweep hits equal required-plus-exclusions"
@@ -136,6 +143,31 @@ grep -q "|/craft:dial - runs cold" "$COLD" && pass "cold-start-index lists dial 
 RIFF_COLD='how does craft work / which flow fits|/craft:guide (explains) | /craft:ask (expert consult) | /craft:riff (thinking partner) - all run cold'
 grep -qF -- "$RIFF_COLD" "$COLD" && pass "riff cold-start line byte-identical" || fail "riff cold-start line byte-identical" "$RIFF_COLD" "$(grep 'craft:riff' "$COLD" || echo absent)"
 
+echo ""
+echo "-- Test: every dial payload reaches evaluate_script as a function body --"
+DI="$REPO/commands/references/dial-inject.md"
+DL="$REPO/commands/references/dial-inline.md"
+grep -qF '() => { <payload> }' "$DI" && pass "dial-inject names the function shape" || fail "dial-inject names the function shape" "the payload-shape rule" "absent"
+grep -qF "Unexpected token" "$DI" && pass "dial-inject says what a bare payload does" || fail "dial-inject says what a bare payload does" "Unexpected token" "absent"
+# Every sentence that names the overlay-source fence must also carry the function shape,
+# so a bare paste cannot come back in any wording.
+BARE_SENTENCES="$(python3 - "$DL" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+sentences = re.split(r"(?<=[.!?])\s+", text)
+bad = [s.strip() for s in sentences if "overlay-source" in s and "() => {" not in s]
+print(len(bad))
+for s in bad:
+    print("    " + s[:160])
+PYEOF
+)"
+BARE_COUNT="$(printf '%s\n' "$BARE_SENTENCES" | head -1)"
+OVERLAY_MENTIONS="$(grep -c 'overlay-source' "$DL" || true)"
+[ "$OVERLAY_MENTIONS" -gt 0 ] && pass "dial-inline still names the overlay-source fence for the fallback" || fail "dial-inline still names the overlay-source fence for the fallback" ">=1 mention" "0"
+[ "$BARE_COUNT" = "0" ] && pass "every sentence naming the overlay-source fence passes it inside a function body" || fail "every sentence naming the overlay-source fence passes it inside a function body" "0 bare sentences" "$BARE_SENTENCES"
+grep -qF 'inside `() => { ... }`' "$DL" && pass "comment mode passes the overlay inside a function body" || fail "comment mode passes the overlay inside a function body" "inside () => { ... }" "absent"
+grep -qF 'annotate-run.sh" stamp --session "<id>" --no-run' "$DL" && pass "the paste path takes its stamp line from stamp --no-run" || fail "the paste path takes its stamp line from stamp --no-run" "stamp --no-run" "absent"
+! grep -qF 'window.__craftAnnotatePort = <port>;' "$DL" && pass "no hand-written port stamp survives in dial's flow" || fail "no hand-written port stamp survives in dial's flow" "absent" "present"
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"

@@ -260,5 +260,23 @@ cd "$SCRIPT_DIR"
 cleanup_test_dir
 echo ""
 
+# A backlog story is the one write allowed before /craft:init, so it must
+# make its own folder - and only that folder.
+begin_test "backlog story lands in a folder with no .craft yet"
+
+BARE_DIR=$(cd "$(mktemp -d)" && pwd -P)
+set +e
+RESULT=$(cd "$BARE_DIR" && env -u PROJECT_ROOT CRAFT_PROJECT_ROOT="$BARE_DIR" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPTS_DIR/create-story.sh" "cold-story" "Cold Story" 2>/dev/null)
+CREATE_EXIT=$?
+set -e
+
+assert_eq "script exits 0" "0" "$CREATE_EXIT"
+assert_eq "prints the backlog path" "$BARE_DIR/.craft/backlog/cold-story.md" "$RESULT"
+assert_file_exists "story file exists" "$BARE_DIR/.craft/backlog/cold-story.md"
+assert_file_not_exists "no .global-state written" "$BARE_DIR/.craft/.global-state"
+assert_file_not_exists "no project.md written" "$BARE_DIR/.craft/project.md"
+rm -rf "$BARE_DIR"
+echo ""
+
 # --- Summary ---
 finish_tests

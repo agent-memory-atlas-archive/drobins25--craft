@@ -45,9 +45,9 @@ The orchestrator may pass enriched args with labeled fields. Parse these to star
 - Don't rewrite the solution
 - Match existing code style
 
-**Always synchronous:**
-- **NEVER use `run_in_background: true` for test, typecheck, lint, or build commands.** Run everything synchronously so results are confirmed before proceeding.
-- Background runs become orphaned and spam the conversation after the story is done.
+**Edit only, no shell:**
+- refine-chunk reads and edits files. It has no Bash, so it runs no commands - no validation, no tests, no installs.
+- validate-chunk re-runs the full check suite after the hand-back. That re-run is how a fix gets verified.
 
 ## Refinement Process
 
@@ -97,16 +97,13 @@ Make the minimal change:
   </Form>
 ```
 
-### 5. Re-validate
+### 5. Hand Back for Re-validation
 
-After fix:
-- Run same validation that failed
-- Confirm error is resolved
-- Check for new errors introduced
+refine-chunk does not re-run validation itself. After the fix:
+- Re-read the changed lines to confirm the edit landed as planned
+- Hand back to validate-chunk, which re-runs the full check suite immediately
 
-**Output after re-validation:**
-
-When re-validation passes, report:
+**Output after the fix:**
 ```
 ## Refinement Applied
 
@@ -115,7 +112,7 @@ When re-validation passes, report:
 >>> HAND BACK TO validate-chunk: Refinement applied. Re-validate this chunk with the full check suite.
 ```
 
-When re-validation reveals new errors, report them and loop (attempt another fix if REFINE_COUNT allows).
+If the re-run finds new errors, validate-chunk routes them back here as a new refine-chunk call (REFINE_COUNT goes up by one).
 
 ## Common Refinements
 
@@ -165,18 +162,18 @@ validate-chunk
      │
      └─── Fail ───→ refine-chunk
                          │
-                         ├─── Simple fix ───→ Re-validate
+                         ├─── Simple fix ───→ Hand back (validate-chunk re-validates)
                          │
                          └─── Complex ───→ Ask for guidance
                                                │
-                                               └─── Re-validate
+                                               └─── Hand back (validate-chunk re-validates)
 ```
 
 ## Remember
 
 - **Fix the error, not the code** — minimal changes only
 - **One thing at a time** — don't bundle fixes
-- **Verify after each fix** — re-run validation
+- **Hand back after each fix** - validate-chunk re-runs validation; refine-chunk runs no commands
 - **Know when to stop** — escalate complex issues
 - **Always end output with `>>> HAND BACK TO validate-chunk:`.** This is the return signal. validate-chunk re-validates immediately upon seeing it.
 

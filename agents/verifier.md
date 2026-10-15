@@ -19,7 +19,7 @@ description: |
   </example>
 model: claude-haiku-4-5-20251001
 color: red
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, WebSearch, WebFetch
 disallowedTools: Edit, NotebookEdit
 permissionMode: bypassPermissions
 ---

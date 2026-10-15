@@ -510,5 +510,169 @@ rm -f "$ENV_FILE"
 cleanup_test_dir
 echo ""
 
+begin_test "session start shows Annotations: 1 awaiting destination with one open record"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-a" "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/live-1"
+printf -- '---\nsource: annotate\nstatus: open\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-a/record.md"
+printf -- '---\nsource: annotate\nstatus: graduated\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+echo '{}' > "$TEST_DIR/.craft/annotations/live-1/current.json"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_contains_literal "status line carries the open record only" "| Annotations: 1 awaiting destination (2026-10-04-a)" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "session start shows no Annotations segment for graduated, abandoned or live-only folders"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/2026-10-04-c" "$TEST_DIR/.craft/annotations/live-1"
+printf -- '---\nstatus: graduated\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+printf -- '---\nstatus: abandoned\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-c/record.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_not_contains "no Annotations segment" "Annotations:" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+# --- Before init: the annotate sweep runs without setting the project up ---
+
+# run_session <dir> - session start from <dir> with no pinned root; sets RESULT, SESSION_EXIT and ENV_FILE
+run_session() {
+  ENV_FILE=$(mktemp)
+  set +e
+  RESULT=$(cd "$1" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CRAFT_ANNOTATE_BOUNDARY_DIR="$1/.boundary-test" CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+  SESSION_EXIT=$?
+  set -e
+}
+
+# assert_nothing_set_up <dir> - the folder gained no state file, no project.md and no env line
+assert_nothing_set_up() {
+  assert_file_not_exists "no .global-state" "$1/.craft/.global-state"
+  assert_file_not_exists "no project.md" "$1/.craft/project.md"
+  assert_eq "no CLAUDE_ENV_FILE line" "0" "$(wc -c < "$ENV_FILE" | tr -d ' ')"
+}
+
+begin_test "before init, session start sweeps a dead session and writes no state file"
+
+# A real detached listener whose owner (999999) is dead, with a run that never
+# reached an exit: the sweep must file the run, stop the listener and remove the
+# folder - a bare rm -rf would leave the process and file nothing.
+TEST_DIR=$(cd "$(mktemp -d)" && pwd -P)
+ANNOTATE_RUN="$SCRIPTS_DIR/annotate-run.sh"
+(cd "$TEST_DIR" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CRAFT_ANNOTATE_BOUNDARY_DIR="$TEST_DIR/.boundary-test" \
+  bash "$ANNOTATE_RUN" arm --root "$TEST_DIR" --session dead-1 --owner-pid 999999 >/dev/null 2>&1 \
+  && bash "$ANNOTATE_RUN" begin --root "$TEST_DIR" --session dead-1 --subject "cold run" >/dev/null 2>&1) || true
+DEAD_LISTENER="$(cat "$TEST_DIR/.craft/annotations/dead-1/listener.pid" 2>/dev/null || true)"
+assert_eq "fixture: the listener is running before the sweep" "1" "$(ps -ax -o command= 2>/dev/null | grep -F "annotate-channel.py --dir $TEST_DIR/" | grep -vc grep || true)"
+assert_file_exists "fixture: the run exists before the sweep" "$TEST_DIR/.craft/annotations/dead-1/run.json"
+run_session "$TEST_DIR"
+
+assert_eq "exits 0" "0" "$SESSION_EXIT"
+sleep 0.3
+assert_eq "its listener was stopped" "0" "$(ps -ax -o command= 2>/dev/null | grep -F "annotate-channel.py --dir $TEST_DIR/" | grep -vc grep || true)"
+assert_eq "the empty run was filed as a record" "1" "$(ls "$TEST_DIR"/.craft/annotations/*/record.md 2>/dev/null | wc -l | tr -d ' ')"
+assert_dir_not_exists "the dead session was reaped" "$TEST_DIR/.craft/annotations/dead-1"
+assert_nothing_set_up "$TEST_DIR"
+case "$DEAD_LISTENER" in ''|*[!0-9]*) ;; *) kill "$DEAD_LISTENER" 2>/dev/null || true ;; esac
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "before init, a live owner's session is left alone"
+
+TEST_DIR=$(mktemp -d)
+mkdir -p "$TEST_DIR/.craft/annotations/live-1"
+echo $$ > "$TEST_DIR/.craft/annotations/live-1/owner.pid"
+run_session "$TEST_DIR"
+
+assert_eq "exits 0" "0" "$SESSION_EXIT"
+assert_dir_exists "the live session stays" "$TEST_DIR/.craft/annotations/live-1"
+assert_nothing_set_up "$TEST_DIR"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "a folder with no .craft at all still exits 0 and writes nothing"
+
+TEST_DIR=$(mktemp -d)
+run_session "$TEST_DIR"
+
+assert_eq "exits 0" "0" "$SESSION_EXIT"
+assert_eq "prints nothing" "" "$RESULT"
+assert_dir_not_exists "no .craft created" "$TEST_DIR/.craft"
+assert_eq "no CLAUDE_ENV_FILE line" "0" "$(wc -c < "$ENV_FILE" | tr -d ' ')"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "a monorepo top with set-up children and no annotations writes nothing"
+
+TEST_DIR=$(create_craft_with_shadow)
+rm -rf "$TEST_DIR/project/.craft"
+run_session "$TEST_DIR/project"
+
+assert_eq "exits 0" "0" "$SESSION_EXIT"
+assert_file_not_exists "no .global-state at the top" "$TEST_DIR/project/.craft/.global-state"
+assert_dir_not_exists "no .craft at the top" "$TEST_DIR/project/.craft"
+assert_eq "no CLAUDE_ENV_FILE line" "0" "$(wc -c < "$ENV_FILE" | tr -d ' ')"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "cut-short and awaiting records are counted apart"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-a" "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/2026-10-04-c"
+printf -- '---\nstatus: open\noutcome: nothing\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-a/record.md"
+printf -- '---\nstatus: open\noutcome: error\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+printf -- '---\noutcome: error\nstatus: open\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-c/record.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_contains_literal "both halves, awaiting first" "| Annotations: 1 awaiting destination (2026-10-04-a), 2 cut short (2026-10-04-b, 2026-10-04-c)" "$RESULT"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
+begin_test "only cut-short records show the cut-short half"
+
+TEST_DIR=$(create_minimal_craft)
+ENV_FILE=$(mktemp)
+mkdir -p "$TEST_DIR/.craft/annotations/2026-10-04-b" "$TEST_DIR/.craft/annotations/2026-10-04-g"
+printf -- '---\nstatus: open\noutcome: error\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-b/record.md"
+printf -- '---\nstatus: graduated\noutcome: error\n---\n' > "$TEST_DIR/.craft/annotations/2026-10-04-g/record.md"
+
+set +e
+RESULT=$(cd "$TEST_DIR" && unset PROJECT_ROOT && unset CRAFT_PROJECT_ROOT && unset CRAFT_MULTI_PROJECT && export CLAUDE_ENV_FILE="$ENV_FILE" && bash "$SESSION_SCRIPT" 2>/dev/null)
+set -e
+
+assert_contains_literal "cut short alone" "| Annotations: 1 cut short (2026-10-04-b)" "$RESULT"
+assert_not_contains "no awaiting half" "awaiting destination (2026-10-04" "$(printf '%s' "$RESULT" | grep -o 'Annotations:.*')"
+
+rm -f "$ENV_FILE"
+cleanup_test_dir
+echo ""
+
 # --- Summary ---
 finish_tests

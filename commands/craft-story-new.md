@@ -63,36 +63,42 @@ options:
 
 ### Step 2.5: Story Source Detection
 
-Before asking "How deep do you want to go?" (Step 3), check whether this project has planning docs OR converged mockups that the story could be built from.
+**First, check whether the conversation already answers the source.** Ask: "Could a stranger reading the conversation so far tell where this story comes from without asking?"
+
+- A story already worked out in this conversation before story-new ran, or one the user says to build from the discussion, is freeform: no search, no question, continue to Step 3.
+- A conversation that names one design (for example "make a story from the story-card mockup"): Read the craft designs reference below, run its Search, then its Pick with that design named. No question.
+- A one-line idea given only at Step 1 does not answer the source. When unsure, default toward asking: run the detection below.
+
+Otherwise, before asking "How deep do you want to go?" (Step 3), check whether this project has planning docs OR craft designs waiting to be built (converged or parked mockups, open annotate runs) that the story could be built from.
 
 **Detection logic:**
 
-Use **Bash**:
+Read `"${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-craft-designs.md"` with the Read tool (never via the Skill tool) and run its `## Search`. Then use **Bash** for the planning scan:
 
 ```bash
 # Planning concepts/initiatives
 find "$CRAFT_PROJECT_ROOT/.craft/planning" -maxdepth 3 -type f -name "*.md" 2>/dev/null \
   | xargs grep -l "^concept:\|^initiative:" 2>/dev/null \
   | head -20
-# Non-abandoned mockup records
-grep -L "^status: abandoned" "$CRAFT_PROJECT_ROOT"/.craft/mockups/*/record.md 2>/dev/null | head -20
 ```
 
-**If both come back empty:** skip this step entirely and continue to Step 3. No AskUserQuestion shown. Users who have never used craft planning or mockups see zero behavior change.
+**If all come back empty:** skip this step entirely and continue to Step 3. No AskUserQuestion shown. Users who have never used craft planning, mockups or annotate see zero behavior change.
 
-**If either has matches:** present the choice via **AskUserQuestion** - include ONLY the source options whose scan found something, plus Freeform:
+**If any has matches:** present the choice via **AskUserQuestion** - include ONLY the source options whose scan found something, plus Freeform:
 
 ```
-question: "Where does this story come from? (I see [N] concepts in .craft/planning/ / [M] mockups in .craft/mockups/.)"
+question: "Where does this story come from? (I see [N] concepts in .craft/planning/ / [M] mockups in .craft/mockups/ / [K] annotations in .craft/annotations/.)"
 header: "Source"
 options:
   - label: "From planning"   (only if concepts matched)
     description: "Build this story from existing planning docs. I'll walk the concept(s) and produce a thorough story with Reference Materials."
-  - label: "From mockup"   (only if mockup records matched)
-    description: "Build this story from a converged mockup. Spark, Visual Direction, and binding table pre-fill from the record; the mockup's CSS is normative."
+  - label: "craft designs"   (only if the craft designs search found any)
+    description: "[counts phrase from the search, e.g. 2 mockups, 1 annotate run] waiting to be built"
   - label: "Freeform"
     description: "Build a fresh story without planning context. Continue with the standard flow."
 ```
+
+`[M]` and `[K]` are the number of MOCKUP and ANNOTATE lines the craft designs search printed, never directory counts. The counts phrase is built the way the reference's Search describes.
 
 **If "From planning":**
 
@@ -107,16 +113,16 @@ The reference file owns the entire planning-to-story transformation: concept sel
 
 **Do NOT continue to Step 3 (Choose Your Path) or Step 3b (Content Check)** after the From planning branch completes. The story file is fully written with `alignment: pending` - the existing alignment-check fires when `/craft:story-implement` runs later.
 
-**If "From mockup":**
+**If "craft designs":**
 
-⛔ **Same chain-break rule - never via the Skill tool.** Read and execute inline:
+⛔ **Same chain-break rule - never via the Skill tool.** Continue in the reference already read for the search, inline with the Read tool:
 
 ```
-Read "${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-mockup.md"
-Execute its phases against the chosen mockup record.
+Read "${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-craft-designs.md"
+Continue at ## Pick, then ## Hand-off, against the waiting designs the search found.
 ```
 
-The reference owns the mockup-to-story transformation: record selection (when several are open), the parked-mockup surface re-check, and the pre-filled story write (Spark, Visual Direction, Element Binding Table with mockup anchors, Reference Materials, frontmatter `mockup:`). When it completes, the parent flow is DONE - do not continue to Step 3.
+The reference owns the pick (one design: "Building from [slug] - that one?"; several: a conversational list) and hands the chosen record to its graduation reference, which does the pre-fill and graduation. When it completes, the parent flow is DONE - do not continue to Step 3. A no from the Pick continues as Freeform.
 
 **If "Freeform":** continue to Step 3 (Choose Your Path) unchanged.
 

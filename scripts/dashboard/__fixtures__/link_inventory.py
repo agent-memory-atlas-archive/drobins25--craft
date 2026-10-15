@@ -12,6 +12,7 @@ INVENTORY = {
     # story
     ("story", "cycle"),
     ("story", "mockup"),
+    ("story", "annotate"),
     ("story", "grew_from"),
     ("story", "dependencies_blocked_by"),
     ("story", "dependencies_blocks"),
@@ -45,6 +46,9 @@ INVENTORY = {
     ("mockup", "status"),
     ("mockup", "origin"),
     ("mockup", "solidify_outcome"),
+    # annotation
+    ("annotation", "graduated_to"),
+    ("annotation", "status"),
     # notebook
     ("notebook", "graduated_to"),
     ("notebook", "source"),

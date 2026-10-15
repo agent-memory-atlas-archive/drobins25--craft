@@ -426,6 +426,10 @@ class TestStatusProseDrift(unittest.TestCase):
             "commands/references/bugs-record.md",
             "the bug record template and its status words",
         ),
+        (
+            "commands/references/story-from-annotate.md",
+            "writes graduated onto the annotation record",
+        ),
     )
 
     @classmethod

@@ -67,17 +67,18 @@ fi
 begin_test "no shadowBlur anywhere"
 assert_file_not_contains "no shadowBlur" "shadowBlur" "$TEMPLATE"
 
-# --- Test 8: ten node type hues are defined ---
-begin_test "ten node type hues are defined"
+# --- Test 8: eleven node type hues are defined ---
+begin_test "eleven node type hues are defined; annotation matches its locked value"
 TYPE_HSL_BLOCK=$(awk '/const TYPE_HSL = \{/,/^\};/' "$TEMPLATE")
 HUE_KEY_COUNT=$(echo "$TYPE_HSL_BLOCK" | grep -cE '^\s*[a-z]+:\s*\[')
-assert_eq "TYPE_HSL has ten keys" "10" "$HUE_KEY_COUNT"
-for t in cycle story fix tweak planning notebook riff dial mockup bug; do
+assert_eq "TYPE_HSL has eleven keys" "11" "$HUE_KEY_COUNT"
+for t in cycle story fix tweak planning notebook riff dial mockup bug annotation; do
   assert_contains "TYPE_HSL has a $t key" "$t:" "$TYPE_HSL_BLOCK"
 done
 assert_contains "dial hue matches the locked value" "\[302, 42, 63\]" "$TYPE_HSL_BLOCK"
 assert_contains "mockup hue matches the locked value" "\[135, 45, 56\]" "$TYPE_HSL_BLOCK"
 assert_contains "bug hue matches the locked value" "\[156, 50, 52\]" "$TYPE_HSL_BLOCK"
+assert_contains "annotation hue matches the locked value" "\[235, 45, 62\]" "$TYPE_HSL_BLOCK"
 assert_file_not_contains "the banned yellow-green hue never appears" "\[80, 55, 56\]" "$TEMPLATE"
 
 # --- Test 9: ported constants match their locked values ---
@@ -763,6 +764,8 @@ assert_contains "the record title holds the mockup's size" "font-size: 18px;" "$
 
 STAMP_LINE=$(head -10 "$TEMPLATE" | grep '<meta name="craft-template-version" content="')
 assert_not_contains "the template stamp moved off 5" 'content="5"' "$STAMP_LINE"
+assert_not_contains "the template stamp moved off 8" 'content="8"' "$STAMP_LINE"
+assert_file_contains "annotation summaries read from the Pins section" "annotation: 'Pins'" "$TEMPLATE"
 
 # --- Test 61: record text becomes structured, verbatim DOM through the parse ---
 begin_test "record text becomes structured, verbatim DOM through the parse"

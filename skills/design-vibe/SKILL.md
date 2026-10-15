@@ -133,7 +133,7 @@ options:
     description: "I want to see a different direction entirely"
 ```
 
-**If "Yes, that's it":** Write the soul statement and vibe to `.craft/design/locked.md`. If the project uses tokens, translate to `.craft/design/tokens.yaml`. The vibe is now the aesthetic authority - creative-spark reads it, style-analyzer enforces it.
+**If "Yes, that's it":** Transition to `lock-decision` to write the approved vibe - design-vibe has no write tools of its own. Hand it the soul statement and vibe as a design pattern lock for `.craft/design/locked.md`, and, if the project uses tokens, the translated values as a token lock for `.craft/design/tokens.yaml` (lock-decision edits only the named keys of an existing tokens.yaml, never rewriting it). The vibe is now the aesthetic authority - creative-spark reads it, style-analyzer enforces it.
 
 **If "Close, but...":** The user's adjustment IS the most valuable signal. Listen carefully. Adjust the specific elements they call out. Re-present the refined version.
 

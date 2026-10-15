@@ -104,11 +104,69 @@ _find_active_sub_project() {
   return 1
 }
 
+# Capture scripts (bugs, notebook) call this after sourcing, only when no
+# CRAFT_PROJECT_ROOT was given. A monorepo's top level is not a project: a
+# record filed there - nothing resolved, or several projects and none picked -
+# sits where no project's session ever lists it. In that case this prints one
+# refusal line to stderr naming the projects found and returns 0, and the
+# caller writes nothing. Returns 1 (go ahead) otherwise, including a top level
+# that is itself a project.
+# Usage: craft_refuse_monorepo_top "<what is being filed, e.g. a bug>"
+craft_refuse_monorepo_top() {
+  local what="$1" top names
+  local fw_dir
+  fw_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  if [ -n "${PROJECT_ROOT:-}" ]; then
+    [ "${CRAFT_MULTI_PROJECT:-}" = "true" ] || return 1
+    [ "$(cd "${PROJECT_ROOT%/}" 2>/dev/null && pwd -P)" = "$(cd "$top" && pwd -P)" ] || return 1
+  fi
+  names=$(bash "$fw_dir/discover-projects.sh" 2>/dev/null | cut -d'|' -f1 | paste -sd, - | sed 's/,/, /g')
+  [ -n "$names" ] || return 1
+  echo "nothing written: $top is a monorepo's top level, and $what filed here would sit where no project's session lists it. Projects found: $names. Pick one with /craft:project, or set CRAFT_PROJECT_ROOT to the project's folder when a script or agent files it." >&2
+  return 0
+}
+
+# Which folder a project's craft files go in before /craft:init has set it up.
+# Reads what the main resolution below leaves in PROJECT_ROOT, so call it after
+# sourcing this file. Answer order: the set-up project when one resolved, else
+# the git top level (never a subfolder), else the current folder.
+#
+# Callers that were handed a CRAFT_PROJECT_ROOT use that folder as given and do
+# not call this: the main block drops a handed-in folder that has no .craft/
+# yet, which would erase exactly the folder they were told to use.
+#
+# Prints the folder (no trailing slash) on stdout and sets, in the caller's
+# shell, CRAFT_BEFORE_INIT_ROOT (the same folder) and CRAFT_BEFORE_INIT_FROM
+# (project, git or folder) so a script can tell which step answered; a $(...)
+# capture loses both. It assigns none of PROJECT_ROOT, CRAFT_PROJECT_ROOT,
+# CRAFT_PROJECT_NAME or CRAFT_MULTI_PROJECT, so callers still see the "several
+# projects" flag, and it never refuses, exits or creates anything. Always
+# returns 0, with nothing on stderr.
+# Usage: craft_before_init_root >/dev/null; folder="$CRAFT_BEFORE_INIT_ROOT"
+craft_before_init_root() {
+  local root="${PROJECT_ROOT:-}" from="project" top
+  root="${root%/}"
+  if [ -z "$root" ]; then
+    if top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ]; then
+      root="$top"
+      from="git"
+    else
+      root="$PWD"
+      from="folder"
+    fi
+  fi
+  CRAFT_BEFORE_INIT_ROOT="$root"
+  CRAFT_BEFORE_INIT_FROM="$from"
+  printf '%s\n' "$root"
+  return 0
+}
+
 # Main resolution
-if [ -z "$PROJECT_ROOT" ]; then
+if [ -z "${PROJECT_ROOT:-}" ]; then
 
   # 1. Check CRAFT_PROJECT_ROOT env var (session-pinned)
-  if [ -n "$CRAFT_PROJECT_ROOT" ]; then
+  if [ -n "${CRAFT_PROJECT_ROOT:-}" ]; then
     local_root="${CRAFT_PROJECT_ROOT%/}/"
     if [ -d "${local_root}.craft" ]; then
       PROJECT_ROOT="$local_root"
@@ -120,7 +178,7 @@ if [ -z "$PROJECT_ROOT" ]; then
   fi
 
   # 2. Walk up from PWD
-  if [ -z "$PROJECT_ROOT" ]; then
+  if [ -z "${PROJECT_ROOT:-}" ]; then
     nearest=$(_find_nearest_craft) || true
 
     if [ -n "$nearest" ]; then
@@ -159,7 +217,7 @@ if [ -z "$PROJECT_ROOT" ]; then
   fi
 
   # 3. Final fallback — error if nothing found
-  if [ -z "$PROJECT_ROOT" ]; then
+  if [ -z "${PROJECT_ROOT:-}" ]; then
     # Return silently instead of erroring — hooks should exit 0, not crash
     return 1 2>/dev/null || exit 1
   fi

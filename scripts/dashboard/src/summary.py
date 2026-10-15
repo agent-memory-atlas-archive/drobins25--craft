@@ -1,13 +1,14 @@
 """Per-record summary extraction: one card-ready line per record type.
 
-Nine record types, six distinct source shapes, one fallback: story reads
-`## Spark`; cycle reads the `target:` field (cycle.yaml has no body); fix
-reads `## Symptom`, falling back to `trigger:` for records predating the
-heading; tweak reads `## Request`, falling back to the first body paragraph
-for the legacy shape; mockup reads `## Brief`; notebook has no headings, so
-its summary is the paragraph after the title line the parser already takes;
-dial, riff and planning have no per-type heading, so the summary is the
-first body paragraph, skipping a leading H1 where one exists.
+Eleven record types: story reads `## Spark`; cycle reads the `target:`
+field (cycle.yaml has no body); fix reads `## Symptom`, falling back to
+`trigger:` for records predating the heading; tweak reads `## Request`,
+falling back to the first body paragraph for the legacy shape; mockup reads
+`## Brief`; annotation reads the first line of `## Pins`; bug reads
+`## Consequences`, falling back to `## What happened`; notebook has no
+headings, so its summary is the paragraph after the title line the parser
+already takes; dial, riff and planning have no per-type heading, so the
+summary is the first body paragraph, skipping a leading H1 where one exists.
 
 The panel renders this through `textContent`, so inline markdown syntax
 would show its own punctuation on the card - it is reduced to plain text.
@@ -76,6 +77,19 @@ def _mockup(fields, stripped):
     return _from_section(stripped, "Brief")
 
 
+def _annotation(fields, stripped):
+    """The record's pins are a numbered list, which _first_paragraph skips
+    by design - so the summary is the first pin line itself, or the
+    paragraph a pinless record carries instead."""
+    section = body_mod.section(stripped, "Pins")
+    if section is None:
+        return None
+    for line in section.split("\n"):
+        if line.strip():
+            return _LIST_MARKER_RE.sub("", line, count=1)
+    return None
+
+
 def _notebook(fields, stripped):
     lines = stripped.split("\n")
     for i, line in enumerate(lines):
@@ -103,6 +117,7 @@ _HANDLERS = {
     "fix": _fix,
     "tweak": _tweak,
     "mockup": _mockup,
+    "annotation": _annotation,
     "notebook": _notebook,
     "bug": _bug,
     "dial": _after_h1,

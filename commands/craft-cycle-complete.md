@@ -99,6 +99,7 @@ Use **Grep** with pattern `^type: ui`, path `$cycle_dir/stories/`, glob `*.md`, 
 
 ```
 Brief:
+  PLUGIN_ROOT: [resolved ${CLAUDE_PLUGIN_ROOT} - the agent cannot expand it]
   Dev server: [command to start, e.g., "npm run dev"]
   URL: [e.g., "http://localhost:5173"]
 

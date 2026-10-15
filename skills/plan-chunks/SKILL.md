@@ -180,7 +180,7 @@ question: "Want to riff visual options before planning chunks?"
 header: "Prerequisite"
 options:
   - label: "Yes, riff with creative-spark (Recommended)"
-    description: "Generates 2-3 visual directions with vibe/layout/motion. Grounds chunk planning in a chosen direction."
+    description: "Generates 3-4 visual directions with vibe/layout/motion. Grounds chunk planning in a chosen direction."
   - label: "Skip - I know what I want"
     description: "Plan straight to chunks."
 ```

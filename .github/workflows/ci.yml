@@ -12,9 +12,17 @@
 # beyond actions/checkout: the dashboard builder is Python stdlib only and
 # the rest of craft is bash. That cheapness is an asset - keep it.
 #
+# The annotate-browser job runs the annotate loop in the runner's Chrome. It is
+# blocking and has no needs, so a red or skipped suite can never leave it
+# unreported; CRAFT_CI_REQUIRE_BROWSER makes a missing browser a failure.
+#
+# The two Chrome jobs run their harness through its test file with
+# CRAFT_CI_LIVE=1. Everywhere else on GitHub those test files skip their live
+# Chrome part, so each Chrome run happens once, in its own job.
+#
 # The browser job is deliberately non-blocking (continue-on-error) and runs
-# last: it is the only job needing installed software (the runner's Chrome),
-# and the only check anywhere that RUNS the dashboard page over file://.
+# last: it needs installed software (the runner's Chrome), and it is the only
+# check anywhere that RUNS the dashboard page over file://.
 #
 # Job ids are also the check names branch protection is given - see
 # docs/ci-branch-protection.md before editing any id here.
@@ -72,10 +80,22 @@ jobs:
           fetch-depth: 0
       - run: bash scripts/ci/check-template-stamp.sh --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
 
+  annotate-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CRAFT_CI_REQUIRE_BROWSER: "1"
+      CRAFT_CI_LIVE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/test-ci-annotate-check.sh
+
   browser:
     runs-on: ubuntu-latest
     needs: [dashboard, hooks, lifecycle, flows, misc, doc-drift, template-stamp]
     continue-on-error: true
+    env:
+      CRAFT_CI_LIVE: "1"
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/ci/browser-check.sh
+      - run: bash tests/test-ci-browser-check.sh

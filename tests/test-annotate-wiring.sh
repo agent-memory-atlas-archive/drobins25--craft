@@ -1,0 +1,1202 @@
+#!/bin/bash
+# test-annotate-wiring.sh - Structural contracts on the annotation overlay.
+#
+# The overlay's on-page behaviour cannot be executed by this suite (there is no
+# JavaScript runtime in the repo), so the rules that make it honest are frozen
+# here as facts about the one reference file that carries its source: one
+# copy, verbatim labels, no hardcoded port, no shared palette reads, an install
+# guard, no request before a gesture, a delivery stamp only on a real 200,
+# a clear that posts the tombstone, and a teardown that leaves nothing behind.
+# Usage: bash tests/test-annotate-wiring.sh
+
+source "$(dirname "${BASH_SOURCE[0]}")/test_helper.sh"
+
+REPO="$PLUGIN_ROOT"
+REF="$REPO/commands/references/annotate-overlay.md"
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# fenced_block <info-string> <file> - body of the first fence with that info string
+fenced_block() {
+  awk -v info="$1" '
+    $0 == "```" info {inside=1; next}
+    inside && $0 == "```" {exit}
+    inside {print}
+  ' "$2"
+}
+
+# fence_count <info-string> <file> - number of fences opened with that info string
+fence_count() { grep -cx -- "\`\`\`$1" "$2" || true; }
+
+# fn_body <name> - the top-level `  const <name> = ...` block of $SRC, through its closing `  };`
+fn_body() {
+  printf '%s\n' "$SRC" | awk -v s="  const $1 = " 'index($0, s) == 1 {on=1} on {print} on && $0 == "  };" {exit}'
+}
+
+# line_of <needle> <text> - first line number holding the literal needle (empty when absent)
+line_of() { printf '%s\n' "$2" | grep -nF -m1 -- "$1" | cut -d: -f1 || true; }
+
+# count_of <needle> <text> - number of lines holding the literal needle
+count_of() { printf '%s\n' "$2" | grep -cF -- "$1" || true; }
+
+# lacks_literal <desc> <needle> <text> - literal absence assertion (assert_not_contains is a regex)
+lacks_literal() {
+  if printf '%s\n' "$3" | grep -qF -- "$2"; then
+    echo "  FAIL: $1"
+    echo "    should NOT contain (literal): '$2'"
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS: $1"
+    PASS=$((PASS + 1))
+  fi
+}
+
+# pos_of <needle> <text> - character offset of the first literal needle (empty when absent)
+pos_of() {
+  case "$2" in
+    *"$1"*) local head="${2%%"$1"*}"; echo "${#head}" ;;
+    *) echo "" ;;
+  esac
+}
+
+# before <desc> <line-a> <line-b> - both lines found and a strictly earlier than b
+before() {
+  if [ -n "$2" ] && [ -n "$3" ] && [ "$2" -lt "$3" ]; then
+    echo "  PASS: $1"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $1"
+    echo "    line a: '${2:-missing}'  line b: '${3:-missing}'"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+section_of() {
+  printf '%s\n' "$2" | awk -v h="$1" '
+    index($0, h) == 1 {on=1; level=0; while (substr(h, level + 1, 1) == "#") level++; print; next}
+    on && /^#+ / {n=0; while (substr($0, n + 1, 1) == "#") n++; if (n <= level) exit}
+    on {print}
+  '
+}
+
+begin_test "overlay reference exists"
+assert_file_exists "commands/references/annotate-overlay.md" "$REF"
+if [ ! -f "$REF" ]; then
+finish_tests "test-annotate-wiring"
+fi
+
+SRC="$(fenced_block overlay-source "$REF")"
+WHOLE="$(cat "$REF")"
+
+begin_test "the overlay reference documents GET /overlay.js"
+assert_contains_literal "the protocol table has the route" '| `GET /overlay.js` |' "$WHOLE"
+assert_contains_literal "the served delivery is named" "Served by the listener" "$WHOLE"
+assert_contains_literal "the pasted delivery is named" "pasted" "$WHOLE"
+assert_contains_literal "the spliced delivery is named" "bake" "$WHOLE"
+assert_contains_literal "listener and bake read the fence at run time" "at run time" "$WHOLE"
+assert_contains_literal "the loader's request is the flow's, never the overlay's" "never by the overlay" "$WHOLE"
+
+begin_test "the missing-reference branch only finishes"
+BRANCH="$(awk '/^if \[ ! -f "\$REF" \]; then$/ {on=1; next} on && /^fi$/ {exit} on {print}' "${BASH_SOURCE[0]}" | grep -v '^[[:space:]]*$' || true)"
+assert_eq "the branch holds one statement" "1" "$(printf '%s\n' "$BRANCH" | wc -l | tr -d ' ')"
+assert_contains_literal "that statement is finish_tests" 'finish_tests "test-annotate-wiring"' "$BRANCH"
+
+begin_test "overlay reference carries exactly one source block"
+assert_eq "one overlay-source fence" "1" "$(fence_count overlay-source "$REF")"
+assert_eq "the IIFE opener line appears once in the whole file" "1" "$(grep -cx -- '(() => {' "$REF" || true)"
+assert_contains_literal "install guard makes a second injection a no-op" \
+  'if (window.__craftAnnotateInstalled) return;' "$SRC"
+assert_contains_literal "install flag is set after the guard" \
+  'window.__craftAnnotateInstalled = true;' "$SRC"
+assert_eq "source closes as a single expression" "})();" "$(printf '%s\n' "$SRC" | tail -1)"
+
+begin_test "the control labels appear verbatim"
+assert_contains_literal "COMMENT MODE: OFF" "'COMMENT MODE: OFF'" "$SRC"
+assert_contains_literal "COMMENT MODE: ON" "'COMMENT MODE: ON'" "$SRC"
+assert_contains_literal "CLEAR PINS" "'CLEAR PINS'" "$SRC"
+assert_contains_literal "SEND TO CLAUDE" "'SEND TO CLAUDE'" "$SRC"
+assert_contains_literal "strip readout prefix" "'MARKUP - '" "$SRC"
+assert_contains_literal "strip readout suffix" "' marks'" "$SRC"
+assert_contains_literal "CLEARED status" "'CLEARED'" "$SRC"
+
+begin_test "no project design token, tokens.yaml reference, or .craft path appears"
+lacks_literal "no tokens.yaml" "tokens.yaml" "$WHOLE"
+lacks_literal "no .craft path" ".craft" "$WHOLE"
+lacks_literal "no CSS variable read" "var(--" "$WHOLE"
+assert_eq "no design-token wording anywhere in the reference" "0" "$(grep -ci 'design token' "$REF" || true)"
+
+begin_test "the ca-* constants are defined in the script and nowhere else"
+assert_contains_literal "proof border" "2px solid #c8102e" "$SRC"
+assert_contains_literal "pin mark" "#c8102e" "$SRC"
+assert_contains_literal "strip background" "rgba(16,16,19,0.95)" "$SRC"
+assert_contains_literal "strip action hover" "rgba(210,215,225,0.55)" "$SRC"
+assert_contains_literal "comment surface" "#ffffff" "$SRC"
+assert_contains_literal "comment shadow" "0 8px 30px rgba(0,0,0,0.35)" "$SRC"
+assert_contains_literal "comment text" "#111111" "$SRC"
+assert_eq "the marker red appears only inside the source fence" \
+  "$(grep -c '#c8102e' <<< "$SRC" || true)" "$(grep -c '#c8102e' "$REF" || true)"
+OUTSIDE="$(cd "$REPO" && grep -rlE '#c8102e|ca-proof-border|ca-pin-mark|ca-strip-bg|ca-strip-action|ca-comment-surface' \
+  commands skills agents hooks scripts templates .craft/design 2>/dev/null | grep -v '^commands/references/annotate-overlay.md$' || true)"
+assert_eq "no other shipped file or design bible carries them" "" "$OUTSIDE"
+
+begin_test "no 127.0.0.1:<digits> literal - the base reads window.__craftAnnotatePort"
+assert_eq "no loopback port literal in the file" "0" "$(grep -cE '(127\.0\.0\.1|localhost):[0-9]' "$REF" || true)"
+assert_contains_literal "base is the stamped port" "'http://127.0.0.1:' + window.__craftAnnotatePort" "$SRC"
+assert_contains_literal "an absent stamp means no base" "window.__craftAnnotatePort ?" "$SRC"
+
+begin_test "the stream client: /events behind the baked guard, /changes behind the run stamp, one EventSource"
+GUARD_LINE="$(line_of 'window.__craftAnnotateBaked ?' "$SRC")"
+EVENTS_LINE="$(line_of "'/events'" "$SRC")"
+assert_not_eq "the stream path is chosen from the baked stamp" "" "$GUARD_LINE"
+assert_eq "the baked stamp is read in one place" "1" "$(count_of "window.__craftAnnotateBaked" "$SRC" | tr -d ' ')"
+assert_eq "exactly one /events literal" "1" "$(count_of "/events" "$SRC")"
+assert_eq "exactly one /changes literal" "1" "$(count_of "'/changes'" "$SRC")"
+assert_eq "exactly one EventSource construction" "1" "$(count_of "new EventSource(" "$SRC")"
+assert_contains_literal "the baked page is /events, the run-stamped page /changes" "streamKind === 'baked' ? '/events' : '/changes'" "$SRC"
+assert_contains_literal "baked wins, the run stamp is the second choice" "window.__craftAnnotateBaked ? 'baked' : (window.__craftAnnotateRun ? 'run' : null)" "$SRC"
+assert_contains_literal "reload event listener" "addEventListener('reload'" "$SRC"
+assert_contains_literal "the reload listener belongs to the baked stream only" "if (streamKind === 'baked') stream.addEventListener('reload'" "$SRC"
+assert_contains_literal "the sheet event listener belongs to the run stream only" "else stream.addEventListener('sheet', onSheet);" "$SRC"
+assert_contains_literal "reconnect backoff is bounded" "Math.min(" "$SRC"
+assert_contains_literal "a stream that never opened gives up" "!opened" "$SRC"
+assert_contains_literal "the stream is opened on the live base, through the one URL builder" "new EventSource(channelUrl(path))" "$SRC"
+
+begin_test "no Last-Modified polling survives"
+lacks_literal "no Last-Modified" "Last-Modified" "$SRC"
+lacks_literal "no interval loop" "setInterval" "$SRC"
+lacks_literal "no HEAD request" "'HEAD'" "$SRC"
+lacks_literal "no done endpoint" "/done" "$SRC"
+lacks_literal "no option payload field" "option:" "$SRC"
+
+begin_test "inert when unarmed: the only requests are the gesture handlers and the run-stamped sheet traffic"
+assert_eq "exactly four fetch calls: pins, clear, session sheet, applied report" "4" "$(count_of "fetch(" "$SRC")"
+assert_eq "exactly one /session.css literal" "1" "$(count_of "'/session.css'" "$SRC")"
+assert_eq "exactly one /applied literal" "1" "$(count_of "'/applied'" "$SRC")"
+assert_contains_literal "/session.css lives in the sheet fetch, behind the run stamp" "'/session.css'" "$(fn_body fetchSheet)"
+assert_contains_literal "the sheet fetch checks the run stamp" "runId()" "$(fn_body fetchSheet)"
+assert_contains_literal "/applied lives in the report, behind the run stamp" "'/applied'" "$(fn_body report)"
+assert_contains_literal "the report checks the run stamp" "runId()" "$(fn_body report)"
+assert_eq "exactly one /pins literal (send-only)" "1" "$(count_of "'/pins'" "$SRC")"
+assert_eq "exactly one /clear literal" "1" "$(count_of "'/clear'" "$SRC")"
+lacks_literal "no beacon" "sendBeacon" "$SRC"
+lacks_literal "no XMLHttpRequest" "XMLHttpRequest" "$SRC"
+assert_contains_literal "/pins fetch lives in the send handler" "'/pins'" "$(fn_body send)"
+assert_contains_literal "/clear fetch lives in the clear handler" "'/clear'" "$(fn_body clearAll)"
+
+begin_test "the RETURNED stamp literal appears only inside the POST success region"
+SEND_BODY="$(fn_body send)"
+THEN_PART="$(printf '%s\n' "$SEND_BODY" | awk 'index($0, ".then(res =>") {on=1} on {print} on && index($0, ".catch(") {exit}')"
+assert_eq "RETURNED appears once in the source" "1" "$(count_of "RETURNED" "$SRC")"
+assert_contains_literal "RETURNED sits in the resolved .then region" "RETURNED" "$THEN_PART"
+before "the ok check precedes the stamp" "$(line_of 'res.ok' "$THEN_PART")" "$(line_of 'RETURNED' "$THEN_PART")"
+assert_contains_literal "stamps for delivered pins are applied in the same region" "markSent(set)" "$THEN_PART"
+assert_eq "markSent is called nowhere else" "1" "$(count_of "markSent(" "$SRC" | tr -d ' ')"
+
+begin_test "the NOT ARMED string names its unmet condition on screen"
+assert_contains_literal "NOT ARMED - no craft session listening" "NOT ARMED - no craft session listening" "$SRC"
+assert_contains_literal "non-200 is treated as not armed" "if (!res.ok)" "$SEND_BODY"
+assert_contains_literal "a rejected request is treated as not armed" ".catch(" "$SEND_BODY"
+
+begin_test "a refused SEND is named BLOCKED BY PAGE, never NOT ARMED"
+assert_contains_literal "BLOCKED BY PAGE string names its condition on screen" "BLOCKED BY PAGE - ask Claude to read pins directly" "$SRC"
+assert_eq "BLOCKED_BY_PAGE is defined once in the source" "1" "$(count_of "const BLOCKED_BY_PAGE = " "$SRC" | tr -d ' ')"
+CATCH_PART="$(printf '%s\n' "$SEND_BODY" | awk 'index($0, ".catch(") {on=1} on {print}')"
+assert_contains_literal "the catch branch says BLOCKED BY PAGE" "say(BLOCKED_BY_PAGE)" "$CATCH_PART"
+lacks_literal "the catch branch no longer says NOT ARMED" "say(NOT_ARMED)" "$CATCH_PART"
+assert_contains_literal "a non-200 reply still says NOT ARMED" "say(NOT_ARMED)" "$THEN_PART"
+assert_contains_literal "the reference prose names BLOCKED BY PAGE" "BLOCKED BY PAGE" "$(printf '%s\n' "$WHOLE" | grep -F "Honest confirmation" || true)"
+
+begin_test "delete and edit handlers exist and the renumber routine is called on delete"
+assert_contains_literal "DELETE control" "'DELETE'" "$SRC"
+assert_contains_literal "EDIT control" "'EDIT'" "$SRC"
+assert_contains_literal "removeEntry exists" "  const removeEntry = " "$SRC"
+assert_contains_literal "renumber exists" "  const renumber = " "$SRC"
+assert_contains_literal "removeEntry renumbers survivors" "renumber()" "$(fn_body removeEntry)"
+assert_contains_literal "edit stales the delivered flag" "sent = false" "$(fn_body editEntry)"
+
+begin_test "the detached state literal exists"
+assert_contains_literal "detached class" "ca-detached" "$SRC"
+assert_contains_literal "detached label" "DETACHED" "$SRC"
+assert_contains_literal "anchor resolution is guarded" "document.querySelector(" "$SRC"
+
+begin_test "the SEND handler commits the open box before collecting the set"
+before "commitOpenBox precedes currentSet inside send" \
+  "$(line_of 'commitOpenBox()' "$SEND_BODY")" "$(line_of 'currentSet()' "$SEND_BODY")"
+
+begin_test "no ca-sheet-cast and no full-viewport background layer in the source"
+lacks_literal "no ca-sheet-cast" "ca-sheet-cast" "$WHOLE"
+lacks_literal "no backdrop filter" "backdrop-filter" "$SRC"
+SHEET_RULE="$(printf '%s\n' "$SRC" | grep -F "'#ca-sheet{" || true)"
+assert_contains_literal "sheet ignores pointer events" "pointer-events:none" "$SHEET_RULE"
+lacks_literal "sheet rule sets no background" "background" "$SHEET_RULE"
+assert_contains_literal "sheet is the proof border" "CA.proofBorder" "$SHEET_RULE"
+
+begin_test "the canonical annotate clear appears verbatim and mentions no dial marker"
+cat > "$TMP_DIR/expected-clear" <<'EOF'
+document.getElementById('ca-style')?.remove(); document.getElementById('ca-sheet')?.remove(); document.getElementById('ca-strip')?.remove(); document.querySelectorAll('[data-craft-annotate-injected],.ca-pin,.ca-popover,.ca-box').forEach(el => el.remove()); document.body.classList.remove('ca-mode'); delete window.__craftAnnotateInstalled;
+EOF
+fenced_block annotate-clear "$REF" > "$TMP_DIR/actual-clear"
+assert_eq "one annotate-clear fence" "1" "$(fence_count annotate-clear "$REF")"
+CLEAR_RC=0; cmp -s "$TMP_DIR/expected-clear" "$TMP_DIR/actual-clear" || CLEAR_RC=$?
+assert_eq "the clear matches the contract byte for byte" "0" "$CLEAR_RC"
+lacks_literal "no dial marker anywhere in the file" "data-craft-dial-injected" "$WHOLE"
+lacks_literal "no dial handles anywhere in the file" "craft-dial" "$WHOLE"
+assert_contains_literal "nodes carry the annotate marker" "data-craft-annotate-injected" "$SRC"
+
+begin_test "prefers-reduced-motion block is present and zeroes durations"
+RM_LINE="$(printf '%s\n' "$SRC" | grep -F 'prefers-reduced-motion: reduce' || true)"
+assert_contains_literal "reduced-motion media query" "@media (prefers-reduced-motion: reduce)" "$RM_LINE"
+assert_contains_literal "transition duration zeroed" "transition-duration:0ms" "$RM_LINE"
+assert_contains_literal "animation duration zeroed" "animation-duration:0ms" "$RM_LINE"
+
+begin_test "CLEAR posts the tombstone before the wipe, and neither waits on the other"
+CLEAR_BODY="$(fn_body clearAll)"
+before "the /clear post precedes the storage purge" \
+  "$(line_of "'/clear'" "$CLEAR_BODY")" "$(line_of 'localStorage.removeItem' "$CLEAR_BODY")"
+before "the /clear post precedes the DOM wipe" \
+  "$(line_of "'/clear'" "$CLEAR_BODY")" "$(line_of '.remove()' "$CLEAR_BODY")"
+lacks_literal "the wipe is not chained on the post" ".then(" "$CLEAR_BODY"
+assert_contains_literal "the counter is reset" "seq = 0" "$CLEAR_BODY"
+assert_contains_literal "the readout reports zero marks" "CLEARED" "$CLEAR_BODY"
+
+begin_test "teardown is total: listeners, stream and nodes all die with the strip"
+assert_contains_literal "handlers check the strip is still attached" "strip.isConnected" "$SRC"
+assert_contains_literal "handlers unregister themselves" "removeEventListener(" "$SRC"
+assert_contains_literal "the stream is closed on teardown" ".close()" "$SRC"
+assert_contains_literal "the flag is deleted by the clear so re-install works" "delete window.__craftAnnotateInstalled" "$WHOLE"
+
+begin_test "comments render as text, never markup"
+lacks_literal "no innerHTML" "innerHTML" "$SRC"
+lacks_literal "no insertAdjacentHTML" "insertAdjacentHTML" "$SRC"
+lacks_literal "no outerHTML" "outerHTML" "$SRC"
+assert_contains_literal "textContent is the write path" ".textContent = " "$SRC"
+
+begin_test "pins persist keyed by page path, best-effort"
+assert_contains_literal "storage key includes the page path" "location.pathname" "$SRC"
+assert_contains_literal "storage reads sit in try/catch" "catch (e)" "$SRC"
+assert_contains_literal "rehydrate reads the keyed entry" "localStorage.getItem(storeKey())" "$SRC"
+
+begin_test "pin payload shape"
+for field in "n:" "text:" "x:" "y:" "selector:" "nearText:" "ts:"; do
+  assert_contains_literal "payload field $field" "$field" "$(fn_body makeData)"
+done
+assert_contains_literal "candidate copied from the context global" "window.__craftAnnotateContext" "$SRC"
+assert_contains_literal "nearText is sliced to 60" "slice(0, 60)" "$SRC"
+assert_contains_literal "cssPath is 5 deep" "p.length < 5" "$SRC"
+
+begin_test "popover: one at a time, outside click in capture phase, Escape closes"
+assert_contains_literal "outside-click listener registers in the capture phase" "}, true);" "$SRC"
+assert_contains_literal "Escape closes" "e.key === 'Escape'" "$SRC"
+assert_contains_literal "comment hint" "Enter = save / Esc = cancel" "$SRC"
+
+begin_test "strip isolation and placement"
+STRIP_RULE="$(printf '%s\n' "$SRC" | grep -F "'#ca-strip{" || true)"
+for needle in "position:fixed" "z-index:2147483000" "font-family" "font-size" "line-height" "color:" "background:" "box-sizing"; do
+  assert_contains_literal "strip rule sets $needle" "$needle" "$STRIP_RULE"
+done
+assert_contains_literal "style goes in head" "document.head.appendChild(" "$SRC"
+assert_contains_literal "handles: style id" "'ca-style'" "$SRC"
+assert_contains_literal "handles: sheet id" "'ca-sheet'" "$SRC"
+assert_contains_literal "handles: strip id" "'ca-strip'" "$SRC"
+
+begin_test "the reference documents the port stamp and the channel protocol"
+assert_eq "one annotate-stamp fence" "1" "$(fence_count annotate-stamp "$REF")"
+assert_contains_literal "raw tab stamp" "window.__craftAnnotatePort" "$(fenced_block annotate-stamp "$REF")"
+assert_contains_literal "baked stamp" "window.__craftAnnotateBaked" "$(fenced_block annotate-stamp "$REF")"
+assert_contains_literal "POST /pins documented" "POST /pins" "$WHOLE"
+assert_contains_literal "POST /clear documented" "POST /clear" "$WHOLE"
+assert_contains_literal "GET /events documented" "GET /events" "$WHOLE"
+assert_contains_literal "reload event documented" "event: reload" "$WHOLE"
+
+begin_test "reference hygiene"
+EM_DASH="$(printf '\xe2\x80\x94')"
+assert_eq "no em dashes" "0" "$(grep -c "$EM_DASH" "$REF" || true)"
+assert_eq "no chrome-devtools mention (the dial sweep arrays are not extended here)" "0" "$(grep -c 'chrome-devtools' "$REF" || true)"
+VOCAB_RC=0; python3 "$SCRIPTS_DIR/check-craft-vocab.py" --scan "$REF" >/dev/null 2>&1 || VOCAB_RC=$?
+assert_eq "vocab scan exits 0" "0" "$VOCAB_RC"
+
+begin_test "raw-tab flow: clear order, stamp order, injection"
+FLOW="$REPO/commands/references/annotate-inline.md"
+SHELL_FILE="$REPO/commands/craft-annotate.md"
+FLOW_TEXT="$(cat "$FLOW" 2>/dev/null || true)"
+SHELL_TEXT="$(cat "$SHELL_FILE" 2>/dev/null || true)"
+assert_file_exists "flow reference exists" "$FLOW"
+assert_file_exists "command shell exists" "$SHELL_FILE"
+assert_contains_literal "flow carries the dial clear literal" "craft-dial-style" "$FLOW_TEXT"
+assert_contains_literal "flow carries the annotate clear byte-exact" "$(fenced_block annotate-clear "$REF")" "$FLOW_TEXT"
+assert_contains_literal "flow names the overlay source fence it injects" "overlay-source" "$FLOW_TEXT"
+assert_contains_literal "flow names the stamp verb" 'annotate-run.sh" stamp --session' "$FLOW_TEXT"
+L_ARM="$(line_of 'annotate-run.sh" arm' "$FLOW_TEXT")"
+L_DIAL="$(line_of "craft-dial-style" "$FLOW_TEXT")"
+L_STAMP="$(line_of 'annotate-run.sh" stamp --session' "$FLOW_TEXT")"
+L_SRC="$(line_of "overlay-source" "$FLOW_TEXT")"
+L_WAIT="$(line_of "1800000" "$FLOW_TEXT")"
+before "arm precedes the dial clear" "$L_ARM" "$L_DIAL"
+before "dial clear precedes the port stamp" "$L_DIAL" "$L_STAMP"
+before "the port stamp precedes the overlay source" "$(pos_of 'annotate-run.sh" stamp --session' "$FLOW_TEXT")" "$(pos_of 'overlay-source' "$FLOW_TEXT")"
+before "injection precedes the wait" "$L_SRC" "$L_WAIT"
+assert_contains_literal "no baked flag is stamped by this flow" "never stamp" "$FLOW_TEXT"
+assert_contains_literal "re-injection after navigation is named" "re-inject" "$FLOW_TEXT"
+assert_contains_literal "navigation named as the trigger" "navigation" "$FLOW_TEXT"
+assert_contains_literal "reuse goes through status before arming" 'annotate-run.sh" status' "$FLOW_TEXT"
+
+begin_test "annotate Step 4: the loader is the primary inject and the fence appears only in the fallback"
+STEP4="$(section_of '## Step 4' "$FLOW_TEXT")"
+L_LOADER="$(line_of 'annotate-run.sh" loader --session' "$STEP4")"
+L_FENCE="$(line_of 'overlay-source' "$STEP4")"
+assert_not_eq "Step 4 names the loader verb" "" "$L_LOADER"
+assert_contains_literal "the loader takes the tab url" '--page "<tab url>"' "$STEP4"
+assert_contains_literal "the loader stamps the run" '--page "<tab url>" --run' "$STEP4"
+assert_contains_literal "the fallback passes the line stamp prints" 'the line `stamp` prints' "$STEP4"
+assert_contains_literal "the printed line is pasted verbatim" "verbatim" "$STEP4"
+before "the loader precedes the fence" "$L_LOADER" "$L_FENCE"
+FENCE_PARAS="$(printf '%s\n' "$FLOW_TEXT" | awk -v RS= -v ORS='\n\n' 'index($0, "overlay-source")')"
+assert_contains_literal "the paragraph naming the fence is the fallback" "SCRIPT-BLOCKED" "$FENCE_PARAS"
+assert_contains_literal "the fallback covers external pages" "EXTERNAL" "$FENCE_PARAS"
+assert_eq "exactly one paragraph names the fence" "1" "$(printf '%s\n' "$FLOW_TEXT" | awk -v RS= 'index($0, "overlay-source") {n++} END {print n + 0}')"
+assert_contains_literal "the fallback passes the fence as a function body" "() => { ... }" "$FENCE_PARAS"
+assert_contains_literal "external pages never load a served script" "never load" "$STEP4"
+assert_contains_literal "the from-the-page health probe stays" "/health" "$STEP4"
+
+begin_test "annotate Step 5: the watch runs under the Monitor tool, re-arms silently, and falls back to a one-shot background watch"
+STEP5="$(section_of '## Step 5' "$FLOW_TEXT")"
+assert_contains_literal "Step 2 reads the unreachable word from status" 'CLIENTS unreachable' "$FLOW_TEXT"
+assert_contains_literal "standby is the Monitor tool" "Monitor tool" "$STEP5"
+assert_contains_literal "the watch verb runs under it" 'annotate-run.sh" watch --session "<id>"' "$STEP5"
+assert_contains_literal "the Monitor timeout is thirty minutes" "timeout_ms: 1800000" "$STEP5"
+assert_contains_literal "each line arrives inside a notification" "inside a notification" "$STEP5"
+assert_contains_literal "no file is opened to read pins" "never open a file" "$STEP5"
+assert_contains_literal "expiry starts the same watch again" "expiry" "$STEP5"
+assert_contains_literal "the re-arm is silent" "silently" "$STEP5"
+assert_contains_literal "without Monitor the watch runs once" 'watch --session "<id>" --once' "$STEP5"
+assert_contains_literal "the one-shot runs in the background" "run_in_background: true" "$STEP5"
+assert_contains_literal "the one-shot is launched again after each wake" "after acting on each wake" "$STEP5"
+lacks_literal "no wait verb in the flow" 'annotate-run.sh" wait' "$FLOW_TEXT"
+lacks_literal "no wait flag in the flow" "wait --session" "$FLOW_TEXT"
+lacks_literal "no --since in the flow" "--since" "$FLOW_TEXT"
+lacks_literal "no one-hour timeout in the flow" "--timeout 3600" "$FLOW_TEXT"
+before "injection precedes the watch" "$L_SRC" "$L_WAIT"
+
+begin_test "raw-tab flow: no question widget, verbatim pins, teardown, degradation"
+assert_eq "flow never names the question widget" "0" "$(grep -c 'AskUserQuestion' "$FLOW" || true)"
+assert_eq "shell never names the question widget" "0" "$(grep -c 'AskUserQuestion' "$SHELL_FILE" || true)"
+assert_contains_literal "verbatim rule at the read site" "exact words" "$FLOW_TEXT"
+assert_contains_literal "teardown covers every exit path" "EVERY exit path" "$FLOW_TEXT"
+assert_contains_literal "teardown posts the tombstone via the clear verb" 'annotate-run.sh" clear' "$FLOW_TEXT"
+assert_contains_literal "tombstone named" "tombstone" "$FLOW_TEXT"
+assert_eq "flow never calls the disarm verb or names it" "0" "$(grep -ci 'disarm' "$FLOW" || true)"
+assert_contains_literal "listener lives until session end" "until the session ends" "$FLOW_TEXT"
+assert_contains_literal "no connection means one plain line and stop" "no offer" "$FLOW_TEXT"
+
+begin_test "command shell: routing only, inline read, no Skill tool"
+assert_contains_literal "shell reads the flow inline" 'commands/references/annotate-inline.md' "$SHELL_TEXT"
+assert_contains_literal "shell executes it inline" "inline" "$SHELL_TEXT"
+assert_contains_literal "shell forbids the Skill tool" "Never invoke the flow via the Skill tool" "$SHELL_TEXT"
+assert_contains_literal "name field" "name: annotate" "$SHELL_TEXT"
+assert_contains_literal "when_to_use routes visual-value questions to dial" "dial" "$SHELL_TEXT"
+assert_eq "shell grants no allowed-tools change" "0" "$(grep -c '^allowed-tools' "$SHELL_FILE" || true)"
+
+begin_test "annotate is user-invoked only and documented"
+assert_eq "no routing line in the warm index" "0" "$(grep -c 'craft:annotate' "$REPO/reference/orchestration-index.min" || true)"
+assert_eq "no routing line in the cold index" "0" "$(grep -c 'craft:annotate' "$REPO/reference/cold-start-index.min" || true)"
+assert_contains_literal "decision-tree Commands Reference row" '| `/craft:annotate` |' "$(cat "$REPO/docs/decision-tree.md")"
+assert_contains_literal "DESIGN.md Included commands list" "craft:annotate" "$(grep -F 'Included commands:' "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN.md tree names the shell" "craft-annotate.md" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN.md tree names the flow" "annotate-inline.md" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN.md tree names the overlay reference" "annotate-overlay.md" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN.md tree names the run script" "annotate-run.sh" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN.md tree names the channel script" "annotate-channel.py" "$(cat "$REPO/DESIGN.md")"
+
+begin_test "flow file hygiene"
+for f in "$FLOW" "$SHELL_FILE"; do
+  assert_eq "no em dashes in $(basename "$f")" "0" "$(grep -c "$EM_DASH" "$f" 2>/dev/null || true)"
+  FV_RC=0; python3 "$SCRIPTS_DIR/check-craft-vocab.py" --scan "$f" >/dev/null 2>&1 || FV_RC=$?
+  assert_eq "vocab scan exits 0 on $(basename "$f")" "0" "$FV_RC"
+done
+
+# section_of <heading-prefix> <text> - from the heading line through the line before the next heading of the same or higher level
+begin_test "the raw-tab flow probes the listener from the page and falls back to a direct read"
+L_S4="$(line_of "## Step 4" "$FLOW_TEXT")"; L_S5="$(line_of "## Step 5" "$FLOW_TEXT")"; L_S6="$(line_of "## Step 6" "$FLOW_TEXT")"; L_NAV="$(line_of "## Navigation" "$FLOW_TEXT")"
+L_PROBE="$(line_of "fetch(base + '/health?token=' + encodeURIComponent(window.__craftAnnotateToken))" "$FLOW_TEXT")"
+assert_not_eq "Step 4 probes /health from the page" "" "$L_PROBE"
+before "the probe sits in Step 4" "$L_S4" "$L_PROBE"
+before "the probe precedes Step 5" "$L_PROBE" "$L_S5"
+assert_contains_literal "the probe warns up front that SEND will not work here" "SEND will not work on this page" "$FLOW_TEXT"
+L_FALL="$(line_of "ca-annotations:" "$FLOW_TEXT")"
+assert_not_eq "Step 6 names the localStorage key" "" "$L_FALL"
+before "the fallback sits in Step 6" "$L_S6" "$L_FALL"
+before "the fallback precedes the navigation section" "$L_FALL" "$L_NAV"
+assert_contains_literal "the fallback is keyed on the strip string" "BLOCKED BY PAGE" "$FLOW_TEXT"
+assert_contains_literal "the fallback reads through the devtools connection" "localStorage" "$FLOW_TEXT"
+assert_contains_literal "the shell says SEND needs localhost reach" "reach localhost" "$SHELL_TEXT"
+assert_contains_literal "the shell names the direct-read fallback" "read the pins directly" "$SHELL_TEXT"
+
+
+MOCKUP="$REPO/commands/references/mockup-inline.md"
+DIAL="$REPO/commands/references/dial-inline.md"
+MOCKUP_TEXT="$(cat "$MOCKUP" 2>/dev/null || true)"
+DIAL_TEXT="$(cat "$DIAL" 2>/dev/null || true)"
+SHEET="$(section_of '### The proof sheet' "$MOCKUP_TEXT")"
+
+begin_test "mockup: bakes the overlay, port stamp, and baked flag at round write"
+assert_contains_literal "the proof sheet section exists" "### The proof sheet" "$MOCKUP_TEXT"
+assert_contains_literal "the script element id" '<script id="ca-overlay">' "$SHEET"
+assert_contains_literal "baked immediately before the closing body tag" 'immediately before `</body>`' "$SHEET"
+lacks_literal "the proof sheet never names the overlay source fence" "overlay-source" "$SHEET"
+assert_contains_literal "bakes through the run script" 'annotate-run.sh" bake' "$SHEET"
+assert_contains_literal "the bake command never contacts the listener" "never contacts the listener" "$SHEET"
+assert_contains_literal "stamps the port" "window.__craftAnnotatePort" "$SHEET"
+assert_contains_literal "stamps the baked flag" "window.__craftAnnotateBaked = true;" "$SHEET"
+before "the stamps are named before the overlay" "$(pos_of 'window.__craftAnnotatePort' "$SHEET")" "$(pos_of 'then the overlay' "$SHEET")"
+assert_contains_literal "installed by the orchestrator" "orchestrator" "$SHEET"
+assert_contains_literal "the alchemist is forbidden to touch it" "never touches" "$SHEET"
+assert_contains_literal "comment mode stays opt-in" "COMMENT MODE" "$SHEET"
+assert_contains_literal "arms the listener lazily at the first round shown" "first round" "$SHEET"
+assert_contains_literal "arms through the run script" 'annotate-run.sh" arm' "$SHEET"
+assert_contains_literal "the page stays a local file" "file://" "$SHEET"
+assert_contains_literal "the overlay is not a ledger line" "NOT a ledger line" "$SHEET"
+lacks_literal "the flow never stamps a candidate context" "__craftAnnotateContext" "$SHEET"
+
+begin_test "mockup: every browser-open instruction is gated on a clients == 0 registry read"
+assert_contains_literal "reads the registry through status" 'annotate-run.sh" status --session' "$SHEET"
+assert_contains_literal "names the registry count word" "CLIENTS" "$SHEET"
+lacks_literal "no raw curl of the listener (a proxy setting would break it)" "curl" "$SHEET"
+lacks_literal "no hand-built health URL (it would need the session token)" "/health" "$SHEET"
+assert_contains_literal "clients >= 1 announces" "CLIENTS <n>" "$SHEET"
+assert_contains_literal "only clients == 0 permits opening" "CLIENTS 0" "$SHEET"
+assert_contains_literal "an unreachable listener is re-armed first" "CLIENTS unreachable" "$SHEET"
+assert_contains_literal "never opens while a page is connected" "never opens a browser while a page is connected" "$SHEET"
+assert_eq "no open-the-page instruction lives outside the proof sheet section" \
+  "$(grep -ciE 'open (a browser|the page)' <<< "$SHEET" || true)" \
+  "$(grep -ciE 'open (a browser|the page)' "$MOCKUP" || true)"
+before "the registry read precedes the open instruction" \
+  "$(pos_of 'CLIENTS 0' "$SHEET")" "$(pos_of 'open the page' "$SHEET")"
+
+begin_test "mockup: announces on round write, never at SEND"
+assert_contains_literal "announce runs through the run script" 'annotate-run.sh" announce' "$SHEET"
+assert_contains_literal "announce fires when the round is written" "round is written" "$SHEET"
+assert_contains_literal "never at SEND" "never at SEND" "$SHEET"
+assert_contains_literal "the page reloads itself" "reloads itself" "$SHEET"
+
+begin_test "mockup: the registry read and announce pass the cold path's root, and the read names the line status prints"
+# The cold path has no CRAFT_PROJECT_ROOT, so status and announce find the
+# session only through --root. The note follows the status fence.
+STATUS_NOTE="$(printf '%s\n' "$SHEET" | awk '/annotate-run.sh" status --session "<id>"$/ {f = 1; next} f && $0 != "" && $0 != "```" {print; exit}')"
+assert_contains_literal "the registry read adds the cold path's root" '--root "<cold root>"' "$STATUS_NOTE"
+ANNOUNCE_LINES="$(printf '%s\n' "$SHEET" | grep -F 'annotate-run.sh" announce --session "<id>"' || true)"
+assert_not_eq "the announce command is in the proof sheet" "" "$ANNOUNCE_LINES"
+assert_eq "every announce command adds the cold path's root" \
+  "$(printf '%s\n' "$ANNOUNCE_LINES" | grep -c . || true)" \
+  "$(printf '%s\n' "$ANNOUNCE_LINES" | grep -cF -- '--root "<cold root>"' || true)"
+assert_contains_literal "the registry read names the full status line" 'SESSION <id> PORT <port> PID <pid> CLIENTS <n>' "$STATUS_NOTE"
+assert_contains_literal "and that is the line status prints" \
+  'echo "SESSION $SESSION PORT ${port:-none} PID ${pid:-none} CLIENTS $clients"' "$(cat "$REPO/hooks/scripts/annotate-run.sh")"
+
+begin_test "mockup: delivered == 0 means the page is gone, whatever the pre-check said"
+assert_contains_literal "the delivered count decides" "delivered == 0" "$SHEET"
+assert_contains_literal "the pre-check is not trusted alone" "never trusted alone" "$SHEET"
+assert_contains_literal "a closed tab can still read connected" "clients >= 1" "$SHEET"
+assert_contains_literal "no round reload is silently lost" "silently lost" "$SHEET"
+
+begin_test "mockup: the reviewing tab is the driven tab, a refresh is explained"
+assert_contains_literal "the reviewing tab is the driven tab" "reviewing tab is the driven tab" "$SHEET"
+assert_contains_literal "hidden instances are for verification only" "verification" "$SHEET"
+assert_contains_literal "a refresh during polish is explained, not blocked" "explain" "$MOCKUP_TEXT"
+
+begin_test "mockup: reads the channel at the top of every beat, never waits, quotes verbatim"
+assert_contains_literal "reads the channel through wait --timeout 0" 'annotate-run.sh" wait --session "<id>" --since <last seq acted on> --timeout 0' "$SHEET"
+assert_contains_literal "acts on a seq advance" "seq" "$SHEET"
+assert_contains_literal "top of every live-loop beat" "top of every" "$SHEET"
+assert_contains_literal "never blocks" "never blocks" "$SHEET"
+assert_eq "the mockup flow waits only with --timeout 0" "0" "$(printf '%s\n' "$MOCKUP_TEXT" | grep -F 'annotate-run.sh" wait' | grep -vcF -- '--timeout 0' | tr -d ' ')"
+lacks_literal "no background command in the flow" "run_in_background" "$MOCKUP_TEXT"
+assert_contains_literal "verbatim rule at the read site" "exact words" "$SHEET"
+assert_contains_literal "pins become round reactions" "## Reactions" "$SHEET"
+assert_contains_literal "pins pass the settle gate" "settle gate" "$SHEET"
+
+begin_test "mockup: the sheet is stripped before the Save write and from archived rounds"
+POLISH="$(section_of '## Step 5' "$MOCKUP_TEXT")"
+before "the strip precedes the remaining-state write on acceptance" \
+  "$(pos_of 'strip the sheet' "$POLISH")" "$(pos_of 'write any remaining settled state' "$POLISH")"
+assert_contains_literal "strip names the script element" '<script id="ca-overlay">' "$POLISH"
+assert_contains_literal "acceptance strips through the run script" 'annotate-run.sh" strip' "$POLISH"
+assert_contains_literal "acceptance posts the tombstone" 'annotate-run.sh" clear' "$POLISH"
+assert_contains_literal "abandon strips too" "abandon" "$(printf '%s\n' "$MOCKUP_TEXT" | tail -1)"
+assert_contains_literal "abandon posts the tombstone" "tombstone" "$(printf '%s\n' "$MOCKUP_TEXT" | tail -1)"
+assert_contains_literal "archived rounds are stripped" 'rounds/*.html' "$SHEET"
+assert_contains_literal "a converged page never ships with chrome" "never ships" "$MOCKUP_TEXT"
+assert_contains_literal "the tab is cleared with the annotate clear" "annotate clear" "$POLISH"
+
+begin_test "mockup bakes and strips through the run script"
+assert_contains_literal "names the bake verb" 'annotate-run.sh" bake' "$MOCKUP_TEXT"
+assert_contains_literal "names the strip verb" 'annotate-run.sh" strip' "$MOCKUP_TEXT"
+lacks_literal "the proof sheet never names the overlay-source fence" "overlay-source" "$SHEET"
+lacks_literal "the flow never pastes the overlay itself" "overlay-source" "$MOCKUP_TEXT"
+assert_contains_literal "the baked element keeps its id" '<script id="ca-overlay">' "$SHEET"
+assert_contains_literal "archived rounds are stripped by command" 'strip --file "<archived copy>"' "$SHEET"
+assert_contains_literal "the reference is still read for the annotate-clear fence" "annotate-clear" "$SHEET"
+assert_contains_literal "the stamps are the first two lines of the baked element" "first two lines" "$(cat "$REF")"
+
+begin_test "mockup: no new widget and no new task"
+assert_eq "AskUserQuestion mentions are frozen" "10" "$(grep -c 'AskUserQuestion' "$MOCKUP" || true)"
+assert_eq "TaskCreate mentions are frozen" "1" "$(grep -c 'TaskCreate' "$MOCKUP" || true)"
+assert_eq "the proof sheet section names no widget" "0" "$(grep -c 'AskUserQuestion' <<< "$SHEET" || true)"
+assert_contains_literal "arming is a substep" "substep" "$SHEET"
+
+begin_test "dial: Step 7 arms comment mode and stamps the candidate at every switch"
+STEP7="$(section_of '## Step 7' "$DIAL_TEXT")"
+assert_contains_literal "arms through the run script" 'annotate-run.sh" arm' "$STEP7"
+assert_contains_literal "reuses a held session through status" 'annotate-run.sh" status' "$STEP7"
+assert_contains_literal "armed on request" "on request" "$STEP7"
+assert_contains_literal "stamps the port through the stamp verb without a run" 'annotate-run.sh" stamp --session "<id>" --no-run' "$STEP7"
+assert_contains_literal "the stamp line is passed verbatim" "verbatim" "$STEP7"
+assert_contains_literal "pastes the overlay source fence only as the fallback" "overlay-source" "$STEP7"
+assert_contains_literal "alongside the dial injection, not instead of it" "not instead of" "$STEP7"
+assert_contains_literal "never stamps the baked flag" "never stamp the baked flag" "$STEP7"
+assert_contains_literal "the context stamp is the bare letter string" 'window.__craftAnnotateContext = "<letter>"' "$STEP7"
+assert_contains_literal "stamped at every candidate switch" "every candidate switch" "$STEP7"
+assert_contains_literal "never an object" "never an object" "$STEP7"
+
+begin_test "dial Step 7 injects through the loader"
+L_D_LOADER="$(line_of 'annotate-run.sh" loader --session' "$STEP7")"
+assert_not_eq "Step 7 names the loader verb" "" "$L_D_LOADER"
+assert_contains_literal "the loader takes the surface url" '--page "<surface url>"' "$STEP7"
+before "the loader precedes the context stamp" "$(pos_of 'annotate-run.sh" loader' "$STEP7")" "$(pos_of 'window.__craftAnnotateContext = "<letter>"' "$STEP7")"
+before "the loader precedes the fence" "$(pos_of 'annotate-run.sh" loader' "$STEP7")" "$(pos_of 'overlay-source' "$STEP7")"
+assert_contains_literal "the fallback is named" "SCRIPT-BLOCKED" "$STEP7"
+assert_contains_literal "external surfaces take the fallback" "EXTERNAL" "$STEP7"
+
+begin_test "dial: reads the channel at the top of every beat, never waits, quotes verbatim"
+assert_contains_literal "reads the channel through wait --timeout 0" 'annotate-run.sh" wait --session "<id>" --since <last seq acted on> --timeout 0' "$STEP7"
+assert_contains_literal "acts on a seq advance" "seq" "$STEP7"
+assert_contains_literal "top of every beat" "top of every" "$STEP7"
+assert_contains_literal "never blocks" "never blocks" "$STEP7"
+assert_eq "the dial flow waits only with --timeout 0" "0" "$(printf '%s\n' "$DIAL_TEXT" | grep -F 'annotate-run.sh" wait' | grep -vcF -- '--timeout 0' | tr -d ' ')"
+lacks_literal "no background command in the flow" "run_in_background" "$DIAL_TEXT"
+assert_contains_literal "verbatim rule at the read site" "exact words" "$STEP7"
+
+begin_test "dial: Step 8 teardown runs the annotate clear and the tombstone, no disarm"
+STEP8="$(section_of '## Step 8' "$DIAL_TEXT")"
+TEARDOWN_LINE="$(printf '%s\n' "$STEP8" | grep -F '**Then teardown' || true)"
+assert_contains_literal "teardown still runs the dial CLEAR" "Run CLEAR" "$TEARDOWN_LINE"
+assert_contains_literal "teardown names the annotate clear" "annotate clear" "$TEARDOWN_LINE"
+assert_contains_literal "teardown names the tombstone" "tombstone" "$TEARDOWN_LINE"
+assert_contains_literal "tombstone goes through the clear verb" 'annotate-run.sh" clear' "$TEARDOWN_LINE"
+assert_contains_literal "the listener lives until the session ends" "until the session ends" "$TEARDOWN_LINE"
+assert_eq "dial flow never names the disarm verb" "0" "$(grep -ci 'disarm' "$DIAL" || true)"
+assert_contains_literal "dial flow still carries the dial clear literal" "craft-dial-style" "$DIAL_TEXT"
+
+begin_test "dial: no question widget is added"
+assert_eq "AskUserQuestion appears once, as the prohibition" "1" "$(grep -c 'AskUserQuestion' "$DIAL" || true)"
+assert_contains_literal "the prohibition stands" "No AskUserQuestion anywhere in this flow" "$DIAL_TEXT"
+assert_eq "no task rail entry" "0" "$(grep -c 'TaskCreate' "$DIAL" || true)"
+
+begin_test "both flows: file hygiene"
+for f in "$MOCKUP" "$DIAL"; do
+  assert_eq "no em dashes in $(basename "$f")" "0" "$(grep -c "$EM_DASH" "$f" 2>/dev/null || true)"
+  FV_RC=0; python3 "$SCRIPTS_DIR/check-craft-vocab.py" --scan "$f" >/dev/null 2>&1 || FV_RC=$?
+  assert_eq "vocab scan exits 0 on $(basename "$f")" "0" "$FV_RC"
+done
+assert_eq "no new chrome-devtools mention in mockup flow" "0" "$(grep -c 'chrome-devtools' "$MOCKUP" || true)"
+assert_eq "no new chrome-devtools mention in dial flow" "0" "$(grep -c 'chrome-devtools' "$DIAL" || true)"
+
+begin_test "pin payload carries page, box and component"
+MAKE_BODY="$(fn_body makeData)"
+assert_contains_literal "page is the href without query or hash, plus the hash route" "page: pageNow()," "$MAKE_BODY"
+assert_contains_literal "box is a rounded document-coordinate rect" "box:" "$MAKE_BODY"
+assert_contains_literal "box carries width" "width:" "$(fn_body boxOf)"
+assert_contains_literal "box carries height" "height:" "$(fn_body boxOf)"
+assert_contains_literal "component is a payload field" "component:" "$MAKE_BODY"
+assert_contains_literal "the candidate copy stays" "window.__craftAnnotateContext" "$MAKE_BODY"
+assert_contains_literal "component detection exists and cannot throw" "const componentOf = " "$SRC"
+assert_contains_literal "React fiber key" "__reactFiber$" "$SRC"
+assert_contains_literal "Vue 3 instance" "__vueParentComponent" "$SRC"
+assert_contains_literal "Vue 2 instance" "__vue__" "$SRC"
+assert_contains_literal "the protocol sentence lists the new fields" "selector, nearText, ts, page, box, component}" "$WHOLE"
+
+begin_test "annotate flow: begin precedes the watch and starts the run"
+L_BEGIN="$(line_of 'annotate-run.sh" begin --session' "$FLOW_TEXT")"
+L_DIAL3="$(line_of "craft-dial-style" "$FLOW_TEXT")"
+assert_not_eq "Step 2 carries begin" "" "$L_BEGIN"
+before "arm precedes begin" "$L_ARM" "$L_BEGIN"
+before "begin precedes the dial clear" "$L_BEGIN" "$L_DIAL3"
+before "begin precedes the watch" "$L_BEGIN" "$L_WAIT"
+assert_contains_literal "begin takes the subject" '--subject "<subject>"' "$FLOW_TEXT"
+assert_contains_literal "begin puts the watch at the run's start" "puts the watch at the run's start" "$FLOW_TEXT"
+lacks_literal "no first-wait baseline" "RUN <seq>" "$FLOW_TEXT"
+lacks_literal "the old zero baseline is gone" "and \`0\` before the first" "$FLOW_TEXT"
+
+begin_test "annotate Step 6: the live-attempt rule, verbatim, and no list of what a pin may not ask for"
+STEP6="$(section_of '## Step 6' "$FLOW_TEXT")"
+assert_contains_literal "the rule is verbatim" "Every pin gets a live attempt on the page. A pin that is a question gets an answer and, where it fits, a change too. Never reply to a pin with only a reason." "$STEP6"
+for gone in "show-or-ask" "Cannot-show" "cannot-show" "calls no \`sheet --add\`" "Showable"; do
+  lacks_literal "Step 6 carries no '$gone'" "$gone" "$STEP6"
+done
+
+begin_test "annotate Step 6: one apply call per SEND, no other call on a project page"
+assert_contains_literal "one apply call" "ONE \`apply\` call" "$STEP6"
+assert_contains_literal "apply carries the blocks on a heredoc" 'annotate-run.sh" apply --session "<id>" <<'"'"'CSS'"'"'' "$STEP6"
+assert_contains_literal "blocks are keyed by the pin ts" "/* annotate-key <ts> */" "$STEP6"
+assert_contains_literal "an ancestor is a target" '--target "<ts>=<selector>"' "$STEP6"
+assert_contains_literal "a block for a resolved pin is at least as specific as its rule" "at least as specific" "$STEP6"
+assert_contains_literal "PASTE passes the next line verbatim" "PASTE" "$STEP6"
+assert_contains_literal "the pasted line goes to evaluate_script" "evaluate_script" "$STEP6"
+assert_contains_literal "the value is read back after a paste" "read the value back" "$STEP6"
+assert_contains_literal "every change goes through the sheet" "Every change goes through the sheet" "$STEP6"
+assert_contains_literal "one road onto the page" "never write CSS into the page any other way" "$FLOW_TEXT"
+assert_contains_literal "the reply quotes the user's exact words" "exact words" "$STEP6"
+assert_contains_literal "the report says what was measured, never intended" "never what was intended" "$STEP6"
+assert_contains_literal "a question's answer runs as long as it needs" "as long as it needs" "$STEP6"
+lacks_literal "no sheet --add call in Step 6" 'sheet --session "<id>" --add' "$STEP6"
+lacks_literal "no resolve before deciding" "Resolve before deciding" "$FLOW_TEXT"
+lacks_literal "no quoted-not-obeyed split of a pin" "quoted, not obeyed" "$FLOW_TEXT"
+
+begin_test "annotate Step 6: undo is one apply with --drop; UNDONE gets a line, CLEARED none"
+assert_contains_literal "undo drops the key through apply" 'annotate-run.sh" apply --session "<id>" --drop "<key>"' "$STEP6"
+assert_contains_literal "UNDONE gets one line" "UNDONE" "$STEP6"
+assert_contains_literal "CLEARED is never printed" "CLEARED" "$STEP6"
+
+begin_test "annotate Step 6: a SHOT line or a look pin takes one screenshot, full page when out of view, never scrolling"
+SHOT_LINE="$(printf '%s\n' "$STEP6" | grep -F 'SHOT' || true)"
+assert_eq "one line names SHOT" "1" "$(printf '%s\n' "$SHOT_LINE" | grep -c . | tr -d ' ')"
+assert_contains_literal "one take_screenshot" "take_screenshot" "$SHOT_LINE"
+assert_contains_literal "a pin asking for a look takes one too" "asks for a look" "$SHOT_LINE"
+assert_contains_literal "the window shot has no uid" "no \`uid\`" "$SHOT_LINE"
+assert_contains_literal "out of view takes the full page" "fullPage: true" "$SHOT_LINE"
+assert_contains_literal "out of view is the reason that triggers it" "out of view" "$SHOT_LINE"
+assert_contains_literal "the user's page is never scrolled" "never scrolling the user's page" "$SHOT_LINE"
+assert_contains_literal "the printed box says where to look" "printed box" "$SHOT_LINE"
+lacks_literal "no scroll call named" "scrollTo" "$FLOW_TEXT"
+
+begin_test "annotate flow: no other CSS write path"
+lacks_literal "no createElement style" "createElement('style')" "$FLOW_TEXT"
+lacks_literal "no createElement style (double quotes)" 'createElement("style")' "$FLOW_TEXT"
+lacks_literal "no style.textContent write" "style.textContent" "$FLOW_TEXT"
+lacks_literal "no insertRule" "insertRule" "$FLOW_TEXT"
+lacks_literal "no style.cssText" "cssText" "$FLOW_TEXT"
+lacks_literal "no per-element style assignment" ".style." "$FLOW_TEXT"
+
+begin_test "annotate Navigation: the loader line alone; the paste path is stamp, overlay source, sheet print"
+NAV="$(section_of '## Navigation' "$FLOW_TEXT")"
+assert_contains_literal "Navigation re-injects through the loader" 'annotate-run.sh" loader' "$NAV"
+assert_contains_literal "the loader line carries the run stamp" "--run" "$NAV"
+assert_contains_literal "the loader line alone restores the page" "loader line alone" "$NAV"
+assert_contains_literal "the paste path names the sheet print" 'sheet --session "<id>"' "$NAV"
+before "the stamp line precedes the overlay source" "$(pos_of 'stamp' "$NAV")" "$(pos_of 'overlay source' "$NAV")"
+before "the overlay source precedes the sheet print" "$(pos_of 'overlay source' "$NAV")" "$(pos_of 'sheet --session' "$NAV")"
+assert_contains_literal "the apply restores every earlier change" "every earlier change" "$NAV"
+lacks_literal "the 429-line paste is no longer the cost" "429" "$NAV"
+assert_contains_literal "an empty sheet is still applied" "empty" "$NAV"
+
+begin_test "annotate flow: a page that blocks SEND is read from storage, piped through send, and resolved only there"
+BLOCKED="$(printf '%s\n' "$STEP6" | grep -F 'ca-annotations:' || true)"
+assert_contains_literal "the direct-read set is piped through send" 'annotate-run.sh" send --session "<id>"' "$BLOCKED"
+assert_contains_literal "the watch then delivers the ADDED lines" "ADDED" "$BLOCKED"
+assert_contains_literal "the source reads not probed" "not probed" "$BLOCKED"
+assert_contains_literal "probe and resolve run there only" 'annotate-resolve.sh" probe' "$BLOCKED"
+assert_contains_literal "resolve runs there" 'annotate-resolve.sh" resolve' "$BLOCKED"
+lacks_literal "the wait-will-not-wake sentence is gone" "The wait will not wake" "$FLOW_TEXT"
+
+begin_test "annotate flow: every exit files before routing, all six outcomes named"
+TEAR="$(section_of '## Teardown' "$FLOW_TEXT")"
+L_T_CLEAR="$(line_of 'annotate-run.sh" clear' "$TEAR")"
+L_T_FILE="$(line_of 'annotate-record.sh" file' "$TEAR")"
+L_T_ROUTE="$(line_of 'Then route' "$TEAR")"
+assert_not_eq "teardown files the record" "" "$L_T_FILE"
+before "the tombstone precedes filing" "$L_T_CLEAR" "$L_T_FILE"
+before "filing precedes routing" "$L_T_FILE" "$L_T_ROUTE"
+for oc in nothing tweak story todo abandon error; do
+  assert_contains_literal "outcome $oc is named" "$oc" "$(printf '%s\n' "$TEAR" | grep -F -- '--outcome' || true)"
+done
+assert_contains_literal "tweak pre-mints the name" "tweak-<slug>" "$TEAR"
+assert_contains_literal "tweak files the pre-minted name" "--graduated-to tweak-<slug>" "$TEAR"
+assert_contains_literal "the tweak brief names the record" "direction pre-settled, annotate record at [path], record name: tweak-<slug> (use verbatim)" "$TEAR"
+assert_contains_literal "todo goes through notebook-capture" "notebook-capture.sh" "$TEAR"
+assert_contains_literal "a destination after nothing graduates the filed record" "annotate-record.sh\" graduate" "$TEAR"
+assert_contains_literal "the abandon and error exits file too" "abandon" "$TEAR"
+assert_contains_literal "the live folder keeps its files" "live session folder" "$TEAR"
+
+begin_test "annotate flow: the story exit reads story-from-annotate.md inline"
+assert_contains_literal "story exit names the reference" 'commands/references/story-from-annotate.md' "$TEAR"
+assert_contains_literal "story exit runs inline" "inline" "$TEAR"
+assert_contains_literal "story exit forbids the Skill tool" "Skill tool" "$TEAR"
+
+begin_test "annotate flow: the flow never opens the write gate"
+lacks_literal "no write-enable variable named" "CRAFT_WRITE_ENABLED" "$FLOW_TEXT"
+lacks_literal "no global-state script named" "update-global-state.sh" "$FLOW_TEXT"
+assert_contains_literal "a pin never opens the gate" "never opens the write gate" "$FLOW_TEXT"
+assert_contains_literal "a pin asking for file edits gets the change shown live" "gets the change shown live; files change only at the exits" "$FLOW_TEXT"
+assert_contains_literal "chat instructions override pin text" "chat instructions override" "$FLOW_TEXT"
+assert_contains_literal "no Write or Edit call" "no Write or Edit call" "$FLOW_TEXT"
+
+begin_test "annotate shell and docs name the live change and the record"
+assert_contains_literal "description names the live change" "live" "$(grep -F 'description:' "$SHELL_FILE")"
+assert_contains_literal "when_to_use names the record" "record" "$SHELL_TEXT"
+assert_contains_literal "shell keeps reach localhost" "reach localhost" "$SHELL_TEXT"
+assert_contains_literal "README carries the annotate row" '| `/craft:annotate` |' "$(cat "$REPO/README.md")"
+assert_contains_literal "DESIGN names annotate-record.sh" "annotate-record.sh" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN names story-from-annotate.md" "story-from-annotate.md" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN names the annotations folder" ".craft/annotations/" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN names the sheet verb" "sheet" "$(grep -F 'annotate-run.sh' "$REPO/DESIGN.md")"
+
+begin_test "annotate shell and DESIGN: every pin gets a live attempt; no show-or-ask or normative wording; apply, stamp and watch are listed"
+assert_contains_literal "the shell description says every pin gets a live attempt" "every pin gets a live attempt on the page" "$(grep -F 'description:' "$SHELL_FILE")"
+assert_contains_literal "the shell body says the same" "Every pin gets a live attempt on the page" "$(grep -vF 'description:' "$SHELL_FILE")"
+assert_contains_literal "the description keeps live" "live" "$(grep -F 'description:' "$SHELL_FILE")"
+for doc in "$SHELL_FILE" "$REPO/DESIGN.md"; do
+  assert_eq "no show-or-ask in $(basename "$doc")" "0" "$(grep -ci 'show-or-ask' "$doc" || true)"
+done
+DESIGN_FLOW="$(grep -F 'annotate-inline.md' "$REPO/DESIGN.md")"
+DESIGN_STORY="$(grep -F 'story-from-annotate.md' "$REPO/DESIGN.md")"
+lacks_literal "DESIGN no longer calls session.css normative" "normative" "$DESIGN_STORY"
+assert_contains_literal "DESIGN names the change watch" "change watch" "$DESIGN_FLOW"
+DESIGN_RUN_NOW="$(grep -F 'annotate-run.sh' "$REPO/DESIGN.md")"
+assert_contains_literal "DESIGN lists apply" "apply" "$DESIGN_RUN_NOW"
+assert_contains_literal "DESIGN lists stamp" "stamp" "$DESIGN_RUN_NOW"
+assert_contains_literal "DESIGN lists watch" "watch" "$DESIGN_RUN_NOW"
+assert_contains_literal "DESIGN keeps bake / strip / ensure" "bake / strip / ensure" "$DESIGN_RUN_NOW"
+assert_contains_literal "DESIGN says the probe runs in the page at SEND" "at SEND" "$(grep -F 'annotate-resolve.sh' "$REPO/DESIGN.md")"
+
+begin_test "annotate flow: the tweak exit ports the look verbatim and carries content stand-ins as requirements"
+assert_contains_literal "adhoc ports the look verbatim" "ports the look verbatim" "$TEAR"
+assert_contains_literal "content stand-ins are carried as requirements quoting the pin" "requirements quoting the pin" "$TEAR"
+lacks_literal "session.css is no longer called normative" "normative" "$FLOW_TEXT"
+
+begin_test "annotate flow: every page snippet reaches evaluate_script as a function body"
+STEP4="$(section_of '## Step 4' "$FLOW_TEXT")"
+assert_contains_literal "the rule names the function shape" '() => { <snippet> }' "$FLOW_TEXT"
+assert_contains_literal "the rule says what a bare snippet does" "Unexpected token" "$FLOW_TEXT"
+assert_contains_literal "Step 4 passes the pasted overlay as a function body" 'as the body of `() => { ... }`' "$STEP4"
+lacks_literal "Step 4 no longer pastes the overlay as a bare expression" "pasted unchanged as a single expression" "$STEP4"
+assert_contains_literal "the rule names the printed lines as already functions" 'the lines `loader`, `stamp` and `sheet` print are already functions' "$FLOW_TEXT"
+lacks_literal "the flow never wraps the sheet line" '() => { <printed line> }' "$FLOW_TEXT"
+lacks_literal "the snippet list no longer names the sheet line" 'the overlay source when pasted, the line `sheet` prints - goes in' "$FLOW_TEXT"
+assert_contains_literal "Step 6 passes a PASTE line verbatim" 'pass the next line to `evaluate_script` verbatim' "$STEP6"
+assert_contains_literal "the sheet line returns its status" "APPLIED" "$FLOW_TEXT"
+assert_contains_literal "re-inject passes the sheet line verbatim" 'pass the printed line to `evaluate_script` verbatim' "$NAV"
+lacks_literal "the flow no longer warns that the sheet line misreports" "fn is not a function" "$FLOW_TEXT"
+
+begin_test "annotate flow hygiene: no decision-record slug"
+assert_eq "no dated slug in the flow" "0" "$(grep -cE '20[0-9]{2}-[0-9]{2}-[0-9]{2}-[a-z]' "$FLOW" || true)"
+
+begin_test "annotate read beat runs ensure and stays silent at streak 1"
+HEAL_STEP5="$(section_of '## Step 5' "$FLOW_TEXT")"
+assert_contains_literal "names the ensure verb" 'annotate-run.sh" ensure --session "<id>"' "$FLOW_TEXT"
+assert_contains_literal "ensure runs on an UNREACHABLE line" "UNREACHABLE" "$HEAL_STEP5"
+assert_contains_literal "ensure runs when a command fails" "command fails" "$HEAL_STEP5"
+assert_contains_literal "ensure never runs on a SEND notification" "never on a SEND notification" "$HEAL_STEP5"
+assert_contains_literal "streak 1 is silent" "STREAK 1" "$FLOW_TEXT"
+assert_contains_literal "the second-failure line is pinned" "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page." "$FLOW_TEXT"
+assert_contains_literal "the failed-restart line is pinned" "The pin listener won't restart - keep pinning and tell me when you're done; I'll read the pins from the page." "$FLOW_TEXT"
+assert_contains_literal "a re-arm re-injects" "REARMED" "$FLOW_TEXT"
+assert_contains_literal "the flow holds no failure count" "never count" "$FLOW_TEXT"
+
+begin_test "dial and mockup read beats run ensure"
+assert_contains_literal "dial names the ensure verb" 'annotate-run.sh" ensure --session "<id>"' "$STEP7"
+assert_contains_literal "dial re-runs the loader then the context stamp" "REARMED" "$STEP7"
+assert_contains_literal "dial pins the second-failure line" "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page." "$STEP7"
+assert_contains_literal "mockup names the ensure verb" 'annotate-run.sh" ensure --session "<id>"' "$MOCKUP_TEXT"
+assert_contains_literal "mockup re-bakes on REARMED" "REARMED" "$MOCKUP_TEXT"
+assert_contains_literal "mockup pins the second-failure line" "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page." "$MOCKUP_TEXT"
+assert_contains_literal "mockup pins the failed-restart line" "The pin listener won't restart - keep pinning and tell me when you're done; I'll read the pins from the page." "$MOCKUP_TEXT"
+
+begin_test "DESIGN lists the new annotate-run verbs and the served overlay"
+DESIGN_RUN="$(grep -F 'annotate-run.sh' "$REPO/DESIGN.md")"
+assert_contains_literal "kind and loader" "kind / loader" "$DESIGN_RUN"
+assert_contains_literal "bake, strip, ensure" "bake / strip / ensure" "$DESIGN_RUN"
+assert_contains_literal "the listener line names the served overlay" "overlay" "$(grep -F 'annotate-channel.py' "$REPO/DESIGN.md")"
+
+begin_test "pins follow client-side route changes"
+OBS_BODY="$(printf '%s\n' "$SRC" | awk '/new MutationObserver\(/ {on=1} on {print} on && /observe\(document.body/ {exit}')"
+assert_contains_literal "the mutation callback runs the path check" "checkPath()" "$OBS_BODY"
+assert_contains_literal "the mutation callback re-settles" "settle()" "$OBS_BODY"
+lacks_literal "no storage key constant" "const STORE_KEY" "$SRC"
+lacks_literal "no captured key is read" "STORE_KEY" "$SRC"
+assert_contains_literal "the key is computed at call time, path plus hash route" "const storeKey = () => 'ca-annotations:' + location.pathname + hashRoute();" "$SRC"
+assert_eq "every localStorage call goes through a key computed at call time" "0" "$(printf '%s\n' "$SRC" | grep -F 'localStorage.' | grep -vF 'storeKey()' | grep -vcF 'undoKey()' | tr -d ' ')"
+assert_contains_literal "currententrychange sits behind a navigation guard" "if (window.navigation)" "$SRC"
+assert_contains_literal "currententrychange is watched" "'currententrychange'" "$SRC"
+assert_contains_literal "popstate is watched" "'popstate'" "$SRC"
+assert_contains_literal "hashchange is watched" "on(window, 'hashchange', checkPath, false);" "$SRC"
+lacks_literal "history is never patched" "history.pushState =" "$SRC"
+assert_contains_literal "the observer disconnects once the strip is gone" "disconnect()" "$SRC"
+assert_contains_literal "disconnect sits inside the isConnected check" "if (!strip.isConnected) { watcher.disconnect();" "$OBS_BODY"
+assert_contains_literal "the observer is debounced to a frame" "requestAnimationFrame" "$OBS_BODY"
+assert_contains_literal "the observer watches the subtree" "subtree: true" "$SRC"
+assert_eq "the rehydrate routine serves install and navigation" "2" "$(count_of "rehydrate();" "$SRC" | tr -d ' ')"
+ROUTE_BODY="$(fn_body checkPath)"
+assert_contains_literal "a path change closes the popover" "closePopover()" "$ROUTE_BODY"
+assert_contains_literal "a path change drops an open box" "openBox.cancel()" "$ROUTE_BODY"
+assert_contains_literal "a path change removes pin nodes" "en.node.remove()" "$ROUTE_BODY"
+assert_contains_literal "a path change rehydrates" "rehydrate()" "$ROUTE_BODY"
+assert_contains_literal "the route check compares path plus hash route" "location.pathname + hashRoute()" "$ROUTE_BODY"
+lacks_literal "the route check never compares the bare path" "if (location.pathname === renderedPath)" "$SRC"
+assert_contains_literal "the rules name navigation" "client-side navigation" "$WHOLE"
+assert_contains_literal "the rules name the observer in teardown" "observer" "$(grep -F 'Total teardown' "$REF")"
+assert_contains_literal "detached pins are re-checked on page change" "re-checked when the page changes" "$WHOLE"
+
+begin_test "hash routes: one rule for what counts as a route, shared by the overlay, its walker and the flow"
+HR_LINE="$(printf '%s\n' "$SRC" | grep -F 'const hashRoute = () =>' | sed 's/^ *//' || true)"
+assert_eq "the overlay defines the hash-route rule once" "1" "$(count_of 'const hashRoute = () =>' "$SRC" | tr -d ' ')"
+assert_contains_literal "only #/ and #!/ fragments are routes" "/^#!?\\//.test(location.hash)" "$HR_LINE"
+assert_contains_literal "a hash route drops its own query" "location.hash.split('?')[0]" "$HR_LINE"
+assert_contains_literal "the walker computes the page with the overlay's own route rule" "const here = pageNow();" "$(fn_body probeTargets)"
+assert_contains_literal "the page address is one definition built on hashRoute" "const pageNow = () => location.href.split(/[?#]/)[0] + hashRoute();" "$SRC"
+assert_contains_literal "the flow's direct read uses the same key" "'ca-annotations:' + location.pathname + (/^#!?\\//.test(location.hash) ? location.hash.split('?')[0] : '')" "$(cat "$FLOW")"
+lacks_literal "the flow never reads the bare-path key" "localStorage.getItem('ca-annotations:' + location.pathname)" "$(cat "$FLOW")"
+assert_contains_literal "the rules say what counts as a hash route" "#!/" "$(grep -F 'Storage keyed by page path' "$REF")"
+assert_contains_literal "the rules say an anchor is not a route" "anchor" "$(grep -F 'Storage keyed by page path' "$REF")"
+
+begin_test "pin to source: where is one line, and external pages get the outside line"
+L_WHERE="$(printf '%s\n' "$STEP6" | grep -F 'annotate-resolve.sh" where' || true)"
+assert_contains_literal "where is run with the pin's ts" 'annotate-resolve.sh" where --session "<id>" --ts "<ts>"' "$L_WHERE"
+assert_contains_literal "the flow says its line and nothing more" "nothing more" "$STEP6"
+assert_contains_literal "the outside line is named" "That page is outside this project, so there's no source file to point at." "$STEP6"
+lacks_literal "the location is never spoken mid-session" "mention the location" "$STEP6"
+
+begin_test "pin to source: the overlay exposes its component lookup, the clear is untouched"
+L_COMP_DEF="$(line_of 'const componentOf = ' "$SRC")"
+L_COMP_EXPOSE="$(line_of 'window.__craftAnnotateComponentOf = componentOf;' "$SRC")"
+assert_not_eq "the global is set" "" "$L_COMP_EXPOSE"
+before "the global is set after the lookup is defined" "$L_COMP_DEF" "$L_COMP_EXPOSE"
+assert_eq "the clear fence does not name the global" "0" "$(fenced_block annotate-clear "$REF" | grep -cF '__craftAnnotateComponentOf' | tr -d ' ')"
+assert_contains_literal "the rules name the global" "__craftAnnotateComponentOf" "$(grep -F -- '- **' "$REF")"
+
+begin_test "pin to source: the resolver is registered"
+assert_contains_literal "DESIGN names annotate-resolve.sh" "annotate-resolve.sh" "$(cat "$REPO/DESIGN.md")"
+assert_contains_literal "the dashboard skips the resolution cache" "annotations/*/resolutions.json" "$(cat "$REPO/scripts/dashboard/src/vocabulary.py")"
+
+begin_test "the resolver's walker lives in the overlay, set right after it is defined"
+WALKER="$(fn_body probeTargets)"
+assert_not_eq "the walker exists" "" "$WALKER"
+before "the global is set after the walker is defined" "$(line_of 'const probeTargets = ' "$SRC")" "$(line_of 'window.__craftAnnotateProbe = probeTargets;' "$SRC")"
+assert_contains_literal "the walker reads the sheets" "document.styleSheets" "$WALKER"
+assert_contains_literal "the walker asks for the component of the element" "componentOf(el)" "$WALKER"
+assert_contains_literal "the walker keeps the item shape" "blocked: blocked.slice()" "$WALKER"
+assert_eq "the clear fence does not name the walker" "0" "$(fenced_block annotate-clear "$REF" | grep -cF '__craftAnnotateProbe' | tr -d ' ')"
+assert_contains_literal "the rules name the walker global" "__craftAnnotateProbe" "$(grep -F 'One component lookup' "$REF" || true)"
+
+begin_test "the run stamp: sheet fetch at install and /changes only when stamped, baked and dial pages untouched"
+assert_contains_literal "the stamp is read live" "const runId = () => window.__craftAnnotateRun || null;" "$SRC"
+assert_contains_literal "the install fetch is behind the stamp and the port" "if (runId() && base())" "$SRC"
+assert_contains_literal "the session style element is the shared id" "ca-session-css" "$(fn_body sessionStyle)"
+assert_contains_literal "the session style carries the marker" "setAttribute(MARK" "$(fn_body sessionStyle)"
+assert_contains_literal "the session style goes in head" "document.head.appendChild" "$(fn_body sessionStyle)"
+assert_contains_literal "a failed fetch is quiet" ".catch(" "$(printf '%s\n' "$SRC" | grep -F 'fetchSheet().catch')"
+assert_contains_literal "the stamps fence names the run stamp" "window.__craftAnnotateRun = '<run id>';" "$(fenced_block annotate-stamp "$REF")"
+
+begin_test "the sheet event re-fetches before it reports, and posts /applied once per event"
+SHEET_EVENT="$(fn_body onSheet)"
+assert_not_eq "the sheet event handler exists" "" "$SHEET_EVENT"
+assert_contains_literal "the report runs in the re-fetch's continuation" "fetchSheet().then(" "$SHEET_EVENT"
+assert_eq "the handler reports once" "1" "$(count_of 'report(' "$SHEET_EVENT" | tr -d ' ')"
+assert_contains_literal "a failed fetch is carried as the report's error" "'sheet fetch failed'" "$SHEET_EVENT"
+assert_contains_literal "the report sets error when given one" "body.error = error" "$(fn_body report)"
+REPORT_BODY="$(fn_body report)"
+assert_contains_literal "the report carries the job id" "id: job.id" "$REPORT_BODY"
+assert_contains_literal "the report measures every key the job names, even none" "(job.measure || [])" "$REPORT_BODY"
+assert_contains_literal "the report carries the walker's probes" "probeTargets(" "$REPORT_BODY"
+assert_contains_literal "the sheet event is wired to the handler" "addEventListener('sheet', onSheet)" "$SRC"
+
+begin_test "the measurement: box, view, page size, in-view and a hit test that skips the overlay's own nodes, never scrolling"
+MEASURE="$(fn_body measureRule)"
+assert_not_eq "the rule measurement exists" "" "$MEASURE"
+assert_contains_literal "the hit test is elementsFromPoint" "document.elementsFromPoint(" "$MEASURE"
+assert_contains_literal "the overlay's own nodes are skipped" "closest(OWN)" "$MEASURE"
+assert_contains_literal "the skip list is the clear fence's list" "const OWN = '#ca-style,#ca-sheet,#ca-strip,[' + MARK + '],.ca-pin,.ca-popover,.ca-box';" "$SRC"
+assert_contains_literal "box is the rect plus scroll" "window.scrollX" "$MEASURE"
+assert_contains_literal "in-view is judged against the window" "window.innerWidth" "$MEASURE"
+assert_contains_literal "inView is reported" "inView" "$MEASURE"
+assert_contains_literal "coveredBy is reported" "coveredBy" "$MEASURE"
+assert_contains_literal "container is reported" "childElementCount > 0" "$MEASURE"
+assert_contains_literal "pointer-events none is not hit-tested" "pointerEvents === 'none'" "$MEASURE"
+assert_contains_literal "pseudo-elements are measured through getComputedStyle's argument" "getComputedStyle(el, pseudo)" "$MEASURE"
+assert_contains_literal "values are cut at 120" "slice(0, 120)" "$SRC"
+assert_contains_literal "the report level carries the view" "view: { x: Math.round(window.scrollX), y: Math.round(window.scrollY), w: window.innerWidth, h: window.innerHeight }" "$REPORT_BODY"
+assert_contains_literal "the report level carries the page size" "pageSize:" "$REPORT_BODY"
+lacks_literal "the page never scrolls to measure (scrollTo)" "scrollTo" "$SRC"
+lacks_literal "the page never scrolls to measure (scrollIntoView)" "scrollIntoView" "$SRC"
+lacks_literal "the page never scrolls to measure (scrollBy)" "scrollBy" "$SRC"
+lacks_literal "the page never scrolls to measure (scroll)" ".scroll(" "$SRC"
+
+begin_test "undo list: DELETE of a pin sent in this run adds, CLEAR empties and adds nothing"
+REMOVE_BODY="$(fn_body removeEntry)"
+assert_contains_literal "removeEntry checks the pin was sent in this run" "en.sentRun === runId()" "$REMOVE_BODY"
+assert_contains_literal "removeEntry adds the ts" "undo.push(en.d.ts)" "$REMOVE_BODY"
+assert_contains_literal "the undo list is persisted" "persistUndo()" "$REMOVE_BODY"
+assert_contains_literal "the undo list is keyed by path and hash route" "'ca-undo:' + location.pathname + hashRoute()" "$SRC"
+CLEAR_BODY="$(fn_body clearAll)"
+assert_contains_literal "clearAll empties the list" "undo = [];" "$CLEAR_BODY"
+lacks_literal "clearAll adds nothing to it" "undo.push" "$CLEAR_BODY"
+assert_contains_literal "the readout names pending undos" "' to undo'" "$(fn_body paintReadout)"
+assert_contains_literal "the readout keeps its base form" "'MARKUP - ' + entries.length + ' marks'" "$(fn_body paintReadout)"
+
+begin_test "stale sent pins drop only when stamped; unsent pins always stay"
+REHYDRATE="$(fn_body rehydrate)"
+assert_contains_literal "a sent pin of another run is skipped" "sent && a.sentRun !== runId()" "$REHYDRATE"
+assert_contains_literal "the drop is behind the stamp" "runId() &&" "$REHYDRATE"
+assert_contains_literal "survivors are persisted after a drop" "persist()" "$REHYDRATE"
+assert_contains_literal "sentRun is read back" "a.sentRun" "$REHYDRATE"
+assert_contains_literal "markSent stamps the run" "en.sentRun = runId()" "$(fn_body markSent)"
+assert_contains_literal "persist writes sentRun beside sent" "sentRun: en.sentRun" "$(fn_body persist)"
+
+begin_test "SEND posts the object body when stamped and the array when not; markSent stays once, in the 200 branch"
+SEND_NOW="$(fn_body send)"
+assert_contains_literal "the stamped body carries pins, undos and probes" "{ pins: set, deleted: sentUndo, probes: probeUnsent() }" "$SEND_NOW"
+assert_contains_literal "the unstamped body is the array" ": set;" "$SEND_NOW"
+assert_contains_literal "an undo alone is worth sending" "undo.length" "$SEND_NOW"
+THEN_NOW="$(printf '%s\n' "$SEND_NOW" | awk 'index($0, ".then(res =>") {on=1} on {print} on && index($0, ".catch(") {exit}')"
+assert_contains_literal "the undo list empties in the 200 branch" "undo = undo.filter(" "$THEN_NOW"
+lacks_literal "the undo list is untouched before the 200" "undo = undo.filter(" "$(printf '%s\n' "$SEND_NOW" | awk 'index($0, ".then(res =>") {exit} {print}')"
+
+begin_test "the token: one channel URL builder carries it on every request, and the stamps fence names it"
+URL_BUILDER="$(fn_body channelUrl)"
+assert_not_eq "channelUrl is defined" "" "$URL_BUILDER"
+assert_contains_literal "the builder appends token= with encodeURIComponent" "'token=' + encodeURIComponent(window.__craftAnnotateToken || '')" "$URL_BUILDER"
+assert_contains_literal "the builder joins with & after an existing query" "'&'" "$URL_BUILDER"
+assert_contains_literal "the builder starts from the live base" "base()" "$URL_BUILDER"
+assert_eq "base() is joined to a path in the builder alone" "1" "$(count_of "base() +" "$SRC" | tr -d ' ')"
+assert_eq "four fetch calls, each going through channelUrl" "4" "$(count_of "fetch(channelUrl(" "$SRC" | tr -d ' ')"
+assert_contains_literal "the sheet fetch uses the builder" "channelUrl('/session.css')" "$(fn_body fetchSheet)"
+assert_contains_literal "the report uses the builder" "channelUrl('/applied')" "$(fn_body report)"
+assert_contains_literal "SEND uses the builder" "channelUrl('/pins')" "$(fn_body send)"
+assert_contains_literal "CLEAR uses the builder" "channelUrl('/clear')" "$(fn_body clearAll)"
+assert_contains_literal "the stamps fence names the token" "window.__craftAnnotateToken" "$(fenced_block annotate-stamp "$REF")"
+assert_contains_literal "the stamps section says no flow writes it by hand" "no flow writes them by hand" "$WHOLE"
+assert_contains_literal "the stamps section names the verbs that write the token" "loader" "$(section_of '## The stamps' "$WHOLE")"
+
+begin_test "cssPath escapes ids and class names and skips the overlay's own ca- classes"
+CSS_PATH="$(fn_body cssPath)"
+assert_contains_literal "ids are escaped" "'#' + CSS.escape(el.id)" "$CSS_PATH"
+assert_contains_literal "ca- classes are dropped before the first two are kept" "!c.startsWith('ca-')" "$CSS_PATH"
+assert_contains_literal "class names are escaped" "'.' + CSS.escape(" "$CSS_PATH"
+before "the ca- filter precedes the two-class cut" "$(pos_of "startsWith('ca-')" "$CSS_PATH")" "$(pos_of "slice(0, 2)" "$CSS_PATH")"
+lacks_literal "no raw class join survives" "join('.')" "$CSS_PATH"
+assert_contains_literal "the path is still 5 deep" "p.length < 5" "$CSS_PATH"
+
+begin_test "markSent takes the delivered entries, not all entries"
+MARK_SENT="$(fn_body markSent)"
+assert_contains_literal "it takes the delivered snapshot" "markSent = delivered" "$MARK_SENT"
+assert_contains_literal "an entry is matched by ts" ".ts" "$MARK_SENT"
+assert_contains_literal "an entry is matched by unchanged text" ".text" "$MARK_SENT"
+assert_contains_literal "an entry whose ts or text differs from the request is skipped" "!== en.d.text) return;" "$MARK_SENT"
+assert_contains_literal "the success branch hands it the request's own snapshot" "markSent(set)" "$(fn_body send)"
+
+begin_test "the flow names the did-not-confirm retry and its one line"
+assert_contains_literal "the flow names UNDONE page did not confirm" 'UNDONE <ts> page did not confirm' "$STEP5"
+assert_contains_literal "it re-runs the sheet print line" 'annotate-run.sh" sheet --session "<id>"' "$STEP5"
+assert_contains_literal "APPLIED means nothing extra" 'returns `APPLIED`' "$STEP5"
+assert_contains_literal "the exact fallback sentence" 'That change may still show on the page - a reload clears it.' "$STEP5"
+
+begin_test "the flow names NOTICE, EXTERNAL, the heredoc send and the denied-teardown rule"
+STEP4="$(section_of '## Step 4' "$FLOW_TEXT")"
+STEP6="$(section_of '## Step 6' "$FLOW_TEXT")"
+TEARDOWN="$(section_of '## Teardown' "$FLOW_TEXT")"
+assert_contains_literal "a NOTICE line is said verbatim" 'a `NOTICE` line' "$STEP4"
+assert_contains_literal "the notice is said as printed" 'verbatim' "$(printf '%s\n' "$STEP4" | grep -F 'NOTICE')"
+assert_contains_literal "an EXTERNAL pin is acted on only through the sheet" 'An `EXTERNAL ADDED` or `EXTERNAL EDITED` pin' "$STEP6"
+assert_contains_literal "anything beyond the sheet is asked of the user in chat" 'ask the user in chat' "$STEP6"
+assert_contains_literal "the storage read-back pipes through send on a quoted heredoc" "send --session \"<id>\" <<'PINS'" "$STEP6"
+assert_contains_literal "Claude acts only on the watch's lines" "never on the raw page result" "$STEP6"
+assert_contains_literal "a denied teardown step finishes on the user's next message" 'finish it on the next message the user types' "$TEARDOWN"
+assert_contains_literal "the shell's when_to_use names the pin boundary" 'outside the project' "$(section_of 'when_to_use' "$SHELL_TEXT")"
+DIAL_FLOW="$(cat "$REPO/commands/references/dial-inline.md" 2>/dev/null || true)"
+assert_contains_literal "dial says the NOTICE line verbatim" 'a `NOTICE` line' "$DIAL_FLOW"
+
+# --- The annotate flow before init, and the shared listener start ----------------
+
+OVL_TEXT="$(cat "$REF")"
+START_SEC="$(section_of '## Starting the listener' "$OVL_TEXT")"
+STEP2_SEC="$(section_of '## Step 2' "$FLOW_TEXT")"
+STEP4_SEC="$(section_of '## Step 4' "$FLOW_TEXT")"
+FOLDER_CALL='bash -c '"'"'source "$1" >/dev/null 2>&1; craft_refuse_monorepo_top "an annotate session" && exit 1; craft_before_init_root'"'"' _ "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh"'
+
+begin_test "annotate-inline carries the pinned folder call and stops on the refusal"
+assert_contains_literal "the flow carries the pinned folder call" "$FOLDER_CALL" "$FLOW_TEXT"
+assert_contains_literal "the call runs only when CRAFT_PROJECT_ROOT is not set" "CRAFT_PROJECT_ROOT" "$STEP2_SEC"
+assert_contains_literal "the folder is held as the project root" '`<project root>`' "$STEP2_SEC"
+assert_contains_literal "a nothing-written line is said verbatim" 'nothing written:' "$STEP2_SEC"
+assert_contains_literal "the flow stops before arm on a refusal" "before \`arm\`" "$STEP2_SEC"
+before "the folder call precedes arm" "$(pos_of 'craft_refuse_monorepo_top' "$FLOW_TEXT")" "$(pos_of 'annotate-run.sh" arm' "$FLOW_TEXT")"
+CALL_LINE="$(printf '%s\n' "$FLOW_TEXT" | grep -F 'craft_refuse_monorepo_top "an annotate session"' | head -1 | sed 's/^[[:space:]]*//')"
+FOLDER_FIX="$TMP_DIR/folder-call"
+mkdir -p "$FOLDER_FIX/mono/app1/.craft" "$FOLDER_FIX/mono/app2/.craft" "$FOLDER_FIX/plain/sub"
+touch "$FOLDER_FIX/mono/app1/.craft/.global-state" "$FOLDER_FIX/mono/app2/.craft/.global-state"
+git -C "$FOLDER_FIX/mono" init -q 2>/dev/null
+git -C "$FOLDER_FIX/plain" init -q 2>/dev/null
+MONO_RC=0
+MONO_OUT="$(cd "$FOLDER_FIX/mono" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$CALL_LINE" 2>"$FOLDER_FIX/mono.err")" || MONO_RC=$?
+assert_eq "the monorepo top exits 1" "1" "$MONO_RC"
+assert_eq "the monorepo top prints no folder" "" "$MONO_OUT"
+assert_contains_literal "the monorepo top prints the refusal on stderr" "nothing written:" "$(cat "$FOLDER_FIX/mono.err")"
+assert_contains_literal "the refusal names the projects" "app1, app2" "$(cat "$FOLDER_FIX/mono.err")"
+assert_dir_not_exists "the monorepo top gains no .craft" "$FOLDER_FIX/mono/.craft"
+PLAIN_RC=0
+PLAIN_OUT="$(cd "$FOLDER_FIX/plain/sub" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$CALL_LINE" 2>/dev/null)" || PLAIN_RC=$?
+assert_eq "a plain repo exits 0" "0" "$PLAIN_RC"
+assert_eq "a plain repo prints its git top, not the subfolder" "$(cd "$FOLDER_FIX/plain" && pwd -P)" "$(cd "$PLAIN_OUT" && pwd -P)"
+# arm never refuses a folder it is handed: the refusal lives in the folder call, not in arm.
+ARM_OUT="$(cd "$FOLDER_FIX/mono" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CRAFT_ANNOTATE_BOUNDARY_DIR="$FOLDER_FIX/boundary" bash "$REPO/hooks/scripts/annotate-run.sh" arm --root "$FOLDER_FIX/mono" --session mono1 --owner-pid "$$" 2>&1)" || true
+assert_contains "arm handed the monorepo top as --root arms there instead of refusing" "^SESSION mono1 PORT [0-9]" "$ARM_OUT"
+MONO_LISTENER="$(cat "$FOLDER_FIX/mono/.craft/annotations/mono1/listener.pid" 2>/dev/null || true)"
+case "$MONO_LISTENER" in ''|*[!0-9]*) ;; *) kill "$MONO_LISTENER" 2>/dev/null || true ;; esac
+rm -rf "$FOLDER_FIX/mono/.craft"
+
+begin_test "every annotate-run arm in annotate-inline.md carries --background"
+FLOW_ARMS="$(printf '%s\n' "$FLOW_TEXT" | grep -F 'annotate-run.sh" arm' || true)"
+assert_eq "the flow has one arm command" "1" "$(printf '%s\n' "$FLOW_ARMS" | grep -c . | tr -d ' ')"
+assert_eq "no flow arm lacks --background" "0" "$(printf '%s\n' "$FLOW_ARMS" | grep -vc -- '--background' | tr -d ' ')"
+assert_eq "the flow never re-arms by hand" "0" "$(printf '%s\n' "$FLOW_TEXT" | grep -cF 'run `arm --session' | tr -d ' ')"
+OVL_ARMS="$(printf '%s\n' "$START_SEC" | grep -F 'annotate-run.sh" arm' || true)"
+assert_eq "the shared section has two arm commands" "2" "$(printf '%s\n' "$OVL_ARMS" | grep -c . | tr -d ' ')"
+assert_eq "exactly one of them is plain (the refused-option line)" "1" "$(printf '%s\n' "$OVL_ARMS" | grep -vc -- '--background' | tr -d ' ')"
+assert_eq "no overlay text outside the section arms" "2" "$(count_of 'annotate-run.sh" arm' "$OVL_TEXT" | tr -d ' ')"
+
+begin_test "the shared section names listen with run_in_background, ready, the refused-option fallback and the exit notice"
+assert_contains_literal "the shared section exists" "## Starting the listener" "$OVL_TEXT"
+assert_contains_literal "arm is prepared with --background" 'annotate-run.sh" arm --background' "$START_SEC"
+assert_contains_literal "arm may carry the project root" '--root "<project root>"' "$START_SEC"
+assert_contains_literal "arm may re-arm a held id" '--session "<id>"' "$START_SEC"
+assert_contains_literal "the LISTEN line starts the listener" "SESSION <id> LISTEN" "$START_SEC"
+assert_contains_literal "listen is run" 'annotate-run.sh" listen --session "<id>"' "$START_SEC"
+assert_contains_literal "listen is a background command" "run_in_background: true" "$START_SEC"
+assert_contains_literal "ready reads the port" 'annotate-run.sh" ready --session "<id>"' "$START_SEC"
+assert_contains_literal "the port line means running" "SESSION <id> PORT <port>" "$START_SEC"
+before "listen precedes ready" "$(pos_of 'annotate-run.sh" listen' "$START_SEC")" "$(pos_of 'annotate-run.sh" ready' "$START_SEC")"
+assert_contains_literal "a refused background option falls back to plain arm" 'annotate-run.sh" arm --session "<id>"' "$START_SEC"
+assert_contains_literal "the fallback is silent" "saying nothing" "$START_SEC"
+assert_contains_literal "ensure's LISTEN STREAK is handled" "LISTEN STREAK <k>" "$START_SEC"
+assert_contains_literal "a failed ready is a failed restart" "FAILED" "$START_SEC"
+assert_contains_literal "the exit notice runs ensure" 'annotate-run.sh" ensure --session "<id>"' "$START_SEC"
+assert_contains_literal "the exit notice is named" "exited" "$START_SEC"
+assert_contains_literal "the section is the only place that starts a listener" "only text that starts a listener" "$START_SEC"
+lacks_literal "the section restates no pinned restart line" "The pin listener" "$START_SEC"
+assert_contains_literal "Step 2 sends the reader to the shared section" "Starting the listener" "$STEP2_SEC"
+assert_contains_literal "the flow reads the overlay reference before Step 2" "read it before Step 2" "$FLOW_TEXT"
+
+begin_test "the read beat handles LISTEN STREAK and keeps the three pinned lines"
+READ_BEAT="$(printf '%s\n' "$HEAL_STEP5" | awk '/\*\*The read beat/ {on=1} on {print}')"
+assert_contains_literal "the read beat lists LISTEN STREAK" "LISTEN STREAK <k>" "$READ_BEAT"
+assert_contains_literal "the read beat lists OK" 'OK PORT <port>' "$READ_BEAT"
+assert_contains_literal "the read beat keeps REARMED" 'REARMED PORT <port> STREAK <k>' "$READ_BEAT"
+assert_contains_literal "the read beat keeps FAILED and GONE" 'FAILED' "$READ_BEAT"
+assert_contains_literal "the loader failure routes through ensure" 'run `ensure`' "$(section_of '## Step 4' "$FLOW_TEXT")"
+lacks_literal "the loader failure no longer re-arms" 'run `arm --session "<id>"` and run the loader again' "$FLOW_TEXT"
+assert_contains_literal "second-failure line stays verbatim" "The pin listener dropped again - I restarted it; if SEND does nothing, tell me and I'll read the pins from the page." "$FLOW_TEXT"
+assert_contains_literal "failed-restart line stays verbatim" "The pin listener won't restart - keep pinning and tell me when you're done; I'll read the pins from the page." "$FLOW_TEXT"
+
+begin_test "a gone session id arms a new session and never re-arms the old id"
+assert_contains_literal "status naming a gone id is recognized" 'no such session: <id>' "$STEP2_SEC"
+assert_contains_literal "a gone id is dropped" "drop the id" "$STEP2_SEC"
+assert_contains_literal "a new session arms with no --session" "no \`--session\`" "$STEP2_SEC"
+assert_contains_literal "the gone id is never re-armed" 'Never `arm --session` that id' "$STEP2_SEC"
+assert_contains_literal "it happens without a word" "without a word" "$STEP2_SEC"
+
+begin_test "the cut-short offer is pinned, once per conversation, no widget"
+OFFER='There'"'"'s a run cut short last time - "<subject>", <n> pins<, and <m> more>. Want me to pick it up, send it somewhere (tweak, story or todo), or drop it?'
+assert_contains_literal "the offer line is verbatim" "$OFFER" "$FLOW_TEXT"
+assert_contains_literal "the listing runs in Step 2" 'annotate-record.sh" cut-short' "$STEP2_SEC"
+assert_contains_literal "the listing may carry the project root" 'annotate-record.sh" cut-short --root "<project root>"' "$FLOW_TEXT"
+before "the listing precedes arm" "$(pos_of 'annotate-record.sh" cut-short' "$FLOW_TEXT")" "$(pos_of 'annotate-run.sh" arm' "$FLOW_TEXT")"
+before "the listing precedes the loader" "$(pos_of 'annotate-record.sh" cut-short' "$FLOW_TEXT")" "$(pos_of 'annotate-run.sh" loader --session' "$FLOW_TEXT")"
+assert_contains_literal "one pin reads 1 pin" '`1 pin` when n is 1' "$FLOW_TEXT"
+assert_contains_literal "the offer is said once per conversation" "once per conversation" "$FLOW_TEXT"
+assert_contains_literal "the offer rides the sheet-is-on message" "same message as the line above" "$FLOW_TEXT"
+assert_contains_literal "the offer is never a widget" "never a widget" "$FLOW_TEXT"
+assert_contains_literal "silence leaves the record alone" "stays saved" "$FLOW_TEXT"
+
+begin_test "pick up runs begin --resume; drop runs close"
+assert_contains_literal "pick up runs begin --resume" 'annotate-run.sh" begin --session "<id>" --subject "<record subject>" --resume "<name>"' "$FLOW_TEXT"
+assert_contains_literal "pick up re-injects through Navigation" "Navigation" "$STEP4_SEC"
+assert_contains_literal "pick up quotes the record's pins as the user's words" "the user's words" "$STEP4_SEC"
+assert_contains_literal "drop runs close" 'annotate-record.sh" close --record "<name>"' "$FLOW_TEXT"
+assert_contains_literal "send it somewhere graduates to a tweak or todo" 'graduate --record <name> --to <ref> --outcome tweak|todo' "$FLOW_TEXT"
+assert_contains_literal "send it somewhere may run story-from-annotate" "story-from-annotate" "$STEP4_SEC"
+
+begin_test "endings before init prefix the project root and say the heads-up once"
+TEAR_SEC="$(section_of '## Teardown' "$FLOW_TEXT")"
+HEADS_UP="Heads-up: /craft:init hasn't run here, so this lands in the project's .craft/ and gets picked up by the harness once init wires it in"
+assert_contains_literal "the heads-up line is verbatim" "$HEADS_UP" "$TEAR_SEC"
+assert_eq "the heads-up appears once" "1" "$(printf '%s\n' "$FLOW_TEXT" | grep -cF "$HEADS_UP" | tr -d ' ')"
+assert_contains_literal "the heads-up is said once" "said once" "$TEAR_SEC"
+assert_contains_literal "the heads-up is never an init pitch" "never an init pitch" "$TEAR_SEC"
+assert_contains_literal "the filing script gets the root" 'CRAFT_PROJECT_ROOT="<project root>"' "$TEAR_SEC"
+assert_contains_literal "the todo capture is prefixed" 'CRAFT_PROJECT_ROOT="<project root>" bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notebook-capture.sh" todo' "$TEAR_SEC"
+assert_contains_literal "the tweak brief names the project root" "names \`<project root>\`" "$TEAR_SEC"
+assert_contains_literal "the tweak brief tells adhoc to prefix it" "prefix it on every bash command" "$TEAR_SEC"
+assert_contains_literal "the story ending writes at the absolute path" '<project root>/.craft/backlog/<story-name>.md' "$TEAR_SEC"
+lacks_literal "the story ending is not left to a relative target" '.craft/backlog/[story-name].md' "$TEAR_SEC"
+
+begin_test "the error ending no longer says the run stays open for a later story"
+lacks_literal "no stays-open-for-a-later-story line" "for a later story" "$FLOW_TEXT"
+assert_contains_literal "abandon files --outcome abandon" '`--outcome abandon`' "$TEAR_SEC"
+assert_contains_literal "abandon is not offered again" "is not offered again" "$TEAR_SEC"
+assert_contains_literal "error files --outcome error" '`--outcome error`' "$TEAR_SEC"
+assert_contains_literal "the next annotate offers an error run back" "the next \`/craft:annotate\` on the project offers it back" "$TEAR_SEC"
+assert_eq "no dated slug in the shared section" "0" "$(printf '%s\n' "$START_SEC" | grep -cE '20[0-9]{2}-[0-9]{2}-[0-9]{2}-[a-z]' || true)"
+
+begin_test "mockup's acceptance clear and read beat carry the cold root"
+POLISH_SEC="$(section_of '## Step 5' "$MOCKUP_TEXT")"
+CLEAR_NOTE="$(printf '%s\n' "$POLISH_SEC" | grep -F 'annotate-run.sh" clear --session "<id>"' || true)"
+assert_not_eq "the acceptance clear is in Step 5" "" "$CLEAR_NOTE"
+assert_contains_literal "the acceptance clear adds the cold path's root" 'annotate-run.sh" clear --session "<id>"` (on the cold path add `--root "<cold root>"`)' "$CLEAR_NOTE"
+MOCKUP_WAIT_NOTE="$(printf '%s\n' "$SHEET" | awk '/annotate-run.sh" wait --session "<id>" --since <last seq acted on> --timeout 0$/ {f = 1; next} f && $0 != "" && $0 != "```" {print; exit}')"
+assert_contains_literal "the read beat adds the cold path's root to the wait" '--root "<cold root>"' "$MOCKUP_WAIT_NOTE"
+assert_contains_literal "the read beat's ensure adds the cold path's root" '(add `--root "<cold root>"` on the cold path)' "$SHEET"
+
+begin_test "neither read beat cats a path any more"
+for f_text in "$MOCKUP_TEXT" "$DIAL_TEXT"; do
+  lacks_literal "no cat of a relative annotations path" 'cat ".craft/annotations' "$f_text"
+  lacks_literal "no cat through CRAFT_PROJECT_ROOT" 'CRAFT_PROJECT_ROOT:-.}/.craft/annotations' "$f_text"
+  lacks_literal "no cat of current.json" 'current.json' "$f_text"
+done
+assert_contains_literal "the wait never blocks" "never blocks" "$SHEET"
+assert_contains_literal "a WAITING answer means nothing new" "WAITING" "$SHEET"
+assert_contains_literal "dial's wait answers WAITING too" "WAITING" "$STEP7"
+
+begin_test "every annotate-run arm in mockup-inline.md and dial-inline.md carries --background and points at Starting the listener"
+for f_pair in "mockup:$MOCKUP_TEXT" "dial:$DIAL_TEXT"; do
+  f_name="${f_pair%%:*}"; f_text="${f_pair#*:}"
+  f_arms="$(printf '%s\n' "$f_text" | grep -o 'annotate-run.sh" arm[ a-z<>"-]*' || true)"
+  assert_not_eq "$f_name names an arm command" "" "$f_arms"
+  assert_eq "no $f_name arm lacks --background" "0" "$(printf '%s\n' "$f_arms" | grep -vc -- '--background' | tr -d ' ')"
+  assert_contains_literal "$f_name points at the shared section" "## Starting the listener" "$f_text"
+  lacks_literal "$f_name never re-arms by hand" 'arm --session' "$f_text"
+  assert_contains_literal "$f_name handles LISTEN STREAK" "LISTEN STREAK" "$f_text"
+done
+assert_contains_literal "mockup arms with the cold root" 'annotate-run.sh" arm --background --root "<project root>"' "$MOCKUP_TEXT"
+assert_contains_literal "dial arms with the held root" 'annotate-run.sh" arm --background' "$STEP7"
+assert_contains_literal "mockup keeps the restart lines" "The pin listener won't restart - keep pinning and tell me when you're done; I'll read the pins from the page." "$MOCKUP_TEXT"
+assert_contains_literal "dial keeps the restart lines" "The pin listener won't restart - keep pinning and tell me when you're done; I'll read the pins from the page." "$DIAL_TEXT"
+assert_eq "mockup restates no listen command" "0" "$(printf '%s\n' "$MOCKUP_TEXT" | grep -cF 'annotate-run.sh" listen' | tr -d ' ')"
+assert_eq "dial restates no listen command" "0" "$(printf '%s\n' "$DIAL_TEXT" | grep -cF 'annotate-run.sh" listen' | tr -d ' ')"
+
+begin_test "dial comment mode runs the folder call and stops only comment mode on a refusal"
+DIAL_COMMENT="$(printf '%s\n' "$STEP7" | grep -F '**Comment mode, on request.**' || true)"
+assert_contains_literal "comment mode runs the shared folder call" 'craft_refuse_monorepo_top "an annotate session" && exit 1; craft_before_init_root' "$DIAL_COMMENT"
+assert_contains_literal "the call runs only when CRAFT_PROJECT_ROOT is unset" "CRAFT_PROJECT_ROOT" "$DIAL_COMMENT"
+assert_contains_literal "the folder is held as the cold root" '`<cold root>`' "$DIAL_COMMENT"
+assert_contains_literal "a refusal line is said verbatim" 'nothing written:' "$DIAL_COMMENT"
+assert_contains_literal "a refusal stops comment mode, not the dial" "comment mode stops, the dial carries on" "$DIAL_COMMENT"
+assert_contains_literal "the arm carries the held root" '--root "<cold root>"' "$DIAL_COMMENT"
+before "the folder call precedes the arm" "$(pos_of 'craft_refuse_monorepo_top' "$DIAL_COMMENT")" "$(pos_of 'annotate-run.sh" arm' "$DIAL_COMMENT")"
+assert_contains_literal "the read beat carries the held root" '--root "<cold root>"' "$(printf '%s\n' "$STEP7" | grep -F '**The read beat.**' || true)"
+DIAL_CALL="$(printf '%s\n' "$DIAL_COMMENT" | grep -o "bash -c 'source[^']*craft_before_init_root' _ \"[^\"]*\"" | head -1)"
+assert_not_eq "dial's comment mode carries a runnable folder call" "" "$DIAL_CALL"
+DIAL_FIX="$TMP_DIR/dial-folder-call"
+mkdir -p "$DIAL_FIX/mono/app1/.craft" "$DIAL_FIX/mono/app2/.craft"
+touch "$DIAL_FIX/mono/app1/.craft/.global-state" "$DIAL_FIX/mono/app2/.craft/.global-state"
+git -C "$DIAL_FIX/mono" init -q 2>/dev/null
+DIAL_RC=0
+DIAL_OUT="$(cd "$DIAL_FIX/mono" && env -u CRAFT_PROJECT_ROOT -u PROJECT_ROOT -u CRAFT_MULTI_PROJECT CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$DIAL_CALL" 2>"$DIAL_FIX/err")" || DIAL_RC=$?
+assert_eq "the dial call refuses at a monorepo top" "1" "$DIAL_RC"
+assert_eq "the dial call prints no folder at a monorepo top" "" "$DIAL_OUT"
+assert_contains_literal "the dial call prints the refusal" "nothing written:" "$(cat "$DIAL_FIX/err")"
+
+begin_test "dial's cold exits reuse a held cold root"
+COLD_EXITS="$(printf '%s\n' "$STEP8" | grep -F '**Cold-path exits (rung (d)):**' || true)"
+assert_contains_literal "the cold exits keep the pinned call" "craft_before_init_root' _ \"\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/find-workshop.sh\"" "$COLD_EXITS"
+assert_contains_literal "a held cold root is reused, not looked up again" "already holds \`<cold root>\`" "$COLD_EXITS"
+assert_contains_literal "the cold prefix stays" 'CRAFT_PROJECT_ROOT="<cold root>"' "$COLD_EXITS"
+
+finish_tests "test-annotate-wiring"

@@ -77,11 +77,11 @@ done <<EOF
 $GROUP_LIST
 EOF
 
-# Test: exactly eight jobs, the five groups plus doc-drift, template-stamp, browser
+# Test: exactly nine jobs, the five groups plus doc-drift, template-stamp, annotate-browser, browser
 JOB_IDS=$(awk '/^jobs:$/{f=1;next} f && /^  [a-zA-Z0-9_-]+:$/{gsub(/^  |:$/,""); print}' "$WF")
-EXPECTED_JOBS=$(printf '%s\ndoc-drift\ntemplate-stamp\nbrowser\n' "$GROUP_LIST" | sort)
+EXPECTED_JOBS=$(printf '%s\ndoc-drift\ntemplate-stamp\nannotate-browser\nbrowser\n' "$GROUP_LIST" | sort)
 if [ "$(echo "$JOB_IDS" | sort)" = "$EXPECTED_JOBS" ]; then
-  pass "the workflow defines exactly the eight expected jobs"
+  pass "the workflow defines exactly the nine expected jobs"
 else
   fail "job list mismatch" "got: $(echo "$JOB_IDS" | tr '\n' ' ')"
 fi
@@ -119,9 +119,33 @@ NEEDS_LINE=$(job_block browser | grep '^    needs:' || true)
 # an extra job smuggled into the list.
 EXPECTED_NEEDS="    needs: [$(printf '%s\ndoc-drift\ntemplate-stamp\n' "$GROUP_LIST" | paste -sd, - | sed 's/,/, /g')]"
 if [ "$NEEDS_LINE" = "$EXPECTED_NEEDS" ]; then
-  pass "the browser job declares needs on exactly the other seven jobs"
+  pass "the browser job declares needs on exactly the seven suite and git-range jobs"
 else
   fail "browser job's needs line is wrong" "got: '$NEEDS_LINE' expected: '$EXPECTED_NEEDS'"
+fi
+
+# Test: annotate-browser is blocking, standalone, and fails (not skips) without a browser
+AB=$(job_block annotate-browser)
+if echo "$AB" | grep -q '^    env:$' && echo "$AB" | grep -q '^      CRAFT_CI_REQUIRE_BROWSER: "1"$' \
+  && echo "$AB" | grep -q '^      CRAFT_CI_LIVE: "1"$' \
+  && echo "$AB" | grep -q 'run: bash tests/test-ci-annotate-check.sh$' \
+  && ! echo "$AB" | grep -qE 'continue-on-error|needs:'; then
+  pass "annotate-browser is blocking, has no needs, and runs the annotate check's tests live with CRAFT_CI_REQUIRE_BROWSER"
+else
+  fail "annotate-browser job is missing, non-blocking, has needs, or lacks CRAFT_CI_REQUIRE_BROWSER" "$AB"
+fi
+# A required check needs a bounded runtime: without timeout-minutes a hung
+# step holds every PR on a pending check for GitHub's 360-minute default.
+if echo "$AB" | grep -qx '    timeout-minutes: 10'; then
+  pass "annotate-browser sets timeout-minutes: 10"
+else
+  fail "annotate-browser does not set timeout-minutes: 10" "$AB"
+fi
+if ! job_block browser | grep -q 'annotate-check' && job_block browser | grep -q '^      CRAFT_CI_LIVE: "1"$' \
+  && job_block browser | grep -q 'run: bash tests/test-ci-browser-check.sh$'; then
+  pass "browser runs no annotate check and runs the browser check's tests live"
+else
+  fail "browser job runs an annotate check or lost the live browser check tests"
 fi
 
 # Test: every job runs on ubuntu-latest
@@ -160,7 +184,7 @@ fi
 
 # --- Runbook / workflow agreement (added by the runbook chunk) -------------
 if [ -f "$RUNBOOK" ]; then
-  # The seven blocking job ids (everything except browser) must each be named
+  # The eight blocking job ids (everything except browser) must each be named
   # as a required check in the runbook - derived from the workflow, not restated.
   RB_OK=1
   while IFS= read -r j; do
@@ -170,9 +194,14 @@ if [ -f "$RUNBOOK" ]; then
 $JOB_IDS
 EOF
   if [ "$RB_OK" -eq 1 ]; then
-    pass "the runbook names all seven required check ids from the workflow"
+    pass "the runbook names all eight required check ids from the workflow, annotate-browser included"
   else
     fail "runbook/workflow job-name drift"
+  fi
+  if grep -q '`annotate-browser`' "$RUNBOOK" && [ "$(grep -c '{"context": "annotate-browser"}' "$RUNBOOK")" = "2" ]; then
+    pass "the runbook lists annotate-browser in both payloads"
+  else
+    fail "the runbook payloads do not both carry annotate-browser"
   fi
   if grep -qi 'browser.*not required\|browser.*NOT a required' "$RUNBOOK"; then
     pass "the runbook names browser as not required"
@@ -201,6 +230,28 @@ if grep -qF 'docs/ci-branch-protection.md' "$ROOT/CONTRIBUTING.md" && [ -f "$RUN
   pass "CONTRIBUTING.md links docs/ci-branch-protection.md and the path resolves"
 else
   fail "CONTRIBUTING.md does not link the runbook (or the path is dead)"
+fi
+
+# CONTRIBUTING.md's "must be green to merge" line names exactly the runbook's
+# required checks (the bulleted ids under "## The checks"), and its count word
+# matches - a contributor held by a red required check must find it named.
+RB_REQUIRED=$(awk '/^## The checks$/{f=1;next} f && /^## /{f=0} f' "$RUNBOOK" \
+  | sed -n 's/^- `\([a-z0-9_-]*\)`$/\1/p' | sort)
+MERGE_LINE=$(grep 'CI checks must be green to merge' "$ROOT/CONTRIBUTING.md" || true)
+CONTRIB_REQUIRED=$(printf '%s\n' "${MERGE_LINE%%(*}" | grep -o '`[a-z0-9_-]*`' | tr -d '`' | sort)
+if [ -n "$RB_REQUIRED" ] && [ "$CONTRIB_REQUIRED" = "$RB_REQUIRED" ]; then
+  pass "CONTRIBUTING.md names the same required checks as the runbook"
+else
+  fail "CONTRIBUTING.md's required checks differ from the runbook's" \
+    "contributing: $(echo $CONTRIB_REQUIRED) | runbook: $(echo $RB_REQUIRED)"
+fi
+N_REQ=$(printf '%s\n' "$RB_REQUIRED" | grep -c . || true)
+COUNT_WORDS="one two three four five six seven eight nine ten eleven twelve"
+COUNT_WORD=$(echo "$COUNT_WORDS" | cut -d' ' -f"$N_REQ" 2>/dev/null || true)
+if printf '%s\n' "$MERGE_LINE" | grep -qi "^- $COUNT_WORD CI checks must be green to merge"; then
+  pass "CONTRIBUTING.md states the required-check count as '$COUNT_WORD'"
+else
+  fail "CONTRIBUTING.md's required-check count is not '$COUNT_WORD'" "$MERGE_LINE"
 fi
 
 echo ""

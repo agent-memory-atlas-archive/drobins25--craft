@@ -32,6 +32,8 @@ For **approach** positions that add an element: prefer `::before`/`::after` cont
 
 Each is one `evaluate_script` payload. `dial-inline.md` refers to them by name.
 
+`evaluate_script` takes a function and calls it, so every payload goes in as the body of `() => { <payload> }`, with the payload's text unchanged inside. Sent bare, a payload that ends in `;` (TOGGLE, CLEAR) is refused with `Unexpected token ';'` and nothing runs, and a self-calling one (MEASURE, INJECT) runs but the tool reports `fn is not a function`. To get MEASURE's object back, put `return` in front of it inside the body.
+
 ### MEASURE
 
 Read the surface before and during the session. Returns a small JSON-ish object - never a full accessibility tree:

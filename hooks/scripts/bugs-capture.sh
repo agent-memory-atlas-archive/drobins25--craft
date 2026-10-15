@@ -18,24 +18,19 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+LOCAL_FILING=0
 if [ -n "$CRAFT_PROJECT_ROOT" ]; then
   ROOT="${CRAFT_PROJECT_ROOT%/}"
 else
   source "$SCRIPT_DIR/find-workshop.sh" >/dev/null 2>&1 || true
-  ROOT="${PROJECT_ROOT%/}"
-fi
-
-# Cold fallback: no initialized project resolved. Anchor to the git toplevel
-# (never a subdirectory), else PWD, so filing works before /craft:init. A
-# non-git landing spot is announced - an orphaned bug must be loud - but only
-# after the record exists, so a refused filing never claims a file.
-LOCAL_FILING=0
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -z "$ROOT" ]; then
-    ROOT="$PWD"
-    LOCAL_FILING=1
-  fi
+  # A monorepo's top level is no project: refuse before anything is read or written.
+  if craft_refuse_monorepo_top "a bug"; then exit 2; fi
+  # The shared lookup picks the folder, so filing works before /craft:init. A
+  # non-git landing spot is announced - an orphaned bug must be loud - but only
+  # after the record exists, so a refused filing never claims a file.
+  craft_before_init_root >/dev/null
+  ROOT="$CRAFT_BEFORE_INIT_ROOT"
+  if [ "$CRAFT_BEFORE_INIT_FROM" = "folder" ]; then LOCAL_FILING=1; fi
 fi
 
 FOUND_DURING=""

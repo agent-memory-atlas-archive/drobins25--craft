@@ -21,6 +21,13 @@ Help the user decompose the cycle into stories through conversation:
 
 **Only invoke `creative-spark`** if the user is genuinely unsure what stories the cycle needs (e.g., "I don't know where to start" or "What would you suggest?").
 
+**Waiting designs (before presenting):** Read `"${CLAUDE_PLUGIN_ROOT}/commands/references/story-from-craft-designs.md"` with the Read tool - never via the Skill tool - and run its `## Search` once. If nothing waits, the list below reads exactly as it would without this step. If a design waits (a mockup that converged or was parked, an annotate run still open), judge each one against the cycle goal and the discussion:
+
+- A design that fits the goal goes into the numbered list as a story candidate with its type tag and a source tag, `*From the <slug> <mockup|annotate run>* (<status word>, waiting)`, after its one-line description. It counts as one deliverable like any other story line.
+- A design that does not fit is named once, after the list, on a single line: `Also waiting, not in this goal: <slug> (<kind>, <date>)`. List several as one line, comma-separated.
+
+This adds no question: the "Does this capture the scope?" question below carries it.
+
 Present initial story list with inferred type tags (`ui`, `technical`, or `content`). Infer the type from conversational context — if the story involves visual design, layout, or animation it's `ui`; if it's API routes, data, or infrastructure it's `technical`; if it's copy, tone, or onboarding flow it's `content`.
 
 **Scope check (before presenting):** Before showing the story list, evaluate whether the story count matches the scope complexity. Count the concrete deliverables in the cycle goal and discussion — interactive features, distinct pages/views, API endpoints, data models, content surfaces. Apply these heuristics:
@@ -37,9 +44,11 @@ If the scope looks thin, include a **Scope check** note inline with the story li
 >
 > 1. **[Story idea 1]** `ui` — [one line]
 > 2. **[Story idea 2]** `ui` — [one line]
-> 3. **[Story idea 3]** `ui` — [one line]
+> 3. **[Story idea 3]** `ui` — [one line] *From the <slug> <mockup|annotate run>* (<status word>, waiting)
 >
 > **Scope check:** This cycle covers [N deliverables] but only has [M] stories. [Specific concern — e.g., "Story 2 alone covers 5 interactive commands with distinct animations - that could be 8+ chunks. Consider splitting into separate stories per command group."] You can proceed as-is or adjust.
+>
+> Also waiting, not in this goal: <slug> (<kind>, <date>)
 >
 > Does this capture the scope? (Check the type tags — correct any that are wrong.)"
 
@@ -49,7 +58,9 @@ If the scope looks thin, include a **Scope check** note inline with the story li
 >
 > 1. **[Story idea 1]** `ui` — [one line]
 > 2. **[Story idea 2]** `technical` — [one line]
-> 3. **[Story idea 3]** `ui` — [one line]
+> 3. **[Story idea 3]** `ui` — [one line] *From the <slug> <mockup|annotate run>* (<status word>, waiting)
+>
+> Also waiting, not in this goal: <slug> (<kind>, <date>)
 >
 > Does this capture the scope? (Check the type tags — correct any that are wrong.)"
 
@@ -76,7 +87,15 @@ options:
 
 **If "Flesh out individually":** Continue to Step 3 (per-story flow).
 
-### Step 2.7: Planning-Source Routing (Per Story, Before Step 3 or Step 3-Fast)
+### Step 2.7: Story-Source Routing (Per Story, Before Step 3 or Step 3-Fast)
+
+**Design-extraction moment.** This runs first, before the `cycle.yaml` read below, so a freeform cycle never skips it. For each story the user kept that carries a source tag from Step 2 (a story tied to a waiting design), the story is produced from that design, not from a fresh spark:
+
+1. Run the `## Pick` of `story-from-craft-designs.md` with that design named (the conversation already named it, so there is no confirm and no question), then its `## Hand-off`. The graduation reference it reads writes the story, pre-filled, and marks the record graduated.
+2. Move the written story into this cycle: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/move-story.sh" "<story path the graduation reference reported>" "<this cycle's directory name>"` (the full directory name, for example `<N>-<cycle-name>`).
+3. Continue with the next kept story.
+
+A design-tied story skips the planning routing below and the Step 3a-3e / Step 3-Fast template. Handle the kept list in order, so each moved story's number follows the one before it. A candidate the user removed at "Remove/combine some" leaves its record untouched and still waiting; nothing is graduated until its story is written.
 
 **Before doing per-story work in Step 3 or Step 3-Fast**, read `cycle.yaml` to check whether this cycle has `source_concept` set.
 
@@ -128,7 +147,7 @@ Default toward asking when uncertain - one short question beats wrong-stamping a
 
 The brainstorm already produced clear sparks. Write all story files at once using the descriptions from Step 2.
 
-**First run Step 2.7 (Planning-Source Routing) per story above** - planning-extracted stories go through story-from-planning.md, freeform additions follow the batch flow below.
+**First run Step 2.7 (Story-Source Routing) per story above** - design-tied stories go through the design-extraction moment, planning-extracted stories go through story-from-planning.md, freeform additions follow the batch flow below.
 
 For each freeform story in the confirmed list:
 1. Use the story description from Step 2 as the spark
@@ -143,7 +162,7 @@ After writing all files (both planning-extracted via the protocol and freeform v
 
 **Cycle planning is high-level.** Capture the spark for each story — detailed planning happens later via `plan-chunks`.
 
-**Before each story:** apply Step 2.7 (Planning-Source Routing) above. If the story is planning-extraction, Read `story-from-planning.md` (one directory up from this file, in `commands/references/`) and execute its phases for that story instead of running Step 3a-3e below. The protocol writes the story file directly (including spark drawn from planning content). For freeform stories, continue with the Step 3 flow below.
+**Before each story:** apply Step 2.7 (Story-Source Routing) above. If the story is tied to a waiting design, run the design-extraction moment and skip Step 3a-3e. If the story is planning-extraction, Read `story-from-planning.md` (one directory up from this file, in `commands/references/`) and execute its phases for that story instead of running Step 3a-3e below. The protocol writes the story file directly (including spark drawn from planning content). For freeform stories, continue with the Step 3 flow below.
 
 **CRITICAL: Questions vs Answers**
 

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="craft-template-version" content="8">
+<meta name="craft-template-version" content="9">
 <title>Craft Browser</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1017,6 +1017,7 @@ const TYPE_HSL = {
   dial: [302, 42, 63],      // orchid
   mockup: [135, 45, 56],    // tree green
   bug: [156, 50, 52],       // jade - filed defects, open or closed
+  annotation: [235, 45, 62], // indigo - annotate runs
 };
 const TYPE_RGB = {};
 for (const k in TYPE_HSL) TYPE_RGB[k] = hsl2rgb(TYPE_HSL[k][0], TYPE_HSL[k][1], TYPE_HSL[k][2]);
@@ -1765,7 +1766,7 @@ class GraphView {
   // reads as its whole body after the frontmatter.
   sourceSection(type, text) {
     const body = String(text).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
-    const titles = { story: 'Spark', fix: 'Symptom', tweak: 'Request', mockup: 'Brief' };
+    const titles = { story: 'Spark', fix: 'Symptom', tweak: 'Request', mockup: 'Brief', annotation: 'Pins' };
     const wanted = titles[type];
     if (!wanted) return body.trim() || null;
     const lines = body.split('\n');

@@ -27,6 +27,8 @@ The block above is the live open pile, filled in before this prompt reached you:
 
 Set `PROJECT` to `${CRAFT_PROJECT_ROOT:-.}`. All `.craft/` paths resolve under this root. The scripts resolve it themselves, so call them as written and never change directory first.
 
+From a monorepo's top level with no project picked, `bugs-capture.sh` files nothing: it exits 2 with one line naming the projects it found, because a record there would sit where no project's session lists it. Relay that line and stop. The user picks a project with `/craft:project`; a script or agent sets `CRAFT_PROJECT_ROOT` to the project's folder and files again.
+
 ## Route
 
 Read `${CLAUDE_PLUGIN_ROOT}/commands/references/bugs-record.md` and follow it inline, in this session. Never run it through the Skill tool. It holds the record template, the filing rules, and the closing rules.

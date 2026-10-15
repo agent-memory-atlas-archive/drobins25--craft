@@ -1412,12 +1412,14 @@ Use LLM evaluation instead of bash scripts. **Critical:** Prompt hooks must expl
       "hooks": [{
         "type": "prompt",
         "prompt": "Session ending. Review for harness improvements.\n\nLook for:\n1. Patterns used 2+ times → add to CLAUDE.md\n2. Repeated corrections → create rule or hook\n\nRespond with JSON only:\n- If improvements found: {\"ok\": false, \"reason\": \"Before ending, run /craft:reflect to capture: [list]\"}\n- If nothing to capture: {\"ok\": true}",
-        "timeout": 30000
+        "timeout": 30
       }]
     }]
   }
 }
 ```
+
+Hook timeouts are in seconds, not milliseconds: `30` is thirty seconds, and `30000` would be about eight hours. `tests/test-hook-timeouts.sh` fails on any value of 1000 or more.
 
 **How it works:** When `ok: false`, the `reason` becomes Claude's next instruction, triggering the workflow.
 

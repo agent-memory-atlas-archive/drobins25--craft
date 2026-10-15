@@ -131,5 +131,65 @@ assert_eq "ACTIVE_CYCLE is test" "test" "$ACTIVE_CYCLE"
 cleanup_test_dir
 echo ""
 
+# Test 9: Write gate open/close on a never-inited project writes nothing
+# A bare .craft/ (only mockups/, no project.md, no .global-state) is not a
+# project the write gate guards. Creating .global-state to record the gate
+# would make it one, and the close step would then deny every source edit.
+begin_test "CRAFT_WRITE_ENABLED on a never-inited project creates no .global-state"
+
+TEST_DIR=$(mktemp -d)
+mkdir -p "$TEST_DIR/.craft/mockups/x"
+
+set +e
+bash "$UPDATE_GLOBAL_STATE_SCRIPT" CRAFT_WRITE_ENABLED "true" "$TEST_DIR" >/dev/null 2>&1
+OPEN_CODE=$?
+bash "$UPDATE_GLOBAL_STATE_SCRIPT" CRAFT_WRITE_ENABLED "" "$TEST_DIR" >/dev/null 2>&1
+CLOSE_CODE=$?
+set -e
+
+assert_eq "gate open exits 0" "0" "$OPEN_CODE"
+assert_eq "gate close exits 0" "0" "$CLOSE_CODE"
+assert_file_not_exists "no .global-state on a never-inited project" "$TEST_DIR/.craft/.global-state"
+
+rm -rf "$TEST_DIR"
+echo ""
+
+# Test 10: Write gate on a set-up project whose state file is missing still records
+# project.md makes the gate guard the project, so opening must create the file.
+begin_test "CRAFT_WRITE_ENABLED with project.md and no .global-state creates it"
+
+TEST_DIR=$(mktemp -d)
+mkdir -p "$TEST_DIR/.craft"
+echo "# Project" > "$TEST_DIR/.craft/project.md"
+
+bash "$UPDATE_GLOBAL_STATE_SCRIPT" CRAFT_WRITE_ENABLED "true" "$TEST_DIR"
+
+assert_file_exists ".global-state created for a set-up project" "$TEST_DIR/.craft/.global-state"
+source "$TEST_DIR/.craft/.global-state"
+assert_eq "CRAFT_WRITE_ENABLED is true" "true" "$CRAFT_WRITE_ENABLED"
+
+rm -rf "$TEST_DIR"
+echo ""
+
+# Test 11: A full adhoc open/close on a never-inited project leaves source edits allowed
+# Runs the real write gate hook: allowed before, with the gate open, and after it closes.
+begin_test "Adhoc open/close on a never-inited project never arms the write gate"
+
+TEST_DIR=$(mktemp -d)
+TEST_RESOLVED=$(cd "$TEST_DIR" && pwd -P)
+mkdir -p "$TEST_DIR/.craft/mockups/x"
+echo "a{}" > "$TEST_DIR/app.css"
+JSON="{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$TEST_RESOLVED/app.css\",\"old_string\":\"a\",\"new_string\":\"b\"},\"cwd\":\"$TEST_RESOLVED\"}"
+gate() { (cd "$TEST_RESOLVED" && echo "$JSON" | env -u CRAFT_PROJECT_ROOT python3 "$SCRIPTS_DIR/check-write-permission.py"); }
+
+assert_not_contains "edit allowed before adhoc" "deny" "$(gate)"
+bash "$UPDATE_GLOBAL_STATE_SCRIPT" CRAFT_WRITE_ENABLED "true" "$TEST_RESOLVED" >/dev/null 2>&1 || true
+assert_not_contains "edit allowed with the gate open" "deny" "$(gate)"
+bash "$UPDATE_GLOBAL_STATE_SCRIPT" CRAFT_WRITE_ENABLED "" "$TEST_RESOLVED" >/dev/null 2>&1 || true
+assert_not_contains "edit allowed after the gate closes" "deny" "$(gate)"
+
+rm -rf "$TEST_DIR"
+echo ""
+
 # --- Summary ---
 finish_tests

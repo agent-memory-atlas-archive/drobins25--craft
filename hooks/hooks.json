@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh",
-            "timeout": 3000,
+            "timeout": 30,
             "once": true
           }
         ]
@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/post-compact-reinject.sh",
-            "timeout": 3000
+            "timeout": 10
           }
         ]
       }
@@ -29,7 +29,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handle-tool-failure.py",
-            "timeout": 3000,
+            "timeout": 10,
             "async": true
           }
         ]
@@ -42,7 +42,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-progress.py",
-            "timeout": 5000,
+            "timeout": 10,
             "async": true
           }
         ]
@@ -55,7 +55,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-write-permission.py",
-            "timeout": 3000
+            "timeout": 10
           }
         ]
       },
@@ -65,7 +65,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-craft-vocab.py",
-            "timeout": 3000
+            "timeout": 10
           }
         ]
       },
@@ -75,7 +75,17 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-gate.sh",
-            "timeout": 5000
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-external-gate.sh pre-tool",
+            "timeout": 10
           }
         ]
       }
@@ -86,7 +96,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/export-progress.sh",
-            "timeout": 5000
+            "timeout": 10
           }
         ]
       }
@@ -97,7 +107,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-craft-context.sh",
-            "timeout": 3000
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-external-gate.sh prompt",
+            "timeout": 10
           }
         ]
       }
@@ -108,7 +127,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-hook-guard.sh",
-            "timeout": 3000
+            "timeout": 10
           }
         ]
       }

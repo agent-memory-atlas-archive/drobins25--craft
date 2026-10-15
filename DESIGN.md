@@ -37,7 +37,7 @@ plugins/craft/
 │   ├── ux-analyzer.md         ← Nielsen heuristics, accessibility
 │   ├── verifier.md            ← Adversarial claim checker (primary sources only)
 │   └── walkthrough-analyzer.md ← First-time user simulation (chrome-devtools MCP)
-├── commands/                  ← Slash command definitions (35 commands)
+├── commands/                  ← Slash command definitions (36 commands)
 │   ├── craft.md               ← Main entry point
 │   ├── craft-ask.md           ← Consult a workshop agent (intelligent routing)
 │   ├── craft-become.md        ← Agent crystallization (4-phase: research→checkpoint→crystallize→save)
@@ -46,6 +46,7 @@ plugins/craft/
 │   ├── craft-dashboard.md     ← Opens the project graph page - rebuilds first, offers a template pull when stale, then opens (distinct from craft-status.md's terminal snapshot)
 │   ├── craft-decisions.md     ← /craft:decisions - the Shelf: renders decisions live from decisions-view.sh, writes through decisions-capture.sh and decisions-transition.sh only
 │   ├── craft-guide.md         ← /craft:guide - read-only help on how craft works and what your `.craft/` state means
+│   ├── craft-annotate.md      ← /craft:annotate - point at anything in a live tab; each sent pin lands as a live change through the run's session.css, and the run is filed as a record (user-invoked only; the one flow that waits)
 │   ├── craft-dial.md          ← Live value calibration shell (candidates injected into the running app)
 │   ├── craft-mockup.md        ← Live mockup funnel shell (diverge→refine→polish, solidify at acceptance)
 │   ├── craft-notebook.md      ← Low-ceremony capture (ideas/todos/notes); conversational graduate/done
@@ -75,9 +76,13 @@ plugins/craft/
 │   ├── craft-workflow-design.md   ← Definition lifecycle (create/edit/archive)
 │   └── references/
 │       ├── workflow-formats.md    ← Shared schema reference (frontmatter, stage-file format)
+│       ├── annotate-inline.md     ← The raw-tab annotate flow (arm or reuse, begin, inject, change watch, one apply per SEND, re-inject, teardown, file, exits)
+│       ├── annotate-overlay.md    ← The comment-mode overlay source, canonical annotate clear, port stamp, channel protocol
 │       ├── dial-inject.md         ← Dial injection contract (handles, MEASURE/INJECT/TOGGLE/CLEAR, canonical clear)
 │       ├── dial-inline.md         ← The dial flow logic (single source of truth, read inline)
 │       ├── mockup-inline.md       ← The mockup funnel logic (single source of truth, read inline)
+│       ├── story-from-craft-designs.md ← Story source: search, list, pick and hand-off for the mockups and annotate runs waiting to be built (read by story-new and cycle-design)
+│       ├── story-from-annotate.md ← Story ramp: pre-fill a story from an annotate record (the look carries verbatim, content becomes scope; selector and component are anchors)
 │       └── story-from-mockup.md   ← Story ramp: pre-fill a story from a converged mockup (CSS normative)
 ├── skills/                    ← Orchestrator-context skills (11 skills)
 │   ├── approve/               ← Scoped write permission gate (AskUserQuestion + TaskCreate)
@@ -94,6 +99,13 @@ plugins/craft/
 ├── hooks/
 │   ├── hooks.json             ← Hook event definitions
 │   └── scripts/               ← 45+ bash/python hook scripts
+│       ├── annotate-run.sh        ← Single entry seam for the annotation channel (arm / listen / ready / status / wait / clear / announce / begin / watch / sheet / apply / stamp / kind / loader / bake / strip / ensure / send / review-clear / sweep / disarm / style; arm --background prepares the session, listen execs the listener so it can run as a Claude Code background command, ready waits for its port, and plain arm keeps the detached launch; style prints a read-only computed-style lookup for evaluate_script)
+│       ├── devtools-launch.cjs    ← Browser server launcher: pinned chrome-devtools-mcp, statistics off, shared profile or isolated window decided at the first browser call
+│       ├── annotate-resolve.sh    ← Pin to source: probe / resolve / where - the probe runs in the page at SEND; maps the page's matched rules and the component name to project files, honest about bundles, cached per run in resolutions.json
+│       ├── annotate-record.sh     ← Files a run as .craft/annotations/<date>-<slug>/ (record.md + session.css), graduates it (story, tweak or todo), closes it (abandoned, files kept) and lists the runs cut short (open + outcome error, read-only); the sweep and the next begin file orphaned runs, and a run begun with --resume carries the old record's pins into its own record and graduates the old one
+│       ├── annotate-root.sh       ← Shared folder lookup for the three annotate scripts: --root, then CRAFT_PROJECT_ROOT or the set-up project, then the nearest folder above the current one that already holds the named session or record, so a session armed in a project that never ran init is found without repeating --root; never picks where a new session is made, and commands that name none never walk
+│       ├── annotate-external-gate.sh ← External-page pin boundary: holds tool calls outside a closed allowlist while an annotate session is on a page outside the project (PreToolUse), lifted for one turn by a typed message (UserPromptSubmit)
+│       └── annotate-channel.py    ← Per-session capture listener (dynamic port, serves the overlay at /overlay.js, replace-the-set / tombstone, history.jsonl ledger, CORS, per-session token and Host check on every route, socket timeout, SSE stream, client registry)
 ├── templates/                 ← File templates for craft init and scaffolding
 │   ├── craft/                 ← .craft/ directory templates
 │   │   ├── design/            ← tokens.yaml, components.md, locked.md
@@ -119,6 +131,7 @@ plugins/craft/
 │   └── orchestration-index.min
 ├── docs/                      ← Human-facing documentation (informational, not auto-loaded)
 │   ├── agent-catalog.md
+│   ├── ci-branch-protection.md
 │   ├── creative-workshop.md
 │   ├── decision-tree.md       ← Routing map: every /craft path, as flowcharts
 │   ├── design-philosophy.md
@@ -127,7 +140,9 @@ plugins/craft/
 │   └── workflow-reference.md
 ├── scripts/                   ← Self-contained toolchains outside hooks/
 │   ├── map/                   ← Living Map structural generator (Node; seam: map-run.sh)
-│   └── dashboard/             ← Dashboard graph data builder (python stdlib; seams: dashboard-run.sh builds the graph data, dashboard-page.sh delivers the page template; output: .craft/graph/, .craft/dashboard.html)
+│   ├── dashboard/             ← Dashboard graph data builder (python stdlib; seams: dashboard-run.sh builds the graph data, dashboard-page.sh delivers the page template; parse_annotation.py reads annotate records for it; output: .craft/graph/, .craft/dashboard.html)
+│   ├── ci/                    ← CI helpers: run-suite-group.sh, annotate-check.sh + annotate-probe.mjs (real-browser annotate check), browser-check.sh + browser-probe.mjs (dashboard page check), check-template-stamp.sh
+│   └── check-doc-drift.sh     ← Doc drift check (changelog vs plugin.json, feat push gate)
 ├── tests/                     ← Bash test suite (30+ bash tests)
 │   ├── run-all.sh
 │   ├── test_helper.sh
@@ -219,7 +234,7 @@ Write access restricted to `.craft/` and `.claude/`. Used for story creation, de
 
 **Included skills:** content-spark, creative-spark, design-vibe, lock-decision, plan-chunks, adhoc, approve, browser
 **Included agents:** plan-chunks-agent, project-scanner, muse, riff, alchemist, conductor, doc-writer, product-anthropologist, pr-reviewer-expert, maze-architect, researcher, research-synthesizer, verifier, practitioner-reviewer, playwright-browser, become-researcher, crystallizer, guide
-**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
+**Included commands:** craft, craft:init, craft:cycle-design, craft:cycle-start, craft:cycle-complete, craft:cycle-assign, craft:story-new, craft:story-archive, craft:story-delete, craft:status, craft:update-docs, craft:docs, craft:project, craft:review, craft:become, craft:ask, craft:workflow, craft:workflow-run, craft:workflow-design, craft:research, craft:research-verify, craft:adhoc, craft:mockup, craft:dial, craft:annotate, craft:bugs, craft:dashboard, craft:decisions, craft:guide, craft:notebook, craft:planning, craft:reflect, craft:riff
 
 ### Implement Phase
 
@@ -244,7 +259,7 @@ Triggered by `/craft:analyze` after a cycle ships. No restricted write scope - r
 All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 
 ### SessionStart
-- **`session-start.sh`** (once) - Detects active cycle, sets status line, loads context
+- **`session-start.sh`** (once) - Detects active cycle, sets status line, loads context, runs the annotate sweep
 - **`post-compact-reinject.sh`** (on compact) - Re-injects craft context after context compaction
 
 ### PreToolUse (Write|Edit)
@@ -254,6 +269,9 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 
 ### PreToolUse (Bash)
 - **`push-gate.sh`** - Denies a `git push` while custody signals are live (untriaged leftovers, secret-shaped paths in the outgoing range). Never grants approval: a clean push falls through to the user's own permission flow.
+
+### PreToolUse (all tools)
+- **`annotate-external-gate.sh pre-tool`** - Deny-only boundary for annotate sessions on a page outside the project. While `annotate-run.sh` has marked a session external (`external.json` plus a pointer in `~/.cache/craft/annotate-boundary/` keyed by the conversation's pid, found by walking the hook's ancestors), every tool call outside a closed allowlist is denied, unless the user typed a message this turn (see `annotate-external-gate.sh prompt` below). The allowlist: `ToolSearch`, `TaskOutput` and `TaskStop`; `Read` of an absolute path inside the plugin; `Bash` or `Monitor` running exactly `bash <plugin>/hooks/scripts/annotate-run.sh <verb>` with one of `arm`, `listen`, `ready`, `status`, `ensure`, `begin`, `watch`, `wait`, `sheet`, `apply`, `stamp`, `loader`, `kind`, `send`, `announce`, `review-clear` or `style`, or `annotate-resolve.sh where`, on one line with arguments holding no shell syntax beyond words and double quotes (one quoted heredoc may follow), and any `--root` or `--owner-pid` naming the owner's own session project or the owner's own pid; and from the chrome-devtools browser tools: `list_pages`, `wait_for`, `take_snapshot` / `take_screenshot` only when they return their result inline (a call that saves to a `filePath` is denied), and `evaluate_script` only when it returns its result inline (a call that saves to a `filePath` is denied, even for craft's own page script) and only for craft's own page scripts (a line `loader`, `stamp`, `sheet`, `apply`, `style`, `review-clear` or `annotate-resolve.sh probe` printed, each data slot holding exactly one value of its kind, or a snippet fence from the annotate references pasted as the body of `() => { ... }`; any other script waits for a typed yes). Never answers allow or ask. If the process list cannot be read while any conversation's boundary is live, the call cannot be matched to its owner and is held; any other error while checking a call also holds it. A pointer 12 hours past its last refresh, or whose session folder is gone, is removed with a visible message. Costs one bash glob per call when no boundary exists. Calls from subagents abstain.
 
 ### PostToolUse (Write|Edit)
 - **`update-progress.py`** (async) - Tracks which files were modified, updates story progress counts
@@ -266,6 +284,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 
 ### UserPromptSubmit
 - **`inject-craft-context.sh`** - Injects active cycle/story context into every prompt
+- **`annotate-external-gate.sh prompt`** - Lifts the external-page boundary for one turn when the user types a message: records that turn's `prompt_id`, and a tool call is lifted only when its own `prompt_id` matches. Prompts that open with a task notification or another session's message, or carry an `EXTERNAL ADDED` / `EXTERNAL EDITED` line, never lift and remove any lift. Prints nothing. `annotate-run.sh` also removes the lift before it prints or sends any external pin, so a pin never rides an earlier yes.
 
 ### Stop
 - **`stop-hook-guard.sh`** - Guards against unclean session stops, ensures state consistency
@@ -291,7 +310,7 @@ All hooks defined in `hooks/hooks.json`. Scripts in `hooks/scripts/`.
 | `update-cycle-state.sh` | Update cycle .state file |
 | `update-story-status.sh` | Change story status in frontmatter |
 | `statusline.sh` | Generate status line display |
-| `find-workshop.sh` | Locate .craft/ directory |
+| `find-workshop.sh` | Locate .craft/ directory. Also owns the shared before-init lookup (`craft_before_init_root`: the set-up project, then the git top level, then the current folder) and the monorepo-top refusal (`craft_refuse_monorepo_top`) that bugs and notebook captures use |
 | `discover-projects.sh` | Find all craft projects |
 | `count-requests.sh` | Count pending items in requests queue |
 | `process-request.sh` | Route a request to a story or cycle |
@@ -379,6 +398,7 @@ project-root/
 │   │       ├── record.md      ← Durable anchor: status, reactions, polish ledger, materials, backlinks
 │   │       ├── assets/        ← Orchestrator-fetched fonts/icons (inlined into the page; travels with the folder)
 │   │       └── rounds/        ← Archived outgoing rounds (never rendered)
+│   ├── annotations/           ← Annotate records (created by /craft:annotate): <date>-<slug>/ with record.md + session.css; live session folders sit beside them and are swept
 │   ├── dials/                 ← Dial session records (created by /craft:dial, born closed - no lifecycle)
 │   ├── decisions/             ← Decision records (created by /craft:decisions)
 │   │   ├── YYYY-MM-DD-slug.md ← Pending: waiting on a ruling

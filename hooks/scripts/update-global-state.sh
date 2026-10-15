@@ -31,6 +31,13 @@ if [ ! -d "${PROJECT_ROOT}/.craft" ]; then
   exit 1
 fi
 
+# The write gate guards only a project with .global-state or project.md
+# (check-write-permission.py). On a never-inited project there is no gate to
+# open or close, and creating the state file here would arm it.
+if [ "$KEY" = "CRAFT_WRITE_ENABLED" ] && [ ! -f "$STATE_FILE" ] && [ ! -f "${PROJECT_ROOT}/.craft/project.md" ]; then
+  exit 0
+fi
+
 # Create state file if missing
 if [ ! -f "$STATE_FILE" ]; then
   cat > "$STATE_FILE" << 'EOF'

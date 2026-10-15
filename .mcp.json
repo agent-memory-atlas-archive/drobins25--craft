@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "chrome-devtools": {
-      "command": "npx",
-      "args": ["chrome-devtools-mcp@latest"],
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/devtools-launch.cjs"],
       "env": {}
     }
   }

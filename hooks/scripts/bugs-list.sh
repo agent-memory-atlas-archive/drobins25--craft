@@ -39,14 +39,7 @@ if [ -n "${CRAFT_PROJECT_ROOT:-}" ]; then
   ROOT="${CRAFT_PROJECT_ROOT%/}"
 else
   SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-  ROOT=$(source "$SELF_DIR/find-workshop.sh" >/dev/null 2>&1; echo "${PROJECT_ROOT:-}" 2>/dev/null)
-  ROOT="${ROOT%/}"
-fi
-if [ -z "$ROOT" ]; then
-  ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-fi
-if [ -z "$ROOT" ]; then
-  ROOT="$PWD"
+  ROOT=$(source "$SELF_DIR/find-workshop.sh" >/dev/null 2>&1; craft_before_init_root 2>/dev/null)
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
