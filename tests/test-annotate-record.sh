@@ -645,4 +645,65 @@ case "$(fm "$OUT" graduated_to)" in
 esac
 assert_eq "no temp file is left" "0" "$(ls "$RDIR" | grep -c '\.tmp$' || true)"
 
+begin_test "two file calls on one slug at once each get their own folder"
+# Two runs with the same subject filed in the same moment race for the same
+# dated folder name. os.mkdir settles it: the loser takes the -2 suffix.
+new_root; ROOT="$NEW_ROOT"
+ANN="$ROOT/.craft/annotations"
+live "$ROOT" fa1 0 "same slug"; hist "$LIVE" "$S1"
+live "$ROOT" fb1 0 "same slug"; hist "$LIVE" "$S1"
+OUT_A="$(mktemp)"; OUT_B="$(mktemp)"
+CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" file --session fa1 --outcome nothing > "$OUT_A" 2>/dev/null & A=$!
+CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" file --session fb1 --outcome nothing > "$OUT_B" 2>/dev/null & B=$!
+wait "$A"; RC_A=$?
+wait "$B"; RC_B=$?
+assert_eq "both file calls exit 0" "0 0" "$RC_A $RC_B"
+PATHS="$(cat "$OUT_A" "$OUT_B" | sort | tr '\n' ' ' | sed 's/ $//')"
+rm -f "$OUT_A" "$OUT_B"
+assert_eq "one record takes the base name and the other the -2 suffix" \
+  "$ANN/$TODAY-same-slug-2/record.md $ANN/$TODAY-same-slug/record.md" "$PATHS"
+REC1="$ANN/$TODAY-same-slug/record.md"; REC2="$ANN/$TODAY-same-slug-2/record.md"
+assert_eq "record 1 names its folder" "$TODAY-same-slug" "$(fm "$REC1" name)"
+assert_eq "record 2 names its folder" "$TODAY-same-slug-2" "$(fm "$REC2" name)"
+assert_eq "the two records carry the two sessions" "fa1 fb1" "$( (fm "$REC1" session; fm "$REC2" session) | sort | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "record 1 frontmatter is closed" "2" "$(grep -c '^---$' "$REC1" || true)"
+assert_eq "record 2 frontmatter is closed" "2" "$(grep -c '^---$' "$REC2" || true)"
+assert_eq "both records hold the pin" "1 1" "$(fm "$REC1" pin_count) $(fm "$REC2" pin_count)"
+assert_file_exists "record 1 has its sheet" "$ANN/$TODAY-same-slug/session.css"
+assert_file_exists "record 2 has its sheet" "$ANN/$TODAY-same-slug-2/session.css"
+assert_file_not_exists "run fa1 is filed exactly once" "$ANN/fa1/run.json"
+assert_file_not_exists "run fb1 is filed exactly once" "$ANN/fb1/run.json"
+assert_eq "no stray record folder" "2" "$(ls -d "$ANN/$TODAY-same-slug"* | wc -l | tr -d ' ')"
+
+begin_test "two file calls on one slug at once all succeed, 20 rounds"
+# Same root as above: the slug already holds folders 1 and 2, so each round's
+# pair must take the next two suffixes without sharing or skipping one.
+FILE_FAILED=0
+for i in $(seq 2 21); do
+  live "$ROOT" "fa$i" 0 "same slug"; hist "$LIVE" "$S1"
+  live "$ROOT" "fb$i" 0 "same slug"; hist "$LIVE" "$S1"
+  CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" file --session "fa$i" --outcome nothing >/dev/null 2>&1 & A=$!
+  CRAFT_PROJECT_ROOT="$ROOT" bash "$REC" file --session "fb$i" --outcome nothing >/dev/null 2>&1 & B=$!
+  wait "$A" || FILE_FAILED=$((FILE_FAILED + 1))
+  wait "$B" || FILE_FAILED=$((FILE_FAILED + 1))
+done
+assert_eq "no file call failed" "0 of 40" "$FILE_FAILED of 40"
+EXPECTED_NAMES="$TODAY-same-slug"
+for n in $(seq 2 42); do EXPECTED_NAMES="$EXPECTED_NAMES
+$TODAY-same-slug-$n"; done
+ACTUAL_NAMES="$(ls -d "$ANN/$TODAY-same-slug"* | xargs -n 1 basename | sort)"
+assert_eq "42 record folders, suffixes 2 through 42 with no gap" "$(printf '%s\n' "$EXPECTED_NAMES" | sort)" "$ACTUAL_NAMES"
+NAMED=0; CLOSED=0; SHEETS=0
+for d in "$ANN/$TODAY-same-slug"*; do
+  [ "$(fm "$d/record.md" name)" = "$(basename "$d")" ] && NAMED=$((NAMED + 1))
+  [ "$(grep -c '^---$' "$d/record.md" || true)" = "2" ] && CLOSED=$((CLOSED + 1))
+  [ -f "$d/session.css" ] && SHEETS=$((SHEETS + 1))
+done
+assert_eq "every record names its own folder" "42" "$NAMED"
+assert_eq "every record has a closed frontmatter" "42" "$CLOSED"
+assert_eq "every record has its sheet" "42" "$SHEETS"
+SESSIONS="$(for d in "$ANN/$TODAY-same-slug"*; do fm "$d/record.md" session; done | sort -u | wc -l | tr -d ' ')"
+assert_eq "42 records carry 42 distinct sessions, so none overwrote another" "42" "$SESSIONS"
+assert_eq "every run.json is gone, each run filed exactly once" "0" "$(ls "$ANN"/f[ab]*/run.json 2>/dev/null | wc -l | tr -d ' ')"
+
 finish_tests "test-annotate-record"
