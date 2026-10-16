@@ -295,9 +295,9 @@ If the agent's output is a `## PLAN FORK` report instead of a concerns summary, 
 1. Read `${CLAUDE_PLUGIN_ROOT}/commands/references/auq-grammar.md` and mirror the fork gate it models - the exemplar carries the whole grammar (question field, option shapes, header chip); mirror it rather than reconstructing it. Then surface ONE **AskUserQuestion** for the fork.
 2. **Return the answer to the planning agent.** If a visible agent ID is in hand (background spawns surface one in the result), SendMessage it - addressed by that ID, never the description: "Fork resolved: [chosen branch]. Continue planning." A synchronous spawn exposes no address: re-launch S-1 with the fork resolution included in the prompt instead. Never guess at an address.
 3. When the agent returns its concerns summary, proceed with Step 1 below as normal.
-If the output is a `## RESEARCH REQUEST` instead (a load-bearing outside fact three searches did not settle): if the story already carries a `planner door` run line, ask the user in the fork-gate grammar what the plan should assume and run nothing more.
+R1. If the output is a `## RESEARCH REQUEST` instead (a load-bearing outside fact three searches did not settle): when the story already carries a `planner door` run line, ask the user in the fork-gate grammar what the plan should assume and run nothing more.
 R2. Otherwise Read `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` with `QUERY` = the request's Question, `STORY`, `DOOR=planner`.
-R3. Read `${CLAUDE_PLUGIN_ROOT}/commands/references/alignment-check.md` and run it from Step 0, skipping the outside-world step and leaving `alignment:` untouched.
+R3. Read `${CLAUDE_PLUGIN_ROOT}/commands/references/alignment-check.md` and run it from Step 0, skipping the outside-world step; its Step 6 appends a new `_Checked:` block to the story's `## Alignment` section and sets `alignment: complete` as written (already `complete` whenever the check ran before).
 R4. Re-launch S-1 fresh with the request's answer named in the prompt (never a SendMessage to a guessed address), then proceed with Step 1.
 
 The agent returns a lightweight concerns summary (~200-400 tokens) and has already written the story file with full planning detail. Run the full validation checklist on both artifacts before proceeding to triage.

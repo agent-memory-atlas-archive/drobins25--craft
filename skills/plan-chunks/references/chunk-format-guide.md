@@ -40,7 +40,7 @@ surface.
 **Rules for the conditions table:**
 - Every condition is tagged `verified - <evidence>`, `system-owned - <who>`, or `unverifiable by reading - becomes Chunk N's FIRST test`.
 - A condition that can't carry one of those tags is not a condition - it's a hole. Go back.
-- An unverifiable condition MUST become the named chunk's first test, before anything is built on it. The plan's weakest point gets attacked first, by construction.
+- An unverifiable single-thing condition MUST become the named chunk's first test, before anything is built on it. The plan's weakest point gets attacked first, by construction.
 - A class claim never takes the first-test escape: a capture of chosen instances cannot secure a claim about a class. It is secured by research (`verified - research: <slug> -> "<anchor>"`) or, in batch, tagged `unverifiable class claim - research request raised, never a first test` with a matching Critical Blocker.
 - **The conditions table is the implementer's tripwire watchlist.** The implementer doesn't watch everything; it watches these.
 
@@ -208,7 +208,7 @@ Exempt: chunks that modify no source files (all Files entries `read-only`, or a 
 
    *Visual token assignment is a seam, not an interior (UI stories).* Two implementers given the same UI spec can assign different valid tokens to one element (`surface` vs `surface-elevated`) - both pass style-analyzer, both render differently. That is exactly the conflict Contracts exist to prevent, so a per-element token/value binding belongs in Contracts with a `[visual-source:]` receipt, never left to Approach. (Also stated in `agents/plan-chunks-agent.md` Phase 3.1, which the agent runs from its own prompt.)
 
-2. **The receipt audit** - every contract line carries a receipt; every receipt-less claim is in the conditions table; every unverifiable condition is some chunk's first test. Run the narrative check: is the Investigation causal? Are the dead ends still in it? Too clean is a finding.
+2. **The receipt audit** - every contract line carries a receipt; every receipt-less claim is in the conditions table; every unverifiable single-thing condition is some chunk's first test (a class claim goes to research). Run the narrative check: is the Investigation causal? Are the dead ends still in it? Too clean is a finding.
 
 3. **The Miranda pass** - model the specific skeptic who receives this plan (the user at triage; the reviewer who gets sent in afterward). Write down the five questions they will ask. Each must already be answered *in the artifact* - in the Investigation, a contract receipt, or the conditions table. Not answerable: answered. The plan is done when that review walks out with "...that's all."
 

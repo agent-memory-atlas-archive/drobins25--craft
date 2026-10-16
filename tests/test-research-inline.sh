@@ -51,6 +51,7 @@ assert_contains_literal "convergence anchor" '"Convergence Points"' "$REF_TEXT"
 assert_contains_literal "open questions anchor" '"Open Questions"' "$REF_TEXT"
 assert_contains_literal "findings anchor" '"Findings"' "$REF_TEXT"
 assert_contains_literal "section absent state" 'Section absent' "$REF_TEXT"
+assert_contains_literal "absent-section fallback precedes Investigation" 'before `## Investigation`' "$REF_TEXT"
 assert_contains_literal "comment-only state" 'only the template comment' "$REF_TEXT"
 assert_contains_literal "section with entries state" 'Section with entries' "$REF_TEXT"
 

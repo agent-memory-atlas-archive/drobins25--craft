@@ -111,8 +111,8 @@ If one topic → auto-select it. Check what phase it's in based on which files e
 If multiple → use **AskUserQuestion** to pick which topic to continue.
 
 Resume from where it left off based on which files exist:
-- **Branch files missing or incomplete** (no `status: complete`) → re-spawn those researcher agents (research-inline.md Step 4).
-- **All branch files complete but `_plan.md` is still a stub / `status: in-progress`** → the run was interrupted before synthesis. Build the manifest from the existing branch files and spawn the synthesizer (research-inline.md Step 6). Do NOT synthesize in the main loop.
+- **Branch files missing or incomplete** (no `status: complete`) → re-spawn those researcher agents (Read `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` and follow its Step 4).
+- **All branch files complete but `_plan.md` is still a stub / `status: in-progress`** → the run was interrupted before synthesis. Build the manifest from the existing branch files and spawn the synthesizer (the same reference, Step 6). Do NOT synthesize in the main loop.
 
 ---
 
@@ -178,7 +178,7 @@ prompt: |
 **After agents complete, re-invoke the synthesizer fresh** to regenerate `_plan.md` + `_sources.md` over the FULL branch set (original branches + new `--deep` files). The synthesizer is the sole writer of `_plan.md` in both phases - do NOT patch `_plan.md` inline from the main loop.
 
 - Build an updated manifest including the original branch files AND the new `--deep` files.
-- Spawn `craft:research-synthesizer` exactly as in research-inline.md Step 6, but with `depth: 2` (or current depth) and the full manifest.
+- Spawn `craft:research-synthesizer` exactly as in `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` Step 6, but with `depth: 2` (or current depth) and the full manifest.
 - This is a fresh spawn (a new Agent call), not a continuation of any prior synthesizer - the synthesizer is stateless and reads the folder from disk, so it works identically whether Phase 2 runs in the same session or a resumed one.
 - Handle `STATUS: OK` / `STATUS: PARTIAL_FAILURE` the same way as research-inline.md Step 6.
 
@@ -205,7 +205,7 @@ Then run the two-readings test from research-inline.md Step 2 on these sub-quest
 
 #### 4.3: Spawn and Elaborate
 
-Same pattern as research-inline.md Step 4 but scoped to this branch's sub-questions. Agents write to `02-depth-control/01-{sub-slug}.md`, etc.
+Same pattern as `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` Step 4 but scoped to this branch's sub-questions. Agents write to `02-depth-control/01-{sub-slug}.md`, etc.
 
 #### 4.4: Update Parent
 

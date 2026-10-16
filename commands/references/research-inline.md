@@ -161,7 +161,7 @@ Run this step only when `STORY` is set; otherwise skip to Return.
 
 Add to the story's `## Reference Materials` section, handling the three starting states:
 
-- **Section absent:** create `## Reference Materials` directly after `## Likely Files`, or before `## Acceptance` when there is no Likely Files section.
+- **Section absent:** create `## Reference Materials` directly after `## Likely Files`, or, when there is no Likely Files section, before `## Investigation` (before `## Acceptance` when neither exists).
 - **Section holding only the template comment:** write the run line and entries below the comment.
 - **Section with entries:** append the run line and entries below the existing ones.
 

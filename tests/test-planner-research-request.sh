@@ -43,6 +43,10 @@ begin_test "class claims never take the first-test escape"
 assert_contains_literal "agent carve-out" 'A class claim never takes the first-test escape' "$AGENT_TEXT"
 assert_contains_literal "guide carve-out" 'A class claim never takes the first-test escape' "$GUIDE_TEXT"
 assert_contains_literal "guide research receipt" 'verified - research: <slug>' "$GUIDE_TEXT"
+assert_contains_literal "receipt-audit carve-out" 'a class claim goes to a research request instead' "$(grep -F '**The receipt audit**' "$AGENT")"
+assert_contains_literal "one-more-hour carve-out" 'a class claim goes to a research request instead' "$(grep -F '**The one-more-hour question.**' "$AGENT")"
+assert_contains_literal "conditions-table carve-out" 'A class claim never takes the first-test escape' "$(grep -F '**The conditions table**' "$AGENT")"
+assert_contains_literal "guide first-test rule names single-thing conditions" 'unverifiable single-thing condition MUST become' "$GUIDE_TEXT"
 
 begin_test "research ranks below locked decisions"
 assert_contains_literal "weight line" 'outside-world EVIDENCE' "$AGENT_TEXT"
@@ -63,7 +67,7 @@ DESIGN_FILE="$PLUGIN_ROOT/DESIGN.md"
 
 begin_test "S-2 handles a research request inside the fork span"
 FORK_BLOCK="$(sed -n '/\*\*Step 0 - PLAN FORK check:\*\*/,/\*\*Step 1 - Validate/p' "$SKILL_FILE")"
-for t in '## RESEARCH REQUEST' 'research-inline.md' 'DOOR=planner' 'planner door' 'alignment-check.md'; do
+for t in '## RESEARCH REQUEST' 'R1. If the output' 'research-inline.md' 'DOOR=planner' 'planner door' 'alignment-check.md' 'sets `alignment: complete`'; do
   assert_contains_literal "fork span carries: $t" "$t" "$FORK_BLOCK"
 done
 
@@ -71,11 +75,13 @@ begin_test "batch prompt names the request"
 BATCH_LINE="$(grep -A2 'BATCH MODE: PLAN FORK is unavailable' "$SKILL_FILE")"
 assert_contains_literal "request unavailable in batch" 'RESEARCH REQUEST is unavailable too' "$BATCH_LINE"
 assert_contains_literal "recorded as a research blocker" '`research` Critical Blocker' "$BATCH_LINE"
+assert_file_not_contains "plan-chunks never names craft:research as something to invoke" 'craft:research' "$SKILL_FILE"
 
 begin_test "batch triage runs research blockers before BT-2"
 TRIAGE_TEXT="$(cat "$TRIAGE_FILE")"
 assert_contains_literal "research blockers are not BT-2 questions" 'type `research` are not asked as BT-2 questions' "$TRIAGE_TEXT"
-assert_contains_literal "run before BT-2" 'RESEARCH REQUEST steps 1-3' "$TRIAGE_TEXT"
+assert_contains_literal "run before BT-2" 'RESEARCH REQUEST steps R1-R3' "$TRIAGE_TEXT"
+assert_contains_literal "triage names where the request block lives" 'output_file' "$TRIAGE_TEXT"
 assert_contains_literal "held premise line" 'kept as planned - research confirmed' "$TRIAGE_TEXT"
 assert_contains_literal "overturned premise re-plans" 'Adjusted Story Re-Planning' "$(grep -i 'research' "$TRIAGE_FILE")"
 
