@@ -122,7 +122,7 @@ Resume from where it left off based on which files exist:
 
 Use **Read** to read `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` and run it inline with `QUERY` (the user's query), `DEPTH` (`--quick` when that flag was set, otherwise none; `--deep` and `--exhaustive` stay with this command) and `PROJECT`. Set no `STORY` and no `DOOR`. It drafts the question and branches, checks the reading, creates the research folder, runs the researchers and the synthesizer, and presents the results.
 
-**If `--deep` or `--exhaustive` was set:** ask nothing. Run Step 4 on every ranked branch in `_plan.md`; for `--exhaustive`, then invoke `/craft:research-verify {topic-slug}`. End.
+**If `--deep` or `--exhaustive` was set:** ask nothing. Run Step 3 on every ranked branch in `_plan.md`; for `--exhaustive`, then invoke `/craft:research-verify {topic-slug}`. End.
 
 Otherwise offer next steps:
 
