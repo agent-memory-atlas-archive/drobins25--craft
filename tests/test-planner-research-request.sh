@@ -83,6 +83,8 @@ assert_contains_literal "research blockers are not BT-2 questions" 'type `resear
 assert_contains_literal "run before BT-2" 'RESEARCH REQUEST steps R1-R3' "$TRIAGE_TEXT"
 assert_contains_literal "triage names where the request block lives" 'output_file' "$TRIAGE_TEXT"
 assert_contains_literal "triage never asks a research item directly" 'never asks it directly' "$TRIAGE_TEXT"
+assert_contains_literal "held premise retags the conditions row" "retag the story's class-claim conditions row" "$TRIAGE_TEXT"
+assert_contains_literal "BT-2 answer retags the same row" 'user ruled at triage' "$TRIAGE_TEXT"
 assert_contains_literal "held premise line" 'kept as planned - research confirmed' "$TRIAGE_TEXT"
 assert_contains_literal "overturned premise re-plans" 'Adjusted Story Re-Planning' "$(grep -i 'research' "$TRIAGE_FILE")"
 
