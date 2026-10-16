@@ -203,7 +203,7 @@ Move `02-depth-control--deep.md` into the folder as well.
 
 Based on the branch's findings, conflicts, and gaps, generate 2-5 deeper sub-questions. These should drill into specifics, not re-cover what's already known.
 
-Then run the two-readings test from research-inline.md Step 2 on these sub-questions, so the check runs on every decompose.
+Then run the two-readings test from research-inline.md Step 2 on these sub-questions, so the check runs on every decompose. When it fires, the question is answered before anything is spawned; 4.3 runs only after that.
 
 #### 4.3: Spawn and Elaborate
 

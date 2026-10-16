@@ -82,6 +82,7 @@ begin_test "deeper decompose runs the two-readings test"
 STEP42="$(sed -n '/^#### 4.2:/,/^#### 4.3:/p' "$CMD")"
 assert_contains_literal "4.2 runs the shared Step 2" 'research-inline.md' "$STEP42"
 assert_contains "4.2 names Step 2" 'Step 2' "$STEP42"
+assert_contains_literal "4.2 answers the reading before spawning" 'answered before anything is spawned' "$STEP42"
 
 begin_test "no em dashes in the new reference"
 # Build the em dash from its bytes so this file does not carry one itself.
