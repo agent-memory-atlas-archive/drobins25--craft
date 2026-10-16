@@ -22,7 +22,7 @@ Concerns and decisions from agent plan reports are sorted into three tiers based
    - Decisions Made table entries where confidence is low
    - Design Decision Validation entries where status is `concern` or `invalid`
    - Critical Blockers (always treated as needs-review)
-   - Critical Blockers of type `research` are not asked as BT-2 questions: before BT-2, run each through S-2 Step 0's RESEARCH REQUEST steps R1-R3 in SKILL.md (the user is at the desk now; the request block is in that story's `output_file` from the registry), comparing its "plan assumes" line against the landed Convergence Points. Premise held: print "kept as planned - research confirmed <premise>" and drop the item. Premise overturned: queue the story through "Adjusted Story Re-Planning" with the research citations as BINDING context. Gap still open after the run (the one-run rule): ask via BT-2.
+   - Critical Blockers of type `research` are not asked as BT-2 questions: before BT-2, run each through S-2 Step 0's RESEARCH REQUEST steps R1-R3 in SKILL.md (the user is at the desk now; the request block is in that story's `output_file` from the registry), comparing its "plan assumes" line against the landed Convergence Points. Premise held: print "kept as planned - research confirmed <premise>" and drop the item. Premise overturned: queue the story through "Adjusted Story Re-Planning" with the research citations as BINDING context. Gap still open after the run, or R1 stopped on an existing planner door run: one BT-2 item; triage never asks it directly.
 3. Tag each item with its source story name
 4. Sort all items: low confidence first, then medium, then high
 5. Within the same confidence tier, group by story (keeps mental context together)

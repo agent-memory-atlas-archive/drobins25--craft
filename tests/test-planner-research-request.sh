@@ -67,7 +67,7 @@ DESIGN_FILE="$PLUGIN_ROOT/DESIGN.md"
 
 begin_test "S-2 handles a research request inside the fork span"
 FORK_BLOCK="$(sed -n '/\*\*Step 0 - PLAN FORK check:\*\*/,/\*\*Step 1 - Validate/p' "$SKILL_FILE")"
-for t in '## RESEARCH REQUEST' 'R1. If the output' 'research-inline.md' 'DOOR=planner' 'planner door' 'alignment-check.md' 'sets `alignment: complete`'; do
+for t in '## RESEARCH REQUEST' 'R1. If the output' 'research-inline.md' 'DOOR=planner' 'planner door' 'alignment-check.md' 'sets `alignment: complete`' 'BT-2 item'; do
   assert_contains_literal "fork span carries: $t" "$t" "$FORK_BLOCK"
 done
 
@@ -82,6 +82,7 @@ TRIAGE_TEXT="$(cat "$TRIAGE_FILE")"
 assert_contains_literal "research blockers are not BT-2 questions" 'type `research` are not asked as BT-2 questions' "$TRIAGE_TEXT"
 assert_contains_literal "run before BT-2" 'RESEARCH REQUEST steps R1-R3' "$TRIAGE_TEXT"
 assert_contains_literal "triage names where the request block lives" 'output_file' "$TRIAGE_TEXT"
+assert_contains_literal "triage never asks a research item directly" 'never asks it directly' "$TRIAGE_TEXT"
 assert_contains_literal "held premise line" 'kept as planned - research confirmed' "$TRIAGE_TEXT"
 assert_contains_literal "overturned premise re-plans" 'Adjusted Story Re-Planning' "$(grep -i 'research' "$TRIAGE_FILE")"
 
