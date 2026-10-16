@@ -41,6 +41,7 @@ surface.
 - Every condition is tagged `verified - <evidence>`, `system-owned - <who>`, or `unverifiable by reading - becomes Chunk N's FIRST test`.
 - A condition that can't carry one of those tags is not a condition - it's a hole. Go back.
 - An unverifiable condition MUST become the named chunk's first test, before anything is built on it. The plan's weakest point gets attacked first, by construction.
+- A class claim never takes the first-test escape: a capture of chosen instances cannot secure a claim about a class. It is secured by research (`verified - research: <slug> -> "<anchor>"`) or, in batch, tagged `unverifiable class claim - research request raised, never a first test` with a matching Critical Blocker.
 - **The conditions table is the implementer's tripwire watchlist.** The implementer doesn't watch everything; it watches these.
 
 ### `## Investigation` (the planner's narrative)
@@ -125,7 +126,7 @@ patterns in jobs/ - out of scope, the ILS client tests are the pattern to mirror
 
 | Receipt | Meaning |
 |---------|---------|
-| `[verified: <what was checked and what would have falsified it>]` | Attacked against existing code during investigation. The receipt is attack residue, not attestation - "I tried to kill this and here's what would have killed it." |
+| `[verified: <what was checked and what would have falsified it>]` | Attacked against existing code during investigation. The receipt is attack residue, not attestation - "I tried to kill this and here's what would have killed it."  For a fact outside the repo the form is `[verified: web - <source url or doc name> - <what was checked>]`. |
 | `[owner: Chunk N]` | The contract's truth is produced by an earlier chunk. By implement time it's real, compiled code - cite IT, not this line, if they differ. |
 | `[investigation: <one-line reason>]` | Backref to the narrative - the reasoning this contract protects. The implementer uses this to judge mismatches: does a deviation break the *reason*, or just the coordinates? |
 | `[defines]` | A new seam this chunk creates - a name, route, or shape with no prior reality to verify. Authoritative from this chunk on; later chunks cite it via `[owner: Chunk N]`. Greenfield stories are mostly `[defines]` - that's correct, not a gap. |

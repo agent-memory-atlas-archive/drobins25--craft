@@ -136,7 +136,7 @@ After reading the story, assess the **nature of the work** — not how much the 
 - Read the specific files in the story's scope (or the obvious target files)
 - Read ONE pattern example from locked.md if relevant
 - Skip broad Glob/Grep scanning — go directly to what matters
-- Skip external validation unless the story mentions unfamiliar packages
+- Verify outside-world facts per 1.4 - focused research does not skip them
 - Target: ~15 tool calls
 
 **For full research:** Proceed to Step 1.3 as written — broader scanning is warranted.
@@ -166,7 +166,7 @@ You already read the story in Phase 1.1 — use what you have, don't re-read it.
 - **Design tokens and locked patterns** — From tokens.yaml and locked.md. What visual and component patterns must this story follow?
 - **Existing code to reuse or modify** — Read files mentioned in scope. Check locked.md for pattern examples. Use Grep/Glob to find relevant code not already documented.
 - **Files to modify and create** — Based on scope and what you find, list specific files with their current state.
-- **Dependencies to verify** — Story dependencies (check status of blocking stories), code dependencies (verify components/hooks exist and read their interfaces), external dependencies (APIs, packages — use WebSearch if uncertain).
+- **Dependencies to verify** - Story dependencies (check status of blocking stories), code dependencies (verify components/hooks exist and read their interfaces), external facts (APIs, packages, tools, formats - verify per the outside-world rule in 1.4).
 - **Risks to flag** — Technical complexity, integration points, scope creep, missing pieces, unknowns. If something could surprise the implementer, note it.
 - **Decisions to validate** — For each locked decision, check it's technically feasible against the actual codebase. Mark as `valid` / `concern` / `invalid`.
 - **Animation patterns** — If story has a Motion field, map animations to catalog patterns in animations.md with timing, easing, triggers, and `prefers-reduced-motion` fallbacks.
@@ -184,12 +184,14 @@ If the story has a `## Reference Materials` section, treat it as the AUTHORITATI
 
 | File type | Anchor format | How to read |
 |---|---|---|
-| Planning files (concepts, active.md, READMEs) | `## Section` + `### Subheading` OR `Decision #N` OR `[YYYY-MM-DD entry]` OR table row | Locate the section and subheading; read that section only. Handle BOTH `### Subheading` and `Decision #N` formats — real concepts use both. |
+| Planning files (concepts, active.md, READMEs, research `_plan.md` and branch files) | `## Section` + `### Subheading` OR `Decision #N` OR the quoted `##` heading name (research) OR `[YYYY-MM-DD entry]` OR table row | Locate the section and subheading; read that section only. Handle BOTH `### Subheading` and `Decision #N` formats - real concepts use both. |
 | active.md dated entries | `## Recent state changes -> [YYYY-MM-DD entry]` | Locate the dated entry within the section; read that entry only. |
 | Mockups / static design artifacts | Line range OR HTML id/data-section | Read the specified range only. For HTML id, locate the element via Grep. |
 | locked.md | `Pattern N` | Read that pattern's section in locked.md. |
 | tokens.yaml | Token name | Look up that key. |
 | Code files / sibling stories | Function/class name OR line range | Read the cited unit only. |
+
+**Research weight.** A research finding is outside-world EVIDENCE: below active.md and locked decisions, beside sibling precedents, never overriding a locked pattern, concept decision or the spark (a contradiction is a low-confidence concern).
 
 **Multi-anchor citations.** A single file entry may list multiple anchors:
 
@@ -237,7 +239,7 @@ A story with no `source_concept` frontmatter is freeform - this guard does NOT a
 
 **Depth follows the story.** A spark that says "add a delete button to the story list" naturally needs fewer file reads than "redesign the authentication system." Let the story's complexity drive your research depth — don't pre-classify into buckets.
 
-**Verify externals.** For packages, APIs, or integrations you're uncertain about, use WebSearch. Don't guess. Note confidence level: `verified` / `uncertain` / `not found`.
+**Outside-world rule.** When a contract rests on a fact outside the repo that can vary (an API, a package, a tool's output, a format), verify it with your own WebSearch/WebFetch and receipt it `[verified: web - <source url or doc name> - <what was checked>]`. Three searches is the tell: unsettled after three means a claim about a class, so return a RESEARCH REQUEST (2.7b). A capture of chosen instances never satisfies a class claim; only a research topic or a primary source for the class does.
 
 **Ownership is the floor.** For any data or state the story mutates, "the field exists" is never the bottom of research. Trace who writes it. A value mirrored from another system (a sync job, an external API, a generated file) cannot be written locally — the write will be silently overwritten, and everything will compile and pass while the feature quietly lies. Descend until you know the owner and what happens to your write tomorrow.
 
@@ -432,6 +434,22 @@ The orchestrator asks the user and sends the answer back to you in a follow-up m
 
 **Batch mode:** PLAN FORK is unavailable (nobody is at the desk mid-batch). Decide down your recommended branch, set product-stake `ask`, and record the fork as a Critical Blocker so triage surfaces it first.
 
+### 2.7b The Second Cord: RESEARCH REQUEST
+
+PLAN FORK's gates are about user-owned decisions; this cord is about outside facts, so do not run the fork thought experiment on one. The trigger is the three-search tell on a load-bearing outside fact. STOP and return ONLY:
+
+```
+## RESEARCH REQUEST
+
+**Premise:** [the outside claim the plan would rest on]
+**Why load-bearing:** [which contract or chunk breaks if it is wrong]
+**Without research the plan assumes:** [your best reading]
+**Question:** [what research must answer]
+**Investigation so far:** [each search: query, what came back, why it did not settle]
+```
+
+The orchestrator researches it, runs alignment, and re-launches you fresh with the research in Reference Materials. **Batch mode:** plan on your best reading, tag the premise `unverifiable class claim - research request raised, never a first test`, record a Critical Blocker of type `research` with recommendation `research`, and append the block under the Critical Blockers table.
+
 ---
 
 ## Phase 3: Plan Chunks
@@ -510,7 +528,7 @@ Each chunk MUST include these sections (full template, receipt types, and sectio
 
 **The seam test** — for each chunk: could two competent implementers build this independently and not conflict at its boundaries with other chunks and with existing code? If a conflict is possible, a contract is missing. If a contract dictates an interior (how a function's body works, what a test body contains), it's overreach — move it to Approach or delete it.
 
-**The receipt audit** — every contract line carries exactly one receipt (`[verified]`, `[owner: Chunk N]`, `[investigation]`, `[visual-source]`, `[defines]`). Every receipt-less claim about pre-existing reality is in the Pitch's conditions table. Every unverifiable condition is some chunk's FIRST test. See the format guide for receipt semantics and the Bad → Good examples.
+**The receipt audit** - every contract line carries exactly one receipt (`[verified]`, `[owner: Chunk N]`, `[investigation]`, `[visual-source]`, `[defines]`). Every receipt-less claim about pre-existing reality is in the Pitch's conditions table. Every unverifiable single-thing condition is some chunk's FIRST test; a class claim goes to a research request instead. See the format guide for receipt semantics and the Bad → Good examples.
 
 A `[verified]` receipt is attack residue, not attestation — it records what was checked and what would have falsified the claim. If you cannot say what would have falsified it, you haven't verified it.
 
@@ -533,7 +551,7 @@ After planning, check if this changes the cycle:
 Write the story's `## The Pitch` section (it replaces the old `## Delivery`):
 
 1. **The sell** (2-4 sentences): why this plan works — mechanically, not aspirationally. It must account for every Spark requirement from Phase 2.1; if you can't articulate how the story delivers the Spark, something is missing — go back and fix the plan.
-2. **The conditions table**: every load-bearing assumption, tagged `verified - <evidence>`, `system-owned - <who>`, or `unverifiable by reading - becomes Chunk N's FIRST test`. A condition that can't carry one of those tags is a hole — go back.
+2. **The conditions table**: every load-bearing assumption, tagged `verified - <evidence>`, `system-owned - <who>`, `unverifiable by reading - becomes Chunk N's FIRST test`, or (class claims) `unverifiable class claim - research request raised, never a first test`. A class claim never takes the first-test escape. A condition that can't carry one of those tags is a hole - go back.
 
 The conditions table doubles as the implementer's tripwire watchlist. A pitch you wouldn't buy is a plan that shouldn't be approved.
 
@@ -542,7 +560,7 @@ The conditions table doubles as the implementer's tripwire watchlist. A pitch yo
 Four passes, in order. They are cheap, and they are the difference between confidence asserted and confidence earned.
 
 1. **Skeptic re-read.** Re-read your Investigation as someone trying to catch you. Is it causal or inventory? Did the dead ends survive into the text? Too clean is a finding — real investigations wobble.
-2. **The one-more-hour question.** Ask yourself: *"If I had one more hour, what would I check first?"* You always know the answer — it's the thing you skipped. Go check that one thing NOW (it's one probe). If it cannot be checked by reading, it goes in the conditions table as unverifiable → some chunk's first test.
+2. **The one-more-hour question.** Ask yourself: *"If I had one more hour, what would I check first?"* You always know the answer - it's the thing you skipped. Go check that one thing NOW (it's one probe). If it cannot be checked by reading, it goes in the conditions table as unverifiable → some chunk's first test (a class claim goes to a research request instead).
 3. **Nervousness check.** Read your pitch. If something flutters, it has a name and an address: an unverified condition that didn't make the table. Find it; verify it or name it. Confidence is computed from the conditions table, not asserted — every condition tagged means you walk in the winner; any condition untagged means you are not allowed to feel ready.
 4. **The Miranda pass.** Model the skeptic who receives this plan — the user at triage, the reviewer sent in afterward. Write down the five questions they will ask. Each must already be ANSWERED in the artifact: in the Investigation, a contract receipt, or the conditions table. Not answerable — answered. The plan is done when that review walks out with "...that's all."
 
@@ -733,7 +751,7 @@ Return this exact structure as your text output:
 
 | Blocker | Type | Recommendation |
 |---------|------|----------------|
-| [description] | dependency/missing/unverified | block/defer/investigate |
+| [description] | dependency/missing/unverified/research | block/defer/investigate/research |
 
 [If no blockers: "None — safe to proceed."]
 
@@ -791,7 +809,7 @@ Return this exact structure as your text output:
 - **Spark requirements are constraints.** Every requirement must land in a chunk. If one doesn't, the plan is incomplete.
 - Absence of evidence is a finding. If there are no tests, no patterns, no existing components — say so.
 - **Use provided sibling context.** The orchestrator passes relevant sibling info — use it, don't re-scan.
-- **Verify externals.** Use WebSearch for packages, APIs, and integrations you're uncertain about. Don't guess.
+- **Outside facts need a source.** Verify with your own search and receipt it; unsettled after three searches is a RESEARCH REQUEST, not a guess.
 - **Trust the documentation.** project.md and locked.md exist so you don't have to re-discover everything.
 - **You write the story file directly.** The orchestrator only sees your concerns summary. Full detail lives in the file — that's the whole point. Do not duplicate chunk details in your output.
 - **The story file is your primary artifact.** It must contain everything the implementer needs — the Investigation headspace, receipted contracts, named test cases, and the conditions watchlist. The concerns summary is just triage material for the orchestrator.

@@ -40,6 +40,14 @@ Before starting, you need:
 
 ## The Loop
 
+### Before Step 0: Research What Nobody in the Room Knows
+
+Read the spark. If the story's work depends on something outside the project whose behavior nobody here has checked (a site, a person, a tool's output, a data source, a format), grep the project, `.craft/research/` and the story's Reference Materials for it. If they hold nothing, settle it; if a research folder already answers it, cite it onto the story instead of researching again. No such thing named, or it is already held: print nothing and go on to Step 0.
+
+- **One fact** (one thing, one answer): at most three web searches, then say `Checked: <fact> (<source>).` in one line as you move on - it is not a question. Step 6 records it as `- OUTSIDE FACT: <fact> - <source>`.
+- **Anything bigger** (a claim about a whole class, or a fact still open after three searches): Read `commands/references/research-inline.md` (a sibling of this file - resolve it against the absolute path you Read this file from) with `QUERY` the outside premise, `STORY` the story's absolute path and `DOOR=alignment`. Pass `DEPTH=--quick` for one bounded thing with few angles, no flag for a claim about a class ("every runner", "all providers"). Continue at Step 0 with the research in hand.
+- **One run per door:** if the story's Reference Materials already holds a run line with `alignment door` and the gap is still open, never run again; ask the user in the fork-gate grammar (Step 3) what the story should assume.
+
 ### Step 0: Empty-Codebase Short-Circuit
 
 Before spawning the Explore agent, check whether the codebase has any source files. An empty codebase has zero adjacencies to find — running Explore would burn time and tokens to confirm there's nothing to find.
@@ -68,9 +76,9 @@ If the codebase has any source files: continue to Step 0.5 as normal.
 
 ### Step 0.5: Planning Context Injection
 
-Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records. If so, build a Planning Context block from the story's Reference Materials, and hand decision records to the agent as paths (see 4a - they never enter the block or its token cap), so the agent doesn't surface false-positive product questions for decisions already captured in planning.
+Before spawning the Explore agent, check whether this story was created from a planning concept or carries approved decision records or research. If so, build a Planning Context block from the story's Reference Materials, and hand decision records to the agent as paths (see 4a - they never enter the block or its token cap), so the agent doesn't surface false-positive product questions for decisions already captured in planning.
 
-**Detection:** Read the story frontmatter. If `source_concept:` is populated OR the story's `decisions:` list is non-empty, continue with the injection below. Otherwise, skip directly to Step 1 with the existing prompt unchanged.
+**Detection:** Read the story frontmatter. If `source_concept:` is populated OR the story's `decisions:` list is non-empty OR its `## Reference Materials` holds at least one citation entry (a `- ` line; the template's comment alone does not count), continue with the injection below. Otherwise, skip directly to Step 1 with the existing prompt unchanged.
 
 **Build the Planning Context block (orchestrator-level work, NOT delegated to the Explore agent):**
 
@@ -85,6 +93,7 @@ Before spawning the Explore agent, check whether this story was created from a p
    - tokens.yaml: look up the token name
    - active.md: read the dated entry within `## Recent state changes`
    - Code files: read the cited function/class or line range
+   - Research files (`.craft/research/`): the anchor is the quoted `##` heading name (`-> "Convergence Points"`); read that section only
 
 4. **Stale-anchor handling during injection (MANDATORY):** If a cited anchor cannot be resolved (section heading no longer exists, line range out of bounds, Pattern N missing from locked.md), do NOT silently omit. Surface the stale anchor BEFORE spawning the Explore agent via **AskUserQuestion**:
 
@@ -109,7 +118,7 @@ Before spawning the Explore agent, check whether this story was created from a p
 6. **Hard 2000-token cap.** If excerpts would exceed 2000 tokens, prioritize in this order and drop lowest-priority until under cap:
    1. active.md dated entries (highest authority - current state)
    2. Concept Locked Decisions sections
-   3. Sibling story precedents
+   3. Sibling story precedents and research findings (`.craft/research/` citations)
    4. Mockups (visual contracts, less critical for product-question evaluation)
    
    If citations are dropped, note this in the Planning Context block so the agent knows content was elided.
@@ -150,7 +159,7 @@ Agent tool:
     DECISIONS: [paste decisions if exist]
     LIKELY FILES: [paste likely files if exist]
 
-    [PLANNING-SOURCED STORIES ONLY - include the Planning Context block built in Step 0.5 here, BEFORE the Investigate instructions:]
+    [STORIES CARRYING REFERENCE MATERIALS - include the Planning Context block built in Step 0.5 here, BEFORE the Investigate instructions:]
     [PLANNING CONTEXT block from Step 0.5 - Reference Materials only]
 
     [STORIES CARRYING DECISION RECORDS - include the DECISION RECORDS list from Step 0.5 item 4a here, with its verbatim sentence:]
@@ -159,7 +168,7 @@ Agent tool:
     Read the Decision and Consequences of each record above before investigating. What they rule is settled - never surface it as a question. If the story or the codebase contradicts a ruling, or two rulings contradict each other, report it as a CONFLICT naming the record.
     Any decision record not listed above is NOT LAW for this story - it is history. Do not read one as a constraint, and do not report one as a CONFLICT.
 
-    **When evaluating whether the story specifies a product question, FIRST check the Planning Context above (if present). Decisions captured in planning are NOT product questions - do NOT surface them. If the Planning Context note says citations were dropped due to token cap, you may flag a CONCERN that some planning content wasn't injected - the user can address by re-running with narrower Reference Materials.**
+    **When evaluating whether the story specifies a product question, FIRST check the Planning Context above (if present). Decisions captured in planning are NOT product questions - do NOT surface them. If the Planning Context note says citations were dropped due to token cap, you may flag a CONCERN that some planning content wasn't injected - the user can address by re-running with narrower Reference Materials. Research findings are evidence, not law: one that contradicts the spark, a locked pattern or a concept decision is reported as a CONFLICT, never applied silently.**
 
     Investigate:
     1. Read the files this story will touch and their surrounding context
@@ -280,6 +289,8 @@ After the loop completes:
    - `_Checked: YYYY-MM-DD_`
    - One line per finding: type, what it was, how the user resolved it
    - If the investigation found nothing: `No findings - investigation returned clean.`
+   - A fact settled in the research step: `- OUTSIDE FACT: <fact> - <source>`
+   - On a re-run, append a new `_Checked: <date>_` block under the existing `## Alignment` section instead of adding a second section
    Keep it a receipt, not a transcript - detailed outcomes belong in the sections below.
 2. Update the story's frontmatter: `alignment: complete`
 3. Update `## Scope` section if the user's answers changed what's included/excluded
@@ -302,6 +313,8 @@ The plan-chunks orchestrator should flag these during triage:
 Use **AskUserQuestion** with options:
 - "Run alignment check first" - orchestrator runs the alignment loop per story before launching agents
 - "Proceed with best judgment" - agents plan without alignment check, but flag assumptions in their output for the user to review during triage
+
+The outside-world check runs only inside the interactive loop; "Proceed with best judgment" skips it with the rest, and the planner's research request is the backstop.
 
 ## What This Is NOT
 
