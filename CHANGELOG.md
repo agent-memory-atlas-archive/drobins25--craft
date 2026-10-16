@@ -2,6 +2,10 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.9.2 - 2026-10-15
+
+- Changed `/craft:review` findings to arrive in the shape of a bug record. Each one names the symptom in your terms, quotes the requirement it breaks, says whether the reviewer ran the code or only read it, gives the consequences, numbered steps to reproduce from a named starting point, the raw evidence, and the fix. A finding the reviewer could not run is still reported, labelled as read in code only.
+
 ## 2.9.1 - 2026-10-15
 
 - Fixed annotate pins jumping to the wrong element on pages with repeated structure. A pin dropped far down a list, a set of cards or a form now stays on the element you clicked, after you save it, after SEND, and after a reload.
