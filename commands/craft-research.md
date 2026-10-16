@@ -1,7 +1,7 @@
 ---
 name: research
 description: "Ad-hoc research command. Parallel researcher agents investigate sub-questions, write branch files to disk, orchestrator ranks and synthesizes. Resumable across sessions."
-argument-hint: "[query | topic-slug | continue | --quick | --deep]"
+argument-hint: "[query | topic-slug | continue | --quick | --deep | --exhaustive]"
 ---
 
 # Research
