@@ -148,7 +148,7 @@ options:
 
 ### Step 3: Elaborate (Phase 2) - Go Deeper
 
-**Optional depth layer.** User selected specific branches to elaborate on.
+**Optional depth layer.** Runs on the branches the user selected, or on every ranked branch under `--deep` / `--exhaustive`.
 
 For each selected branch, spawn a **researcher agent**:
 

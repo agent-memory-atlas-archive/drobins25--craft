@@ -66,6 +66,8 @@ assert_not_contains "Step 2 carries no researcher dispatch" 'craft:researcher' "
 assert_not_contains "Step 2 carries no synthesizer prompt" 'craft:research-synthesizer' "$STEP2"
 assert_contains_literal "Step 2 routes the exhaustive flag" '--exhaustive' "$STEP2"
 assert_contains_literal "deep runs elaborate every branch unasked" 'Run Step 3 on every ranked branch' "$STEP2"
+STEP3_OPEN="$(sed -n '/^### Step 3:/,/^For each selected branch/p' "$CMD")"
+assert_contains_literal "Step 3 opening names both entrances" 'or on every ranked branch under' "$STEP3_OPEN"
 assert_contains_literal "reference leaves deep and exhaustive to the command" 'never reach this file' "$REF_TEXT"
 
 begin_test "standalone steps survive and stale step numbers are gone"
