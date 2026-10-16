@@ -23,6 +23,7 @@ project: [project name]
 category: [see categories below]
 source_story: [story that introduced the bug, if known - e.g. riff-the-game]
 source_cycle: [cycle name, if known]
+planned_test: [for a defect found after source_story completed - the planned test case in that story that should have caught it, quoted as the plan names it, or none; blank when there is no source story]
 files_changed: 0
 lines_changed: 0
 trigger: [how the problem was discovered]
@@ -60,6 +61,8 @@ Am I 100% certain this solution resolves the root cause?
 - `infrastructure` - build errors, config issues, missing dependencies, chain breaks
 - `style` - colors, shadows, borders, visual treatments
 - `typography` - font weights, sizes, line-height, tracking
+
+**`planned_test`** (filled at record creation, one line, no question asked): when `source_story` names a story and the defect was found after that story completed - a review finding, a bug from the pile, an analyze finding, something the user hit - open the story file and read every chunk's `**Test cases:**` list. Write the one planned case whose name covers the behavior that broke, quoted exactly as the plan names it. When no planned case covers that behavior, write `none`. Leave it blank only when there is no source story. Judge by the behavior, not the file: a case that touches the same file but pins a different behavior is not a match. Over a cycle, the `none` count is the planner's miss rate, read straight from the records.
 
 ## Step 2: Investigate
 
@@ -175,6 +178,7 @@ Category: [category]
 Files: [N] changed, [N] lines
 Root cause: [one sentence]
 Validation: [what was checked, result]
+Planned test: ["<name>" from the source story / none / no source story]
 Lesson: [one sentence, or "none"]
 Todo: [closed <todo-slug> / none matched]
 ```

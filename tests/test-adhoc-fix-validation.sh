@@ -136,4 +136,26 @@ assert_eq \
 
 echo ""
 
+# --- planned_test: the record names the planned case that should have caught
+# a post-story defect, or none. Pinned in Step 1 (template line + the none
+# rule) and in the Step 8 summary, so the field cannot drop out of either.
+
+STEP8="$(section "Step 8: Close" "$FIX_MD")"
+
+begin_test "Step 1 carries the planned_test field and its none rule"
+assert_contains_literal \
+  "Step 1 template names planned_test" \
+  "planned_test: [for a defect found after source_story completed" \
+  "$STEP1"
+assert_contains_literal \
+  "Step 1 states the none rule" \
+  "When no planned case covers that behavior, write \`none\`." \
+  "$STEP1"
+assert_contains_literal \
+  "Step 8 summary reports the planned test" \
+  "Planned test: [" \
+  "$STEP8"
+
+echo ""
+
 finish_tests "test-adhoc-fix-validation.sh"
