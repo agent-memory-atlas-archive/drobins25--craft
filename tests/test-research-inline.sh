@@ -64,6 +64,9 @@ assert_contains_literal "command Reads the shared reference" '${CLAUDE_PLUGIN_RO
 STEP2="$(sed -n '/^### Step 2: Discover/,/^### Step 3/p' "$CMD")"
 assert_not_contains "Step 2 carries no researcher dispatch" 'craft:researcher' "$STEP2"
 assert_not_contains "Step 2 carries no synthesizer prompt" 'craft:research-synthesizer' "$STEP2"
+assert_contains_literal "Step 2 routes the exhaustive flag" '--exhaustive' "$STEP2"
+assert_contains_literal "deep runs elaborate every branch unasked" 'Run Step 4 on every ranked branch' "$STEP2"
+assert_contains_literal "reference leaves deep and exhaustive to the command" 'never reach this file' "$REF_TEXT"
 
 begin_test "standalone steps survive and stale step numbers are gone"
 for h in '### Step 1: Research Dashboard' '### Step 1b:' '### Step 1c:' '### Step 2: Discover (Phase 1)' '### Step 3:' '### Step 4:' '### Step 6:'; do

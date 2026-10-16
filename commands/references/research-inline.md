@@ -7,7 +7,7 @@ This file is read by the alignment check, plan-chunks and `/craft:research` to r
 - `QUERY` - the ask: a topic when standalone, a research question from the alignment check or the planner.
 - `STORY` - absolute path of the story file. Absent when standalone.
 - `DOOR` - `alignment` or `planner`. Absent when standalone.
-- `DEPTH` - `--quick` or none.
+- `DEPTH` - `--quick` or none. The research command's `--deep` and `--exhaustive` never reach this file; the command acts on them itself after Step 7.
 - `PROJECT` - set by the caller. With a story, it is the folder above the story's `.craft/`.
 
 ## Step 1: Draft the Question and Branches
