@@ -44,7 +44,8 @@
 #
 # watch reads changes.jsonl from the byte offset saved in watch.cursor (begin
 # saves the log's size; a watch with no cursor starts at the log's end) and
-# prints one line per change: ADDED / EDITED with the pin's source, UNDONE for a
+# prints one line per change: ADDED / EDITED with the pin's source (and its
+# candidate letter last, for a dial pin that carries one), UNDONE for a
 # withdrawn pin whose block it dropped, UNREACHABLE when the listener is gone.
 # Each poll's complete lines are one batch, printed together before the position
 # moves, so a change is never lost across a restart and never printed twice.
@@ -1412,10 +1413,13 @@ def lines_for(changes):
             n = pin.get("n")
             n = n if isinstance(n, int) and not isinstance(n, bool) else "?"
             tagged = session_external() or (pin_page(change) != "" and page_is_external(pin_page(change)))
-            out.append("%s%s %s #%s %s at %s near %s source %s" % (
+            # A dial pin names the candidate that was on stage; annotate pins carry none.
+            candidate = pin.get("candidate")
+            out.append("%s%s %s #%s %s at %s near %s source %s%s" % (
                 "EXTERNAL " if tagged else "", kind.upper(), key, n, quoted(pin.get("text")),
                 quoted(pin.get("selector")), quoted(pin.get("nearText")),
-                quoted(source_of(key, probes))))
+                quoted(source_of(key, probes)),
+                " candidate %s" % quoted(candidate) if candidate is not None else ""))
         elif kind == "deleted" and key in doomed:
             out.append("UNDONE %s page %s" % (key, "confirmed" if confirmed else "did not confirm"))
     return out

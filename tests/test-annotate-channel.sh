@@ -1659,6 +1659,21 @@ assert_eq "the newer watch stays" "yes" "$(is_running "$W2" && echo yes || echo 
 stop_job "$W2"
 assert_file_not_exists "the watch wrote no run.json" "$D/run.json"
 
+begin_test "a dial pin's candidate letter ends its watch line; a pin with none prints no candidate"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt11
+A="http://localhost/a"
+start_watch "$ROOT" wt11 "$ROOT/c1.out" --no-run; W="$WATCH_PID"
+sleep 0.6
+DIAL_PIN='{"n":1,"text":"too loose","x":1,"y":2,"selector":"div.a","nearText":"n","ts":1,"page":"'"$A"'","candidate":"B"}'
+http POST "$PORT" /pins "[$DIAL_PIN]" >/dev/null
+if wait_lines "$ROOT/c1.out" 1; then echo "  PASS: the dial pin printed"; PASS=$((PASS + 1)); else echo "  FAIL: the dial pin never printed"; FAIL=$((FAIL + 1)); fi
+assert_contains_literal "the candidate ends the line" 'ADDED 1 #1 "too loose" at "div.a" near "n" source "not probed" candidate "B"' "$(cat "$ROOT/c1.out")"
+http POST "$PORT" /pins "[$DIAL_PIN,$(cpin 2 $A plain)]" >/dev/null
+if wait_lines "$ROOT/c1.out" 2; then echo "  PASS: the plain pin printed"; PASS=$((PASS + 1)); else echo "  FAIL: the plain pin never printed"; FAIL=$((FAIL + 1)); fi
+assert_not_contains "a pin with no candidate prints none" "candidate" "$(sed -n 2p "$ROOT/c1.out")"
+stop_job "$W"
+
 begin_test "UNREACHABLE prints once when the listener dies, and again only after it recovered"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT" --session wt7
