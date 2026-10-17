@@ -114,6 +114,12 @@ if grep -q "token" "$PROBE"; then
 else
   fail "the probe never reads the session token"
 fi
+# A cold CI runner can take more than 10s to start Chrome; the probe waits 30s for its port.
+if grep -q 'const PORT_WAIT_POLLS = 300;' "$PROBE" && grep -q 'i < PORT_WAIT_POLLS' "$PROBE"; then
+  pass "the probe waits 30s for Chrome's debugging port"
+else
+  fail "the probe gives Chrome less than 30s to open its debugging port" "probe: $PROBE"
+fi
 
 # Tests 4-: the live assertions, when a Chrome is available. Discovery mirrors
 # the harness's own order.
