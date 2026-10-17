@@ -61,7 +61,9 @@ if (chrome.pid) writeFileSync(chromePidFile, String(chrome.pid));
 
 const portFile = join(profileDir, 'DevToolsActivePort');
 let port = null;
-for (let i = 0; i < 100 && !port; i++) {
+// 30s at 100 ms: a cold CI runner can take more than 10s to start Chrome.
+const PORT_WAIT_POLLS = 300;
+for (let i = 0; i < PORT_WAIT_POLLS && !port; i++) {
   if (existsSync(portFile)) port = readFileSync(portFile, 'utf8').split('\n')[0].trim() || null;
   if (!port) await sleep(100);
 }
