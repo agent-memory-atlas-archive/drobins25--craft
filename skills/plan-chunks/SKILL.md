@@ -203,6 +203,7 @@ After creative-spark completes, the story will have a `## Visual Direction` sect
 ## Phase 0.5: Direction Confirmation Gate
 
 **Skip if:** Args contain `DIRECTION_CONFIRMED: true` (caller already confirmed with user).
+**Skip if:** The user's own words in this session asked to plan this story: they invoked `/craft:plan-chunks` naming it, said "plan this" or similar about it, or answered yes to a question that offered to plan it. That ask is the explicit request this gate exists to secure. It does not count when the story was reached with no ask from the user (an autonomous pick, a chained flow that never asked, or a story picked because none was named).
 **Skip if:** Autonomous mode (invoked from `craft:story-implement-auto`).
 
 **Otherwise:** Read the story file's `## Spark` section. Present it to the user:
@@ -899,7 +900,7 @@ These guidelines are built into the plan-chunks-agent. They're here for referenc
 
 ## Remember
 
-- **Never auto-invoke** — this skill requires explicit user request. Phase 0.5 enforces this via AskUserQuestion. Callers pass `DIRECTION_CONFIRMED: true` to skip when they've already confirmed.
+- **Never auto-invoke** — this skill requires explicit user request. Phase 0.5 enforces this via AskUserQuestion. It skips when the user's own words already asked to plan; callers pass `DIRECTION_CONFIRMED: true` to skip when they've already confirmed.
 - **Quality is unchanged** — single-story planning has the same interactive triage quality as before
 - **Agent does research + planning** — you orchestrate and triage, you don't plan inline
 - **Surface risks early** — triage agent concerns before approving the plan
