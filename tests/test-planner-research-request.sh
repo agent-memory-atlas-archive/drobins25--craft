@@ -88,6 +88,15 @@ assert_contains_literal "BT-2 answer retags the same row" 'user ruled at triage'
 assert_contains_literal "held premise line" 'kept as planned - research confirmed' "$TRIAGE_TEXT"
 assert_contains_literal "overturned premise re-plans" 'Adjusted Story Re-Planning' "$(grep -i 'research' "$TRIAGE_FILE")"
 
+begin_test "every writer of a contract line names the outside-fact receipt"
+IMPLEMENT_TEXT="$(cat "$PLUGIN_ROOT/commands/craft-story-implement.md")"
+CHUNKS_LAYOUT="$(grep -A1 '^## Chunks$' "$AGENT")"
+assert_contains_literal "triage write list names the web form" "$WEB_FORM" "$TRIAGE_TEXT"
+assert_contains_literal "triage write list names visual-source" '`[visual-source: ...]`' "$TRIAGE_TEXT"
+assert_contains_literal "contract amendment names the web form" "$WEB_FORM" "$IMPLEMENT_TEXT"
+assert_contains_literal "investigation receipt is never for an outside fact" 'Never for a fact outside the repo' "$GUIDE_TEXT"
+assert_contains_literal "planner's Chunks layout carries the rule" "a fact from outside the repo is $WEB_FORM, never [investigation:]" "$CHUNKS_LAYOUT"
+
 begin_test "DESIGN names the second cord"
 DESIGN_TEXT="$(cat "$DESIGN_FILE")"
 assert_contains_literal "design names the request" 'RESEARCH REQUEST' "$DESIGN_TEXT"

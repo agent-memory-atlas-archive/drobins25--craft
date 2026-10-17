@@ -128,7 +128,7 @@ patterns in jobs/ - out of scope, the ILS client tests are the pattern to mirror
 |---------|---------|
 | `[verified: <what was checked and what would have falsified it>]` | Attacked against existing code during investigation. The receipt is attack residue, not attestation - "I tried to kill this and here's what would have killed it."  For a fact outside the repo the form is `[verified: web - <source url or doc name> - <what was checked>]`. |
 | `[owner: Chunk N]` | The contract's truth is produced by an earlier chunk. By implement time it's real, compiled code - cite IT, not this line, if they differ. |
-| `[investigation: <one-line reason>]` | Backref to the narrative - the reasoning this contract protects. The implementer uses this to judge mismatches: does a deviation break the *reason*, or just the coordinates? |
+| `[investigation: <one-line reason>]` | Backref to the narrative - the reasoning this contract protects. The implementer uses this to judge mismatches: does a deviation break the *reason*, or just the coordinates? Never for a fact outside the repo - that is `[verified: web - ...]`. |
 | `[defines]` | A new seam this chunk creates - a name, route, or shape with no prior reality to verify. Authoritative from this chunk on; later chunks cite it via `[owner: Chunk N]`. Greenfield stories are mostly `[defines]` - that's correct, not a gap. |
 | `[visual-source: <mockup anchor \| tokens.yaml token \| Visual Direction Part/Role>]` | A UI element's visual binding: this Part/Role uses this token or value, sourced from a mockup, the design system, or the Visual Direction table. The visual-domain twin of `[verified:]` - it points at where the look was decided, not at code. |
 

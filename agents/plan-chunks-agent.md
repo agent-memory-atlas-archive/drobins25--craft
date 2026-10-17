@@ -628,7 +628,7 @@ ones. E.g., "Parser handles attribute selectors" becomes
 [NEW — your causal research narrative from Phase 1, dead ends kept]
 
 ## Chunks
-
+<!-- Every Contracts line carries one receipt; a fact from outside the repo is [verified: web - <source url or doc name> - <what was checked>], never [investigation:]. -->
 ### Chunk 1: [Name]
 **Goal:** [specific outcome]
 **Files:**

@@ -282,7 +282,7 @@ If a cohesion issue has no clean resolution (e.g., two stories genuinely need to
 3. **Chunks** — **Preserve the agent's chunk specs verbatim. Do NOT summarize.** Each chunk in the story file MUST include:
    - **Goal:** What the chunk accomplishes
    - **Files:** Every file created/modified with full paths
-   - **Contracts:** The receipted seams — every line carries `[verified: ...]`, `[owner: Chunk N]`, `[investigation: ...]`, or `[defines]`. The implementer holds these as law.
+   - **Contracts:** The receipted seams — every line carries `[verified: ...]`, `[owner: Chunk N]`, `[investigation: ...]`, `[visual-source: ...]`, or `[defines]`; a fact from outside the repo is `[verified: web - <source url or doc name> - <what was checked>]`, never `[investigation: ...]`. The implementer holds these as law.
    - **Approach:** Advisory prose — pattern pointers, ordering, gotchas. No code bodies (decision-code with a receipt is the rare exception).
    - **Test cases:** Named assertions the implementer writes bodies for.
    - **Done When:** Checklist of specific, testable criteria (not vague summaries)
