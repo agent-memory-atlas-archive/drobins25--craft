@@ -23,7 +23,7 @@ description: |
   Phase 2 trigger - become-researcher gets existing branch file and fills psychological gaps.
   </commentary>
   </example>
-model: claude-haiku-4-5-20251001
+model: haiku
 color: purple
 tools: Read, Glob, Grep, Bash, Write, WebSearch, WebFetch
 disallowedTools: Edit, NotebookEdit

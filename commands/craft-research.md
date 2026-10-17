@@ -1,7 +1,7 @@
 ---
 name: research
 description: "Ad-hoc research command. Parallel researcher agents investigate sub-questions, write branch files to disk, orchestrator ranks and synthesizes. Resumable across sessions."
-argument-hint: "[query | topic-slug | continue | --quick | --deep]"
+argument-hint: "[query | topic-slug | continue | --quick | --deep | --exhaustive]"
 ---
 
 # Research
@@ -111,8 +111,8 @@ If one topic → auto-select it. Check what phase it's in based on which files e
 If multiple → use **AskUserQuestion** to pick which topic to continue.
 
 Resume from where it left off based on which files exist:
-- **Branch files missing or incomplete** (no `status: complete`) → re-spawn those researcher agents (Step 2.2).
-- **All branch files complete but `_plan.md` is still a stub / `status: in-progress`** → the run was interrupted before synthesis. Build the manifest from the existing branch files and spawn the synthesizer (Step 2.4). Do NOT synthesize in the main loop.
+- **Branch files missing or incomplete** (no `status: complete`) → re-spawn those researcher agents (Read `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` and follow its Step 4).
+- **All branch files complete but `_plan.md` is still a stub / `status: in-progress`** → the run was interrupted before synthesis. Build the manifest from the existing branch files and spawn the synthesizer (the same reference, Step 6). Do NOT synthesize in the main loop.
 
 ---
 
@@ -120,121 +120,11 @@ Resume from where it left off based on which files exist:
 
 **This is the primary research product.** Most users stop here. The output should be comprehensive and valuable on its own.
 
-#### 2.1: Create Research Folder
+Use **Read** to read `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` and run it inline with `QUERY` (the user's query), `DEPTH` (`--quick` when that flag was set, otherwise none; `--deep` and `--exhaustive` stay with this command) and `PROJECT`. Set no `STORY` and no `DOOR`. It drafts the question and branches, checks the reading, creates the research folder, runs the researchers and the synthesizer, and presents the results.
 
-Create `$PROJECT/.craft/research/{topic-slug}/` using Bash `mkdir -p`.
+**If `--deep` or `--exhaustive` was set:** ask nothing. Run Step 3 on every ranked branch in `_plan.md`; for `--exhaustive`, then invoke `/craft:research-verify {topic-slug}`. End.
 
-Write initial `_plan.md` stub with `status: in-progress`:
-
-```markdown
----
-query: "original query"
-date: {today}
-status: in-progress
-depth: 1
-stale_after: {today + 3 months}
----
-
-# Research: {Topic}
-
-> In progress - agents researching...
-```
-
-#### 2.2: Decompose and Dispatch
-
-Break the query into 3-5 sub-questions that cover the topic from different angles. Use your own knowledge to decompose - no searching needed. Think about:
-- What is X? (fundamentals)
-- How does X work? (mechanics)
-- What are the alternatives? (landscape)
-- What are the trade-offs? (decision support)
-- What do practitioners report? (real-world experience)
-- What's the current state of the art? (freshness)
-
-Not every query needs all angles. A focused query ("best auth library for Next.js") might need 3 sub-questions. A broad query ("how should we architect real-time sync") might need 5.
-
-**Spawn one researcher agent per sub-question in parallel** via the Agent tool:
-
-```
-subagent_type: "craft:researcher"
-description: "Research: {short branch name}"
-prompt: |
-  ## Your Assignment
-
-  **Topic:** {full research topic}
-  **Branch:** {branch name}
-  **Question:** {specific sub-question}
-  **Write findings to:** {$PROJECT/.craft/research/{topic-slug}/{NN}-{branch-slug}.md}
-  **Branch template (read and follow exactly):** {CLAUDE_PLUGIN_ROOT}/commands/references/research-branch-template.md
-
-  Extract findings for this question. Read the branch template first and follow its
-  format and producer rules exactly. Write your branch file to the path above. Return
-  only your lightweight summary to me.
-```
-
-Assign branch numbers (01, 02, 03...) in the order you decomposed them - order is just a label; the synthesizer re-ranks. Resolve `{CLAUDE_PLUGIN_ROOT}` to the actual plugin path before passing it (so the haiku researcher, which may not inherit the env var, gets a usable path).
-
-**Launch ALL agents simultaneously.** Do not wait for one to finish before launching the next.
-
-**If `--quick` flag was set:** Still spawn parallel agents, but add to each prompt: "Limit to 3-5 searches. Focus on the top 2-3 most authoritative sources. Be concise."
-
-#### 2.3: Collect and Build the Manifest
-
-As agents complete, collect their lightweight summaries (branch name, file path, source counts, finding counts, conflict counts). **Do NOT rank, synthesize, or write `_plan.md` yourself** - that is the synthesizer's job, and keeping it out of this main loop is the entire point of the refactor.
-
-Build a **manifest**: the list of branch file paths you dispatched researchers to write (e.g. `01-foo.md, 02-bar.md, 03-baz.md`). You pass this to the synthesizer so it can detect missing or malformed branches rather than silently synthesizing a partial set.
-
-#### 2.4: Spawn the Synthesizer
-
-Spawn the **research-synthesizer** agent (once) via the Agent tool. It reads every branch file and writes `_plan.md` + `_sources.md` directly to disk:
-
-```
-subagent_type: "craft:research-synthesizer"
-description: "Synthesize: {topic}"
-prompt: |
-  ## Your Assignment
-
-  **research_folder:** {$PROJECT/.craft/research/{topic-slug}/}
-  **manifest:** {comma-separated branch file paths you dispatched, e.g. 01-foo.md, 02-bar.md, 03-baz.md}
-  **query:** {original query}
-  **topic:** {topic display name}
-  **depth:** 1
-  **Branch template:** {CLAUDE_PLUGIN_ROOT}/commands/references/research-branch-template.md
-
-  Verify the manifest, read every branch file, and write _plan.md + _sources.md per the
-  template's Consumer Notes. Preserve conflicts - do not reconcile. Return only your
-  lightweight summary.
-```
-
-Resolve `{CLAUDE_PLUGIN_ROOT}` to the actual plugin path before passing it.
-
-**Handle the synthesizer's return:**
-- If it returns `STATUS: OK` → proceed to Step 2.5 (read `_plan.md` for present-results).
-- If it returns `STATUS: PARTIAL_FAILURE` → do NOT present a partial result. Re-spawn the researcher(s) named in `MISSING:` (one retry), then re-invoke the synthesizer with the same manifest. If the second pass still returns `PARTIAL_FAILURE`, report to the user which branches failed and why, and stop.
-
-The synthesizer wrote `_plan.md` and `_sources.md` - you do NOT write them. Read `_plan.md` when you need its content for the next step.
-
-#### 2.5: Present Results
-
-Display to the user:
-
-> **Research complete: {Topic}**
->
-> {TL;DR from plan}
->
-> **Confidence:** {aggregate} | **Branches:** {N} | **Sources:** {total cited}
->
-> {If convergence points exist:}
-> **High confidence (multiple branches agree):**
-> - {convergence point 1}
-> - {convergence point 2}
->
-> {If conflicts exist:}
-> **Heads up - conflicts found:**
-> - {conflict 1 summary}
->
-> **Saved to:** `.craft/research/{topic-slug}/`
-
-Then offer next steps:
+Otherwise offer next steps:
 
 Use **AskUserQuestion**:
 ```
@@ -258,7 +148,7 @@ options:
 
 ### Step 3: Elaborate (Phase 2) - Go Deeper
 
-**Optional depth layer.** User selected specific branches to elaborate on.
+**Optional depth layer.** Runs on the branches the user selected, or on every ranked branch under `--deep` / `--exhaustive`.
 
 For each selected branch, spawn a **researcher agent**:
 
@@ -290,11 +180,11 @@ prompt: |
 **After agents complete, re-invoke the synthesizer fresh** to regenerate `_plan.md` + `_sources.md` over the FULL branch set (original branches + new `--deep` files). The synthesizer is the sole writer of `_plan.md` in both phases - do NOT patch `_plan.md` inline from the main loop.
 
 - Build an updated manifest including the original branch files AND the new `--deep` files.
-- Spawn `craft:research-synthesizer` exactly as in Step 2.4, but with `depth: 2` (or current depth) and the full manifest.
+- Spawn `craft:research-synthesizer` exactly as in `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` Step 6, but with `depth: 2` (or current depth) and the full manifest.
 - This is a fresh spawn (a new Agent call), not a continuation of any prior synthesizer - the synthesizer is stateless and reads the folder from disk, so it works identically whether Phase 2 runs in the same session or a resumed one.
-- Handle `STATUS: OK` / `STATUS: PARTIAL_FAILURE` the same way as Step 2.4.
+- Handle `STATUS: OK` / `STATUS: PARTIAL_FAILURE` the same way as research-inline.md Step 6.
 
-Present updated results to user with same format as Step 2.5.
+Present updated results to user with the same format as research-inline.md Step 7.
 
 ---
 
@@ -313,9 +203,11 @@ Move `02-depth-control--deep.md` into the folder as well.
 
 Based on the branch's findings, conflicts, and gaps, generate 2-5 deeper sub-questions. These should drill into specifics, not re-cover what's already known.
 
+Then run the two-readings test from research-inline.md Step 2 on these sub-questions, so the check runs on every decompose. When it fires, the question is answered before anything is spawned; 4.3 runs only after that.
+
 #### 4.3: Spawn and Elaborate
 
-Same pattern as Step 2 but scoped to this branch's sub-questions. Agents write to `02-depth-control/01-{sub-slug}.md`, etc.
+Same pattern as `${CLAUDE_PLUGIN_ROOT}/commands/references/research-inline.md` Step 4 but scoped to this branch's sub-questions. Agents write to `02-depth-control/01-{sub-slug}.md`, etc.
 
 #### 4.4: Update Parent
 

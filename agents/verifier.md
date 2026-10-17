@@ -17,7 +17,7 @@ description: |
   </commentary>
   assistant: "I'll use the verifier agent to challenge this claim."
   </example>
-model: claude-haiku-4-5-20251001
+model: haiku
 color: red
 tools: Read, Glob, Grep, Bash, Write, WebSearch, WebFetch
 disallowedTools: Edit, NotebookEdit

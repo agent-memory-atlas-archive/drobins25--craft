@@ -11,7 +11,7 @@
 #   annotate-run.sh announce [--root R] --session ID
 #   annotate-run.sh sweep   [--root R]
 #   annotate-run.sh begin   [--root R] --session ID [--subject TEXT] [--resume RECORD]   (annotate only: marks the run's start seq; --resume seeds the sheet from a saved open record and names it in run.json)
-#   annotate-run.sh watch   [--root R] --session ID [--once]   (annotate only: prints each new change from the saved position as one line; --once blocks until one batch prints, then exits)
+#   annotate-run.sh watch   [--root R] --session ID [--once] [--no-run]   (prints each new change from the saved position as one line; --once blocks until one batch prints, then exits; needs an annotate run unless --no-run, which mockup uses)
 #   annotate-run.sh sheet   [--root R] --session ID [--add --key KEY | --drop KEY]   (annotate only: the live session.css)
 #   annotate-run.sh apply   [--root R] --session ID [--drop KEY]... [--target TS=SELECTOR]...   (annotate only: blocks on stdin; writes them, pushes the page, prints what the page measured)
 #   annotate-run.sh stamp   [--root R] --session ID [--no-run]   (annotate only: ONE line that stamps the port, the token and the run id, for a page that blocks the loader; --no-run leaves out the run id and needs no run)
@@ -44,12 +44,16 @@
 #
 # watch reads changes.jsonl from the byte offset saved in watch.cursor (begin
 # saves the log's size; a watch with no cursor starts at the log's end) and
-# prints one line per change: ADDED / EDITED with the pin's source, UNDONE for a
+# prints one line per change: ADDED / EDITED with the pin's source (and its
+# candidate letter last, for a dial pin that carries one), UNDONE for a
 # withdrawn pin whose block it dropped, UNREACHABLE when the listener is gone.
 # Each poll's complete lines are one batch, printed together before the position
 # moves, so a change is never lost across a restart and never printed twice.
 # The newest watch owns watch.pid and older ones leave; a watch ends silently
-# when the run is filed or the session folder is gone.
+# when the run is filed or the session folder is gone. watch --no-run needs no
+# run.json and never checks one: watch.pid and the folder alone decide when it
+# leaves. A CLEAR PINS, or a SEND that repeats pins already logged, writes no
+# added or edited change, so no watch prints a line for it.
 #
 # kind calls a page a project page when it is served from localhost, 127.0.0.1
 # or file://; every other address is external. The loader never contacts the
@@ -1243,8 +1247,10 @@ import subprocess
 import sys
 import time
 
-dir_path, root, session, run_sh, resolve_sh, once = sys.argv[1:7]
+dir_path, root, session, run_sh, resolve_sh, once, no_run = sys.argv[1:8]
 once = once == "1"
+# --no-run: a flow with no annotate run (mockup) owns the watch by watch.pid alone.
+no_run = no_run == "1"
 POLL = 0.25
 LOG = os.path.join(dir_path, "changes.jsonl")
 CURSOR = os.path.join(dir_path, "watch.cursor")
@@ -1407,10 +1413,13 @@ def lines_for(changes):
             n = pin.get("n")
             n = n if isinstance(n, int) and not isinstance(n, bool) else "?"
             tagged = session_external() or (pin_page(change) != "" and page_is_external(pin_page(change)))
-            out.append("%s%s %s #%s %s at %s near %s source %s" % (
+            # A dial pin names the candidate that was on stage; annotate pins carry none.
+            candidate = pin.get("candidate")
+            out.append("%s%s %s #%s %s at %s near %s source %s%s" % (
                 "EXTERNAL " if tagged else "", kind.upper(), key, n, quoted(pin.get("text")),
                 quoted(pin.get("selector")), quoted(pin.get("nearText")),
-                quoted(source_of(key, probes))))
+                quoted(source_of(key, probes)),
+                " candidate %s" % quoted(candidate) if candidate is not None else ""))
         elif kind == "deleted" and key in doomed:
             out.append("UNDONE %s page %s" % (key, "confirmed" if confirmed else "did not confirm"))
     return out
@@ -1441,7 +1450,7 @@ def listener_alive():
 
 
 my_run = run_id()
-if my_run is None:
+if my_run is None and not no_run:
     sys.stderr.write("annotate-run: no run in progress (run begin first)\n")
     sys.exit(1)
 write_text(PID_FILE, "%d\n" % os.getpid())
@@ -1453,7 +1462,7 @@ def still_mine():
             owner = handle.read().strip()
     except OSError:
         return False
-    return os.path.isdir(dir_path) and run_id() == my_run and owner == str(os.getpid())
+    return os.path.isdir(dir_path) and (no_run or run_id() == my_run) and owner == str(os.getpid())
 
 
 offset = read_cursor()
@@ -1504,11 +1513,11 @@ PYEOF
 cmd_watch() {
   local dir
   dir="$(session_dir)"
-  [ -f "$dir/run.json" ] || die "no run in progress (run begin first)"
+  [ "$NO_RUN" = "1" ] || [ -f "$dir/run.json" ] || die "no run in progress (run begin first)"
   exec python3 -c "$LOCAL_OPENER_PY
 $PAGE_KIND_PY
 $BOUNDARY_PY
-$WATCH_PY" "$dir" "$ROOT" "$SESSION" "$SCRIPT_DIR/annotate-run.sh" "$SCRIPT_DIR/annotate-resolve.sh" "$WATCH_ONCE"
+$WATCH_PY" "$dir" "$ROOT" "$SESSION" "$SCRIPT_DIR/annotate-run.sh" "$SCRIPT_DIR/annotate-resolve.sh" "$WATCH_ONCE" "$NO_RUN"
 }
 
 # cmd_kind - project when the page is a local one (file, or http/https on

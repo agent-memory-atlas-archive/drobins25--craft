@@ -1632,6 +1632,48 @@ run_in "$ROOT" begin --session wt6 --subject once-more >/dev/null
 assert_eq "begin moves the position to the log's end" "$(size_of "$D/changes.jsonl")" "$(cursor_of "$D")"
 assert_eq "which is not zero" "True" "$([ "$(cursor_of "$D")" -gt 0 ] && echo True || echo False)"
 
+begin_test "watch --no-run needs no run.json; a repeat SEND and CLEAR PINS print nothing; a newer watch supersedes it"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt10
+D="$ROOT/.craft/annotations/wt10"
+A="http://localhost/a"
+assert_file_not_exists "the session has no run" "$D/run.json"
+start_watch "$ROOT" wt10 "$ROOT/n1.out" --no-run; W1="$WATCH_PID"
+sleep 0.6
+assert_eq "the watch runs with no run.json" "yes" "$(is_running "$W1" && echo yes || echo no)"
+http POST "$PORT" /pins "[$(cpin 1 $A first)]" >/dev/null
+if wait_lines "$ROOT/n1.out" 1; then echo "  PASS: the first SEND printed"; PASS=$((PASS + 1)); else echo "  FAIL: the first SEND never printed"; FAIL=$((FAIL + 1)); fi
+assert_contains_literal "the line names the pin" 'ADDED 1 #1 "first" at "div.a" near "n" source "not probed"' "$(cat "$ROOT/n1.out")"
+http POST "$PORT" /pins "[$(cpin 1 $A first)]" >/dev/null
+http POST "$PORT" /clear >/dev/null
+sleep 1.5
+assert_eq "the repeat SEND and the clear printed nothing" "1" "$(wc -l < "$ROOT/n1.out" | tr -d ' ')"
+assert_eq "the watch is still running" "yes" "$(is_running "$W1" && echo yes || echo no)"
+http POST "$PORT" /pins "[$(cpin 2 $A second)]" >/dev/null
+if wait_lines "$ROOT/n1.out" 2; then echo "  PASS: a new pin after the clear printed"; PASS=$((PASS + 1)); else echo "  FAIL: a new pin after the clear never printed"; FAIL=$((FAIL + 1)); fi
+assert_contains_literal "it is the second pin" 'ADDED 2 #1 "second"' "$(cat "$ROOT/n1.out")"
+start_watch "$ROOT" wt10 "$ROOT/n2.out" --no-run; W2="$WATCH_PID"
+wait_dead "$W1" || true
+assert_eq "the older watch left" "no" "$(is_running "$W1" && echo yes || echo no)"
+assert_eq "the newer watch stays" "yes" "$(is_running "$W2" && echo yes || echo no)"
+stop_job "$W2"
+assert_file_not_exists "the watch wrote no run.json" "$D/run.json"
+
+begin_test "a dial pin's candidate letter ends its watch line; a pin with none prints no candidate"
+new_root; ROOT="$NEW_ROOT"
+arm_session "$ROOT" --session wt11
+A="http://localhost/a"
+start_watch "$ROOT" wt11 "$ROOT/c1.out" --no-run; W="$WATCH_PID"
+sleep 0.6
+DIAL_PIN='{"n":1,"text":"too loose","x":1,"y":2,"selector":"div.a","nearText":"n","ts":1,"page":"'"$A"'","candidate":"B"}'
+http POST "$PORT" /pins "[$DIAL_PIN]" >/dev/null
+if wait_lines "$ROOT/c1.out" 1; then echo "  PASS: the dial pin printed"; PASS=$((PASS + 1)); else echo "  FAIL: the dial pin never printed"; FAIL=$((FAIL + 1)); fi
+assert_contains_literal "the candidate ends the line" 'ADDED 1 #1 "too loose" at "div.a" near "n" source "not probed" candidate "B"' "$(cat "$ROOT/c1.out")"
+http POST "$PORT" /pins "[$DIAL_PIN,$(cpin 2 $A plain)]" >/dev/null
+if wait_lines "$ROOT/c1.out" 2; then echo "  PASS: the plain pin printed"; PASS=$((PASS + 1)); else echo "  FAIL: the plain pin never printed"; FAIL=$((FAIL + 1)); fi
+assert_not_contains "a pin with no candidate prints none" "candidate" "$(sed -n 2p "$ROOT/c1.out")"
+stop_job "$W"
+
 begin_test "UNREACHABLE prints once when the listener dies, and again only after it recovered"
 new_root; ROOT="$NEW_ROOT"
 arm_session "$ROOT" --session wt7

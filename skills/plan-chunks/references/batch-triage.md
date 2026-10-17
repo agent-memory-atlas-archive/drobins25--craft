@@ -22,6 +22,7 @@ Concerns and decisions from agent plan reports are sorted into three tiers based
    - Decisions Made table entries where confidence is low
    - Design Decision Validation entries where status is `concern` or `invalid`
    - Critical Blockers (always treated as needs-review)
+   - Critical Blockers of type `research` are not asked as BT-2 questions: before BT-2, run each through S-2 Step 0's RESEARCH REQUEST steps R1-R3 in SKILL.md (the user is at the desk now; the request block is in that story's `output_file` from the registry), comparing its "plan assumes" line against the story's Reference Materials entry `_plan.md -> "Convergence Points"` that the run landed. Premise held: retag the story's class-claim conditions row `verified - research: <slug> -> "Convergence Points"`, print "kept as planned - research confirmed <premise> (<the Convergence Point matched>)" and drop the item. Premise overturned: queue the story through "Adjusted Story Re-Planning" with the research citations as BINDING context. Gap still open after the run, or R1 stopped on an existing planner door run: one BT-2 item; triage never asks it directly, and the answer retags that same row `verified - user ruled at triage: <answer>` (see the answer-time write rule below).
 3. Tag each item with its source story name
 4. Sort all items: low confidence first, then medium, then high
 5. Within the same confidence tier, group by story (keeps mental context together)
@@ -281,7 +282,7 @@ If a cohesion issue has no clean resolution (e.g., two stories genuinely need to
 3. **Chunks** — **Preserve the agent's chunk specs verbatim. Do NOT summarize.** Each chunk in the story file MUST include:
    - **Goal:** What the chunk accomplishes
    - **Files:** Every file created/modified with full paths
-   - **Contracts:** The receipted seams — every line carries `[verified: ...]`, `[owner: Chunk N]`, `[investigation: ...]`, or `[defines]`. The implementer holds these as law.
+   - **Contracts:** The receipted seams — every line carries `[verified: ...]`, `[owner: Chunk N]`, `[investigation: ...]`, `[visual-source: ...]`, or `[defines]`; a fact from outside the repo is `[verified: web - <source url or doc name> - <what was checked>]`, never `[investigation: ...]`. The implementer holds these as law.
    - **Approach:** Advisory prose — pattern pointers, ordering, gotchas. No code bodies (decision-code with a receipt is the rare exception).
    - **Test cases:** Named assertions the implementer writes bodies for.
    - **Done When:** Checklist of specific, testable criteria (not vague summaries)

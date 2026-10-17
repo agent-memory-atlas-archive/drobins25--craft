@@ -40,7 +40,8 @@ surface.
 **Rules for the conditions table:**
 - Every condition is tagged `verified - <evidence>`, `system-owned - <who>`, or `unverifiable by reading - becomes Chunk N's FIRST test`.
 - A condition that can't carry one of those tags is not a condition - it's a hole. Go back.
-- An unverifiable condition MUST become the named chunk's first test, before anything is built on it. The plan's weakest point gets attacked first, by construction.
+- An unverifiable single-thing condition MUST become the named chunk's first test, before anything is built on it. The plan's weakest point gets attacked first, by construction.
+- A class claim never takes the first-test escape: a capture of chosen instances cannot secure a claim about a class. It is secured by research (`verified - research: <slug> -> "<anchor>"`) or, in batch, tagged `unverifiable class claim - research request raised, never a first test` with a matching Critical Blocker.
 - **The conditions table is the implementer's tripwire watchlist.** The implementer doesn't watch everything; it watches these.
 
 ### `## Investigation` (the planner's narrative)
@@ -125,9 +126,9 @@ patterns in jobs/ - out of scope, the ILS client tests are the pattern to mirror
 
 | Receipt | Meaning |
 |---------|---------|
-| `[verified: <what was checked and what would have falsified it>]` | Attacked against existing code during investigation. The receipt is attack residue, not attestation - "I tried to kill this and here's what would have killed it." |
+| `[verified: <what was checked and what would have falsified it>]` | Attacked against existing code during investigation. The receipt is attack residue, not attestation - "I tried to kill this and here's what would have killed it."  For a fact outside the repo the form is `[verified: web - <source url or doc name> - <what was checked>]`. |
 | `[owner: Chunk N]` | The contract's truth is produced by an earlier chunk. By implement time it's real, compiled code - cite IT, not this line, if they differ. |
-| `[investigation: <one-line reason>]` | Backref to the narrative - the reasoning this contract protects. The implementer uses this to judge mismatches: does a deviation break the *reason*, or just the coordinates? |
+| `[investigation: <one-line reason>]` | Backref to the narrative - the reasoning this contract protects. The implementer uses this to judge mismatches: does a deviation break the *reason*, or just the coordinates? Never for a fact outside the repo - that is `[verified: web - ...]`. |
 | `[defines]` | A new seam this chunk creates - a name, route, or shape with no prior reality to verify. Authoritative from this chunk on; later chunks cite it via `[owner: Chunk N]`. Greenfield stories are mostly `[defines]` - that's correct, not a gap. |
 | `[visual-source: <mockup anchor \| tokens.yaml token \| Visual Direction Part/Role>]` | A UI element's visual binding: this Part/Role uses this token or value, sourced from a mockup, the design system, or the Visual Direction table. The visual-domain twin of `[verified:]` - it points at where the look was decided, not at code. |
 
@@ -207,7 +208,7 @@ Exempt: chunks that modify no source files (all Files entries `read-only`, or a 
 
    *Visual token assignment is a seam, not an interior (UI stories).* Two implementers given the same UI spec can assign different valid tokens to one element (`surface` vs `surface-elevated`) - both pass style-analyzer, both render differently. That is exactly the conflict Contracts exist to prevent, so a per-element token/value binding belongs in Contracts with a `[visual-source:]` receipt, never left to Approach. (Also stated in `agents/plan-chunks-agent.md` Phase 3.1, which the agent runs from its own prompt.)
 
-2. **The receipt audit** - every contract line carries a receipt; every receipt-less claim is in the conditions table; every unverifiable condition is some chunk's first test. Run the narrative check: is the Investigation causal? Are the dead ends still in it? Too clean is a finding.
+2. **The receipt audit** - every contract line carries a receipt; every receipt-less claim is in the conditions table; every unverifiable single-thing condition is some chunk's first test (a class claim goes to research). Run the narrative check: is the Investigation causal? Are the dead ends still in it? Too clean is a finding.
 
 3. **The Miranda pass** - model the specific skeptic who receives this plan (the user at triage; the reviewer who gets sent in afterward). Write down the five questions they will ask. Each must already be answered *in the artifact* - in the Investigation, a contract receipt, or the conditions table. Not answerable: answered. The plan is done when that review walks out with "...that's all."
 

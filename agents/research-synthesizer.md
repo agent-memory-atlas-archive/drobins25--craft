@@ -11,7 +11,7 @@ description: |
   user: (internal) "Researchers complete - synthesize the topic folder."
   assistant: "Reading every branch file and writing _plan.md + _sources.md."
   <commentary>
-  Primary trigger - craft:research Step 2.4 delegates cross-branch synthesis to this agent.
+  Primary trigger - the research flow (commands/references/research-inline.md Step 6) delegates cross-branch synthesis to this agent.
   </commentary>
   </example>
 
