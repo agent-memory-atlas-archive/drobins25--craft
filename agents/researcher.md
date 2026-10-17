@@ -25,7 +25,7 @@ description: |
   </commentary>
   assistant: "I'll use the researcher agent to elaborate on that branch."
   </example>
-model: claude-haiku-4-5-20251001
+model: haiku
 color: cyan
 tools: Read, Glob, Grep, Bash, Write, WebSearch, WebFetch
 disallowedTools: Edit, NotebookEdit

@@ -6,6 +6,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 - Added research before anyone plans on a guess. When a story depends on something outside your project that nobody has checked (a site, a tool's output, a data source, a format), craft settles a single fact in up to three searches and tells you what it checked and where. Anything bigger it researches before the alignment check asks its questions, and the findings land on the story with pinpoint citations. The planner verifies outside facts with its own search as it plans. When three searches cannot settle a claim about a whole class of things, it stops for research instead of guessing. Each gap is researched once; if it is still open after that, you are asked what the plan should assume. When the ask could be read two ways, craft confirms the reading before it researches, and `/craft:research` gains the same check.
 - Fixed `/craft:research --deep` and `--exhaustive` stopping to ask "What next?" after the first pass. A deep run now elaborates every branch without asking, and an exhaustive run then hands the topic to `/craft:research-verify`, as the command's help always said.
+- Changed the agents behind `/craft:research`, `/craft:research-verify` and `/craft:become` to always run on the latest Haiku model, instead of staying pinned to an older version.
 
 ## 2.9.3 - 2026-10-15
 
