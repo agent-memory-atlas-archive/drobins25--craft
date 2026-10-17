@@ -757,12 +757,21 @@ else
 fi
 rm -rf "$PROMO_DIR"
 
-# --- The changelog's newest heading matches plugin.json's version ---
-begin_test "the changelog's newest heading matches plugin.json's version"
+# --- The changelog's newest heading is never ahead of plugin.json's version ---
+# Entries are notable-only: internal changes bump plugin.json with no entry, so the
+# newest heading may lag the version but never lead it (check-doc-drift.sh rule 8).
+begin_test "the changelog's newest heading is never ahead of plugin.json's version"
 PLUGIN_VERSION=$(grep -oE '"version": *"[^"]+"' "$PLUGIN_ROOT/.claude-plugin/plugin.json" 2>/dev/null | sed -E 's/.*"([^"]+)"$/\1/')
 CHANGELOG_TOP_ENTRY=$(grep -m1 -E '^## ' "$PLUGIN_ROOT/CHANGELOG.md" 2>/dev/null | sed -E 's/^## +//')
 CHANGELOG_TOP_VERSION=$(printf '%s' "$CHANGELOG_TOP_ENTRY" | sed -E 's/ - [0-9]{4}-[0-9]{2}-[0-9]{2}$//')
-assert_eq "changelog's newest heading version equals plugin.json's version" "$PLUGIN_VERSION" "$CHANGELOG_TOP_VERSION"
+# not_ahead PLUGIN CHANGELOG: yes when CHANGELOG sorts at or below PLUGIN.
+not_ahead() { [ -n "$1" ] && [ -n "$2" ] && [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | tail -1)" = "$1" ] && echo yes || echo no; }
+assert_eq "newest heading ($CHANGELOG_TOP_VERSION) is not ahead of plugin.json ($PLUGIN_VERSION)" "yes" "$(not_ahead "$PLUGIN_VERSION" "$CHANGELOG_TOP_VERSION")"
+assert_eq "a heading equal to the version passes" "yes" "$(not_ahead 2.10.0 2.10.0)"
+assert_eq "a heading behind the version passes" "yes" "$(not_ahead 2.10.1 2.10.0)"
+assert_eq "a heading behind across a minor boundary passes" "yes" "$(not_ahead 2.10.0 2.9.3)"
+assert_eq "a heading ahead of the version fails" "no" "$(not_ahead 2.10.0 2.10.1)"
+assert_eq "a missing version fails" "no" "$(not_ahead "" 2.10.0)"
 
 # --- agents/claims-auditor.md and agents/implementer.md carry no mention of decisions: ---
 begin_test "agents/claims-auditor.md and agents/implementer.md carry no decisions: mention"
