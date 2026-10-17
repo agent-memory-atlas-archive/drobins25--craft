@@ -8,6 +8,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 - Fixed `/craft:research --deep` and `--exhaustive` stopping to ask "What next?" after the first pass. A deep run now elaborates every branch without asking, and an exhaustive run then hands the topic to `/craft:research-verify`, as the command's help always said.
 - Changed the agents behind `/craft:research`, `/craft:research-verify` and `/craft:become` to always run on the latest Haiku model, instead of staying pinned to an older version.
 - Fixed SEND TO CLAUDE on a mockup or dial page doing nothing until you typed in the terminal. Your pins now reach craft the moment you press SEND, each pin arrives once even when you press SEND again, and CLEAR PINS stays quiet, since it only hides pins on the page.
+- Fixed an open annotate, mockup or dial session waking Claude every 30 minutes while you were away. The pin watch now rests after half an hour with no pin and no message from you, and picks up again on your next message, with any pins you sent in between.
 
 ## 2.9.3 - 2026-10-15
 

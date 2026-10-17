@@ -128,7 +128,7 @@ Once the overlay is on the page, start the watch ONCE, under the Monitor tool:
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/annotate-run.sh" watch --session "<id>"
 ```
 
-with `timeout_ms: 1800000`. Each line it prints arrives inside a notification, so the pins are already in the chat - never open a file to read them. When the Monitor's expiry notice arrives, start the same watch again, silently. Where the Monitor tool is not available, run `watch --session "<id>" --once` as a background Bash command (`run_in_background: true`) and launch it again after acting on each wake.
+with `timeout_ms: 1800000`. Each line it prints arrives inside a notification, so the pins are already in the chat - never open a file to read them. When the Monitor's expiry notice arrives, start the same watch again, silently - but only when a pin line arrived or the user typed a message since this watch started; a turn Claude Code started on its own (an agent finishing, an expiry notice) does not count. Otherwise let it rest, say nothing, and start it again first thing on the user's next typed message - its saved position delivers any pin sent while it rested. Where the Monitor tool is not available, run `watch --session "<id>" --once` as a background Bash command (`run_in_background: true`) and launch it again after acting on each wake.
 
 - `ADDED <ts> #<n> "<text>" ...` and `EDITED ...`: a pin to act on, delivered once. Go to Step 6.
 - `UNDONE <ts> page confirmed`: the user withdrew a pin and the watch already dropped its block. Go to Step 6.
