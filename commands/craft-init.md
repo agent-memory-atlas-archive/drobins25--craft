@@ -247,22 +247,16 @@ Use these counts to infer project type and stack.
 
 **Project-type question (used when Phase 1's findings are unavailable):**
 
-Use **AskUserQuestion**:
+Ask what kind of project this is. If the user has already named its shape in this session, that reading is the first option, marked (Recommended). Example:
 ```
 question: "What kind of project is this?"
 header: "Project type"
 options:
   - label: "UI / Web app"
-    description: "Frontend application with screens and user interaction"
   - label: "CLI tool"
-    description: "Command-line tool installed and run from a terminal"
   - label: "API / Backend service"
-    description: "Server, API, or backend service - no UI"
   - label: "Hybrid (UI + backend)"
-    description: "Full-stack app with both frontend and backend in one project"
 ```
-
-**Do NOT** add a `(Recommended)` marker or inference suffix based on Phase 0.5's intent answers. Project type is a structural decision; word-matching from free-text intent is unreliable signal and biases a foundational choice. Let the user pick fresh.
 
 Store the chosen option as `PROJECT_TYPE` in slug form: `ui`, `cli`, `api`, or `hybrid`.
 

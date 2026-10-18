@@ -36,14 +36,14 @@ Greet the user briefly:
 
 > "Quick muse session - 4 turns max. I'm going to riff with you on what this is *really* for, emotionally. Your Q1/Q2 answers are my starting point. Let's go."
 
-### Turn presentation (applies to every turn, Steps 3-6)
+### Turn presentation (applies to the open questions, Steps 3-5)
 
 The muse leads each turn with its material - the question, the observation, the idea - as **prose in the message body**. The AskUserQuestion below it only captures the answer. Two sub-rules:
 
 - **Keep the prose tight.** A few lines, so it is still on-screen when the widget lands - long prose scrolls out of the user's eyeline before they answer.
 - **The AUQ question line restates the one essential idea.** It is the only text guaranteed to be in the user's eyeline when they choose.
 
-**The AUQ `question` field NEVER carries the turn's full content.** No multi-field synthesis walls, no pipe-separated field dumps - newlines don't render inside the question field, and the muse's best writing turns into chrome-speak there. Body prose is the delivery; the question line is one short restatement. This applies with special force to Step 6's synthesis turn: the four-field Emotional Core is presented as formatted prose in the body, and the widget asks only "Does this capture it?"
+**The AUQ `question` field NEVER carries the turn's full content.** No multi-field synthesis walls, no pipe-separated field dumps - newlines don't render inside the question field, and the muse's best writing turns into chrome-speak there. Body prose is the delivery; the question line is one short restatement. This applies with special force to Step 6's synthesis turn: the four-field Emotional Core is presented as formatted prose in the body, and the ask is only "Does this capture it?"
 
 ### Step 3: First muse question (turn 1 of 4)
 
@@ -87,18 +87,7 @@ Don't ask another open question. Synthesize what you've heard into a draft Emoti
 >
 > Does this capture it? Anything to refine?"
 
-Use **AskUserQuestion** with `header: "Muse 4/4"`:
-```
-options:
-  - label: "Yes, lock it"
-    description: "This captures the emotional core - write to project.md"
-  - label: "Refine one field"
-    description: "I want to adjust one of the four fields"
-  - label: "Wrap with what we have"
-    description: "Good enough - lock as-is and continue"
-```
-
-If "Refine one field": ask which field, capture the user's adjustment, apply it, and re-present. Up to 2 refinements before forced lock (still within session cap).
+A yes locks it. A change is applied to the field it names and the four fields are re-presented. Up to 2 refinements before forced lock (still within session cap).
 
 ### The horizon line (after the lock, before the handoff)
 

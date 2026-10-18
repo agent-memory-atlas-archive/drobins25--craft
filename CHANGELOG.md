@@ -2,6 +2,12 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.10.1 - 2026-10-18
+
+- Fixed planning asking "Ready to plan this story?" right after you asked to plan it. When you run `/craft:plan-chunks` on a story, say "plan this", or say yes to an offer to plan, planning now starts straight away. Planning that starts without your ask still checks with you first.
+- Changed the last step of the muse session in `/craft:init`. After it shows your project's Emotional Core, it asks "Does this capture it?" and reads your answer, so you say what to change in your own words instead of picking from a menu.
+- Changed the project-type question in `/craft:init` for an empty folder. When you have already said what the project is, that reading comes first and is marked as recommended, instead of four stock options that ignore what you told it.
+
 ## 2.10.0 - 2026-10-16
 
 - Added research before anyone plans on a guess. When a story depends on something outside your project that nobody has checked (a site, a tool's output, a data source, a format), craft settles a single fact in up to three searches and tells you what it checked and where. Anything bigger it researches before the alignment check asks its questions, and the findings land on the story with pinpoint citations. The planner verifies outside facts with its own search as it plans. When three searches cannot settle a claim about a whole class of things, it stops for research instead of guessing. Each gap is researched once; if it is still open after that, you are asked what the plan should assume. When the ask could be read two ways, craft confirms the reading before it researches, and `/craft:research` gains the same check.
