@@ -14,7 +14,7 @@ import re
 from . import identity
 from . import resolve
 from . import sentinels
-from .parse_fix import field_link
+from .parse_fix import field_link, review_annotation
 
 _WIKILINK_VALUE_RE = re.compile(r'^"?\[\[([^\]]+)\]\]"?$')
 
@@ -45,6 +45,7 @@ def parse(path, craft_rel, fields, body):
     links = []
     annotations = []
     field_link(nid, fields, "notebook", "graduated_to", links, annotations)
+    review_annotation(nid, fields, annotations)
 
     source = fields.get("source")
     if source is not None:

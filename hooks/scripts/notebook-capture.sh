@@ -1,10 +1,11 @@
 #!/bin/bash
 # notebook-capture.sh - Write a notebook idea, todo, or note file
-# Usage: notebook-capture.sh <type> "<text>" [--facet="<facet>"] [--source="<source>"] [--tags="tag1,tag2"] [--body-paragraph2="<text>"]
+# Usage: notebook-capture.sh <type> "<text>" [--facet="<facet>"] [--source="<source>"] [--review="<review record name>"] [--tags="tag1,tag2"] [--body-paragraph2="<text>"]
 #   <type>: "idea", "todo", or "note"
 #   <text>: capture text (may contain inline #tags, which are extracted and scrubbed)
 #   --facet: optional recall lever for notes (infrastructure|tooling|ownership|process|convention|gotcha)
 #   --source: optional source string for frontmatter (e.g. "session 2026-05-30")
+#   --review: optional name of the review record this entry came from; written as a review: line
 #   --tags: optional ADDITIONAL tags (comma-separated) merged with parsed inline tags
 #           used by Claude-driven captures to add session-context tags beyond inline #tags
 #   --body-paragraph2: optional second-paragraph elaboration appended after blank line
@@ -41,6 +42,7 @@ SOURCE=""
 EXTRA_TAGS=""
 BODY_PARAGRAPH2=""
 FACET=""
+REVIEW=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +52,10 @@ while [ $# -gt 0 ]; do
       ;;
     --source=*)
       SOURCE="${1#*=}"
+      shift
+      ;;
+    --review=*)
+      REVIEW="${1#*=}"
       shift
       ;;
     --tags=*)
@@ -196,6 +202,7 @@ fi
     echo "status: open"
   fi
   [ -n "$SOURCE_YAML" ] && echo "$SOURCE_YAML"
+  [ -n "$REVIEW" ] && echo "review: $REVIEW"
   [ -n "$TAGS_YAML" ] && echo "$TAGS_YAML"
   echo "---"
   echo "$SCRUBBED_TEXT"

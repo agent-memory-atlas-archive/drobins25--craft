@@ -97,5 +97,21 @@ class TestParseFix(unittest.TestCase):
         self.assertEqual(len(sentinel), 1)
         self.assertEqual(sentinel[0]["value"], "none (design pattern shift)")
 
+    def test_review_yields_one_out_of_scope_type_annotation_and_no_link(self):
+        text = '---\nname: inline-review-fix\ncreated: 2026-10-18\nstatus: validated\nreview: 2026-10-18-branch-feature-x\n---\n\nBody.\n'
+        _, links, annotations = registry.parse_file('fix', 'fixes/inline-review-fix.md', text)
+        review = [a for a in annotations if a["field"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["value"], '2026-10-18-branch-feature-x')
+        self.assertEqual(review[0]["reason"], "out-of-scope-type")
+        self.assertNotIn('2026-10-18-branch-feature-x', [l["raw_value"] for l in links])
+
+    def test_blank_review_yields_nothing(self):
+        text = '---\nname: inline-review-fix\ncreated: 2026-10-18\nstatus: validated\nreview:\n---\n\nBody.\n'
+        _, links, annotations = registry.parse_file("fix", 'fixes/inline-review-fix.md', text)
+        self.assertEqual([a for a in annotations if a["field"] == "review"], [])
+        self.assertEqual([l for l in links if l["raw_value"] == ""], [])
+
+
 if __name__ == "__main__":
     unittest.main()

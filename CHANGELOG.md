@@ -2,6 +2,12 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.11.0 - 2026-10-18
+
+- Added a record for every `/craft:review` run, clean or not. Each one keeps what was checked and what was found, so a review that finds nothing still leaves proof of what it looked at.
+- Added a close-out after a review: craft proposes where each finding goes, one at a time, and you answer in a word.
+- Changed fixes that come out of a review. They now run as recorded, committed fixes instead of bare edits, so the history shows what was fixed and why.
+
 ## 2.10.1 - 2026-10-18
 
 - Fixed planning asking "Ready to plan this story?" right after you asked to plan it. When you run `/craft:plan-chunks` on a story, say "plan this", or say yes to an offer to plan, planning now starts straight away. Planning that starts without your ask still checks with you first.

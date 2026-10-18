@@ -802,4 +802,18 @@ assert_eq "nested subdirectory stderr" "not an open bug record: 2026-09-05-neste
 assert_eq "nothing written" "$SUM_BEFORE" "$(cksum "$B"/*.md "$B"/closed/*.md)"
 assert_contains "open record still hits: 1" "^hits: 1$" "$(fence_of "$F")"
 
+begin_test "bug --review writes the back-link right after found_during"
+bare_root
+file_bug "Review-sourced symptom" --review="2026-10-18-branch-x" --requirement="r" --layer=code --worked-before="v1" --verdict=bug --tags="ui"
+assert_eq "rc" "0" "$RC"
+KEYS=$(awk '/^---$/{c++; next} c==1{print}' "$OUT" | sed 's/:.*//' | tr '\n' ' ')
+assert_eq "key order" "type created captured_at status verdict found_during review requirement layer worked_before hits fixed_by tags " "$KEYS"
+assert_contains "review value" "^review: 2026-10-18-branch-x$" "$(cat "$OUT")"
+
+begin_test "bug with an empty --review writes no review line"
+bare_root
+file_bug "Empty review flag" --review=
+assert_eq "rc" "0" "$RC"
+assert_eq "no review line" "0" "$(grep -c '^review:' "$OUT")"
+
 finish_tests test-bugs-scripts

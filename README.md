@@ -357,7 +357,7 @@ You rarely type these. Craft routes plain English to the right one - this table 
 | `/craft:cycle-assign` | Move story to cycle |
 | `/craft:cycle-complete` | Complete a cycle, trigger reflection |
 | `/craft:analyze` | Run QA, UX, Creative, Style, or Walkthrough analysis |
-| `/craft:review` | PR-style code review - branch, story, or project audit. `--maze` flag enables perpendicular review via maze-architect |
+| `/craft:review` | PR-style code review - branch, story, or project audit. `--maze` flag enables perpendicular review via maze-architect. Every run leaves a record, clean or not, and findings graduate one at a time |
 | `/craft:reflect` | Improve the harness based on learnings |
 | `/craft:update-docs` | Re-scan project, update documentation |
 | `/craft:docs` | Generate or update docs using the crystallized doc-writer agent (two-pass: brief then generate) |
@@ -468,7 +468,7 @@ A bug record is something broken that you are not fixing right now, written so a
 
 Bare, it shows every open bug, newest first, with a marker on any that blocks someone's next step. With words, it files what you describe. If the conversation already holds a defect, a bare call files that one instead.
 
-- **Three filers.** You: "log a bug", or a yes to craft's one ignorable offer when you defer something broken mid-story. An agent mid-run, which can't fix what it finds without disturbing the run. And `/craft:analyze`: QA and walkthrough findings file as bugs. A QA finding the analyzer couldn't verify is named in the report and not filed. Walkthrough taste notes queue for UX review instead.
+- **Four filers.** You: "log a bug", or a yes to craft's one ignorable offer when you defer something broken mid-story. An agent mid-run, which can't fix what it finds without disturbing the run. And `/craft:analyze`: QA and walkthrough findings file as bugs. A QA finding the analyzer couldn't verify is named in the report and not filed. Walkthrough taste notes queue for UX review instead. And `/craft:review`: after a review, each finding gets a proposed home and you answer in a word.
 - **Never summoned.** Filing never pulls you out of what you were doing. The one question craft may ask is "What's broken?", and only when nothing in the conversation says. Then one line: filed, and where.
 - **Seven required fields.** The symptom in your words as the first line, never the guessed cause. Then where it turned up, expected, actual (only what was observed), consequences (what you rank the pile by; there is no severity field), whether it blocks your next step and why, and numbered steps to reproduce from a named starting state. Craft refuses a record missing one; a field the filer can't know says "unknown" and why.
 - **A Done when, if you can write it.** The check that proves it fixed, written now, before the cause is known. Optional.

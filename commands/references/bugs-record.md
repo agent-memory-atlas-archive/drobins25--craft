@@ -90,12 +90,14 @@ Omit `## Log`. Capture creates it with the filing entry.
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bugs-capture.sh" --found-during="<where>" \
   [--requirement="<verbatim>"] [--layer=code|spec|judgment] [--worked-before="<last known good>"] \
-  [--verdict=bug|unspecified|spec-gap|not-reproducible] [--tags=a,b] --stdin <<'BODY'
+  [--verdict=bug|unspecified|spec-gap|not-reproducible] [--review=<review record name>] [--tags=a,b] --stdin <<'BODY'
 <the body>
 BODY
 ```
 
 The script prints the record's absolute path as its last line. It exits 2 and writes nothing when a required field is missing; fix the named field and run it again.
+
+`--review` names the review record a bug was filed from; leave it off for any bug that did not come from a review.
 
 ## Requirement
 

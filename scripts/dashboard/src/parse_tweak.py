@@ -11,7 +11,7 @@ import re
 
 from . import body as body_mod
 from . import identity
-from .parse_fix import field_link
+from .parse_fix import field_link, review_annotation
 
 _LEGACY_TITLE_RE = re.compile(r"^# Tweak: (.+)$", re.M)
 
@@ -54,4 +54,5 @@ def parse(path, craft_rel, fields, body):
     field_link(nid, fields, "tweak", "reapplies", links, annotations)
     field_link(nid, fields, "tweak", "grew_from", links, annotations)
     field_link(nid, fields, "tweak", "satisfied_todo", links, annotations)
+    review_annotation(nid, fields, annotations)
     return node, links, annotations

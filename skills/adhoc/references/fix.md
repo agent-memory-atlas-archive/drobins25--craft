@@ -24,6 +24,7 @@ category: [see categories below]
 source_story: [story that introduced the bug, if known - e.g. riff-the-game]
 source_cycle: [cycle name, if known]
 planned_test: [for a defect found after source_story completed - the planned test case in that story that should have caught it, quoted as the plan names it, or none; blank when there is no source story]
+review: [name of the review record this fix came from, e.g. 2026-10-18-branch-feature-x - empty when not from a review]
 files_changed: 0
 lines_changed: 0
 trigger: [how the problem was discovered]
@@ -63,6 +64,8 @@ Am I 100% certain this solution resolves the root cause?
 - `typography` - font weights, sizes, line-height, tracking
 
 **`planned_test`** (filled at record creation, one line, no question asked): when `source_story` names a story and the defect was found after that story completed - a review finding, a bug from the pile, an analyze finding, something the user hit - open the story file and read every chunk's `**Test cases:**` list. Write the one planned case whose name covers the behavior that broke, quoted exactly as the plan names it. When no planned case covers that behavior, write `none`. Leave it blank only when there is no source story. Judge by the behavior, not the file: a case that touches the same file but pins a different behavior is not a match. Over a cycle, the `none` count is the planner's miss rate, read straight from the records.
+
+**`review`**: when the handoff brief names a review record, set `review:` to that record's name. This flow never opens or edits the review record - the review's close-out fills the finding's line once this record lands.
 
 ## Step 2: Investigate
 

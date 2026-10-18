@@ -55,7 +55,7 @@ plugins/craft/
 │   ├── craft-planning.md
 │   ├── craft-status.md
 │   ├── craft-project.md
-│   ├── craft-review.md        ← PR-style review with standard and --maze modes
+│   ├── craft-review.md        ← PR-style review with standard and --maze modes; writes a record per run (commands/references/review-record.md)
 │   ├── craft-research.md
 │   ├── craft-research-verify.md ← Verify research findings against primary sources
 │   ├── craft-cycle-design.md
@@ -372,6 +372,8 @@ project-root/
 │   │   ├── YYYY-MM-DD-slug.md
 │   │   └── closed/            ← Fixed or won't-fix bugs
 │   │       └── YYYY-MM-DD-slug.md
+│   ├── reviews/               ← Review records (created by /craft:review, one per run, clean or not)
+│   │   └── YYYY-MM-DD-slug.md
 │   ├── design/                ← Design system (enforced)
 │   │   ├── tokens.yaml        ← Design tokens
 │   │   ├── components.md      ← Component patterns

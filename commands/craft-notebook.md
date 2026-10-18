@@ -131,6 +131,8 @@ bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notebook-capture.sh {TYPE} "{CAPTURE_TE
 
 The helper prints the written file path. Hold this as `CAPTURED_FILE`.
 
+A review's close-out adds `--review=<record name>` to this call so the todo names the review it came from.
+
 ### 2c: Conditional elaboration AUQ (AC13)
 
 The elaboration AUQ fires for user-driven captures (this Step 2 path). It does NOT fire for the Claude-driven inline-accept path (Step 4 below).

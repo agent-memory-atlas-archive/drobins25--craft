@@ -46,6 +46,11 @@ INVENTORY = {
     ("mockup", "status"),
     ("mockup", "origin"),
     ("mockup", "solidify_outcome"),
+    ("fix", "review"),
+    ("tweak", "review"),
+    ("bug", "review"),
+    ("story", "review"),
+    ("notebook", "review"),
     # annotation
     ("annotation", "graduated_to"),
     ("annotation", "status"),

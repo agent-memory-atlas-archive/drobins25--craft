@@ -13,6 +13,7 @@ from . import body as body_mod
 from . import identity
 from . import resolve
 from . import sentinels
+from .parse_fix import review_annotation
 
 _CHUNK_RE = re.compile(r"^### Chunk (\d+): (.+)$", re.M)
 _NUM_PREFIX_RE = re.compile(r"^\d+-")
@@ -52,6 +53,8 @@ def parse(path, craft_rel, fields, body):
         value = fields.get(field)
         if value:
             links.append(resolve.raw_link(nid, "story", field, value))
+
+    review_annotation(nid, fields, annotations)
 
     _parse_dependencies(nid, stripped, links, annotations)
     _parse_reference_materials(nid, stripped, links, annotations)
