@@ -6,6 +6,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 - Fixed planning asking "Ready to plan this story?" right after you asked to plan it. When you run `/craft:plan-chunks` on a story, say "plan this", or say yes to an offer to plan, planning now starts straight away. Planning that starts without your ask still checks with you first.
 - Changed the last step of the muse session in `/craft:init`. After it shows your project's Emotional Core, it asks "Does this capture it?" and reads your answer, so you say what to change in your own words instead of picking from a menu.
+- Changed the project-type question in `/craft:init` for an empty folder. When you have already said what the project is, that reading comes first and is marked as recommended, instead of four stock options that ignore what you told it.
 
 ## 2.10.0 - 2026-10-16
 
