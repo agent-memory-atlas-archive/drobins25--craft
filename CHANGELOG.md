@@ -4,7 +4,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 ## 2.11.0 - 2026-10-18
 
-- Added a record for every `/craft:review` run, clean or not. Each one keeps what was checked and what was found, so a review that finds nothing still leaves proof of what it looked at.
+- Added a record for every `/craft:review` run on your own work, clean or not. Each one keeps what was checked and what was found, so a review that finds nothing still leaves proof of what it looked at. Reviewing someone else's PR leaves no record, so their code never muddies yours.
 - Added a close-out after a review: craft proposes where each finding goes, all in one table, and you answer in a word.
 - Changed fixes that come out of a review. They now run as recorded, committed fixes instead of bare edits, so the history shows what was fixed and why.
 

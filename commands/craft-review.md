@@ -1,6 +1,6 @@
 ---
 name: review
-description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit. Every run leaves a record in .craft/reviews/, clean or not, and every finding gets a proposed door."
+description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit. Every run on your own work leaves a record in .craft/reviews/, clean or not, and every finding gets a proposed door; a review of someone else's PR leaves nothing behind."
 ---
 
 # Review
@@ -30,6 +30,8 @@ Optional review strategy: `--maze` enables perpendicular maze review (architect 
 - `project` or `project <path>` → **Project mode**
 
 Extract `--focus` flag if present. Default focus is `correctness,security`.
+
+**Whose code:** when the user asked to review a contribution that is not this project's own work (another author's PR, a fork, an upstream change), this is an **outside review**. Say so once and run Steps 2 through 5 the same way. An outside review ends at Step 5: Steps 5a, 5b and 6 do not run, nothing is written under `.craft/`, and the findings are the user's to carry to the PR. The user's words decide this; never infer it from commit authors.
 
 ### Step 2: Gather Context
 
@@ -345,6 +347,8 @@ Then show each finding in detail with the agent's fix diffs.
 
 ### Step 5a: Drop Doc Findings
 
+**Outside review (Step 1):** stop here. Steps 5a, 5b and 6 do not run.
+
 After presenting findings, check if any have category `doc-drift`. If none, skip to Step 5b.
 
 If doc-drift findings exist:
@@ -413,7 +417,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` and run its cl
 3. **Always include a fix** - every finding has an actionable diff, not just a complaint
 4. **Respect the 500-line cap** - large diffs get split by subsystem
 5. **Two severities for changes, three for audits** - issue/suggestion for diffs, add pattern for project-wide
-6. **Every run leaves a record, clean or not** - a clean review that leaves nothing is indistinguishable from no review at all, so the record lists what the reviewer verified as well as what it found
+6. **Every run on your own work leaves a record, clean or not** - a clean review that leaves nothing is indistinguishable from no review at all, so the record lists what the reviewer verified as well as what it found. An outside review leaves nothing, so other people's contributions never enter your records.
 7. **Every finding gets a proposed door** - each finding goes to the door that fits it, answered in a word, and the review record points at what it became
 
 ## Maze Mode Principles
