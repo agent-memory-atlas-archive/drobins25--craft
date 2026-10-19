@@ -77,6 +77,8 @@ def added_lines(path):
     timeout, binary diff) means None, so a failed lookup is noisy rather than clean."""
     try:
         full = os.path.abspath(path)
+        if os.path.islink(full):
+            return None  # git diffs the link text, Python reads the target
         directory = os.path.realpath(os.path.dirname(full))
         target = os.path.join(directory, os.path.basename(full))
         base = ["git", "-C", directory, "--literal-pathspecs"]

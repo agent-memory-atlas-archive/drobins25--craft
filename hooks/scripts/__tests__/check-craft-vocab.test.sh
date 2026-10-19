@@ -434,6 +434,22 @@ chmod +x "$HANGBIN/git"
 PATH="$HANGBIN:$PATH" run_scan "$A"
 assert_contains "$SCAN_OUT" "$A:1:" "git hangs: whole file scanned after the timeout"
 
+echo ""
+echo "Test 24: Tracked symlink scanned whole"
+
+# Git diffs the link's one-line target text; Python reads through the link to
+# the target's content. The two cannot share line numbers, so a symlink is
+# scanned whole, never scoped.
+printf '%s\nconst t = 1;\n' "$OLD_LEAK" > "$R/target.ts"
+ln -s target.ts "$R/ln.ts"
+tg "$R" add target.ts ln.ts
+tg "$R" commit -q -m symlink
+printf '%s\n' "$NEW_LEAK" >> "$R/target.ts"
+run_scan "$R/ln.ts"
+assert_contains "$SCAN_OUT" "$R/ln.ts:3: $NEW_LEAK" "tracked symlink: new leak in the target reported"
+assert_contains "$SCAN_OUT" "$R/ln.ts:1:" "tracked symlink: whole file scanned"
+assert_exit_nonzero "tracked symlink: exit non-zero"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""
