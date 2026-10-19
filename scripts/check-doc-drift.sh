@@ -221,9 +221,10 @@ if [ -n "$check9_range" ]; then
   fi
 fi
 
-# 10. Record-vocabulary field parity (Decision 12): the four reference docs
-#     that document craft's record-linking fields in prose must agree with
-#     src/vocabulary.py in both directions. Shared logic, not restated here
+# 10. Record-vocabulary field parity (Decision 12): the reference docs listed
+#     in tests/check-vocabulary-prose-drift.sh, the ones that document craft's
+#     record-linking fields in prose, must agree with src/vocabulary.py in
+#     both directions. Shared logic, not restated here
 #     - two copies of a drift rule is the drift this check exists to catch.
 #     Sourced lazily (only this section needs it) and namespaced so it
 #     cannot collide with this file's own `findings`/`add`.
