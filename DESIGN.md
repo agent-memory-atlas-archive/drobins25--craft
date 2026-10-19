@@ -464,9 +464,9 @@ goals:
 
 Concepts in `.craft/planning/` (managed by `/craft:planning`) have an alignment walkthrough that resolves a concept's strategic sub-decisions before stories get created. The architecture has three load-bearing parts:
 
-**TaskTool queue.** The orchestrator's speculative working list of sub-decisions for a concept lives in TaskTool — session-scoped, allowed to die. The model only sees one task at a time, so multi-decision AskUserQuestion bundles become structurally impossible. Re-derivation on session resume is correct behavior; not loss.
+**TaskTool queue.** The orchestrator's speculative working list of sub-decisions for a concept lives in TaskTool - session-scoped, allowed to die. The model only sees one task at a time, so multi-decision AskUserQuestion bundles become structurally impossible. Re-derivation on session resume is correct behavior; not loss.
 
-**Three completion destinations.** Every sub-decision terminates in exactly one place: `## Locked decisions` (conversational resolution + explicit lock-confirmation ask — the orchestrator must ask "Want me to lock this as X?" before writing), `pending_decisions[]` frontmatter (user deferred — regenerates as a task on next session), or `## Open questions` with owner annotation (blocked on someone else — doesn't auto-nag).
+**Three completion destinations.** Every sub-decision terminates in exactly one place: `## Locked decisions` (conversational resolution + explicit lock-confirmation ask - the orchestrator must ask "Want me to lock this as X?" before writing), `pending_decisions[]` frontmatter (user deferred - regenerates as a task on next session), or `## Open questions` with owner annotation (blocked on someone else - doesn't auto-nag).
 
 **Step 9 destination-coverage gate (intra-session).** Before story creation runs, the gate verifies every closed task landed in one of the three destinations. Tasks that closed without filing block story creation and route back to alignment with the unaccounted items named. Cross-session integrity is handled by the immediate-write rule (Locked entries hit disk at the moment of resolution), not by the gate.
 
