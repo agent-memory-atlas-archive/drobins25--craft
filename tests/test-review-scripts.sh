@@ -352,4 +352,32 @@ assert_eq "last byte unchanged (no newline added)" "$(tail -c1 "$COPY")" "$(tail
 assert_eq "same size plus value" "$(( $(wc -c < "$COPY") + 6 ))" "$(wc -c < "$REC" | tr -d ' ')"
 rm -f "$COPY"
 
+begin_test "graduate ignores a heading-shaped line in Verified (review 2026-10-18 finding 1)"
+fresh_root
+run_capture $'## Verified\n\n- v\n### 1. Issue (logic): decoy in verified\n\n## Findings\n\n### 1. Issue (logic): real\n\nbody\n'
+assert_eq "capture exit 0" "0" "$RC"
+REC=$(printf '%s\n' "$OUT" | tail -1)
+assert_eq "one stamp, under the real finding only" "1" "$(grep -c '^graduated_to:' "$REC")"
+mkdir -p "$ROOT/.craft/fixes"; : > "$ROOT/.craft/fixes/fix-a.md"
+run_graduate "$REC" 1 fix-a
+assert_eq "graduate exit 0" "0" "$RC"
+assert_file_contains "real finding graduated" "^graduated_to: fix-a$" "$REC"
+assert_eq "decoy line untouched" "1" "$(grep -c '^### 1. Issue (logic): decoy in verified$' "$REC")"
+
+begin_test "numeric flags refuse a trailing newline (review 2026-10-18 finding 2)"
+fresh_root
+run_capture "$CLEAN_BODY" --files=$'5\n'
+assert_eq "files with newline rc" "2" "$RC"
+assert_contains "files with newline stderr" "^invalid files: 5" "$ERR"
+run_capture "$CLEAN_BODY" --lines=$'40\n'
+assert_eq "lines with newline rc" "2" "$RC"
+assert_contains "lines with newline stderr" "^invalid lines: 40" "$ERR"
+assert_eq "nothing written on refusal" "no" "$([ -d "$ROOT/.craft/reviews" ] && echo yes || echo no)"
+mk_three_record
+run_graduate "$REC" $'1\n' fix-a
+assert_eq "graduate number with newline rc" "2" "$RC"
+assert_contains "graduate number stderr" "^invalid finding number: 1" "$ERR"
+assert_eq "record byte-identical on refusal" "" "$(cmp "$COPY" "$REC" 2>&1)"
+rm -f "$COPY"
+
 finish_tests test-review-scripts

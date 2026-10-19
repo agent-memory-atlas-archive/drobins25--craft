@@ -126,7 +126,7 @@ FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 wanted = []
 problems = []
 for part in numbers.split(','):
-    if not re.match(r'^[0-9]+$', part):
+    if not re.fullmatch(r'[0-9]+', part):
         problems.append('invalid finding number: ' + part)
     elif int(part) not in wanted:
         wanted.append(int(part))
@@ -135,15 +135,23 @@ with open(record_path, encoding='utf-8', errors='surrogateescape', newline='') a
     text = f.read()
 lines = text.split('\n')  # a trailing newline leaves a final empty element
 
-# Headings outside fenced blocks, by finding number.
+# Headings outside fenced blocks and after the ## Findings line, by finding
+# number - the same section rule capture applies, so a heading-shaped line in
+# ## Verified is never taken for a finding.
 headings = {}
 marker = None
+in_findings = False
 for i, line in enumerate(lines):
     probe = line.rstrip('\r')
     m = FENCE.match(probe)
     if marker is None:
         if m:
             marker = m.group(1)
+            continue
+        if re.match(r'^## Findings[ \t]*$', probe):
+            in_findings = True
+            continue
+        if not in_findings:
             continue
         h = HEADING.match(probe)
         if h:

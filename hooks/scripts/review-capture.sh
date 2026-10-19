@@ -125,12 +125,12 @@ for name, value in (('mode', mode), ('strategy', strategy), ('ref', ref),
         problems.append('missing required field: ' + name)
 if mode != 'project' and not one_line(reviewed):
     problems.append('missing required field: reviewed')
-if files and not re.match(r'^[0-9]+$', files):
+if files and not re.fullmatch(r'[0-9]+', files):
     problems.append('invalid files: ' + files)
 if mode in ('branch', 'story'):
     if not lines_flag:
         problems.append('missing required field: lines')
-    elif not re.match(r'^[0-9]+$', lines_flag):
+    elif not re.fullmatch(r'[0-9]+', lines_flag):
         problems.append('invalid lines: ' + lines_flag)
 elif mode == 'project' and lines_flag:
     problems.append('invalid lines: ' + lines_flag + ' (project mode records no line count)')
