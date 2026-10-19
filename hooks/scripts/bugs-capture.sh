@@ -3,9 +3,11 @@
 # Usage: bugs-capture.sh --found-during="<text>" [--requirement="<text>"]
 #          [--layer=code|spec|judgment] [--worked-before="<text>"]
 #          [--verdict=bug|unspecified|spec-gap|not-reproducible]
-#          [--tags=a,b] --stdin
+#          [--review=<review record name>] [--tags=a,b] --stdin
 #   The body arrives on stdin and starts with the symptom line. Words never sit
 #   on the command line: a bug body is multi-line and full of quotes.
+#   --review names the review record the bug was filed from; the line is
+#   written only when the flag carries a value.
 #
 # Seven fields are required: the symptom line, found_during, Expected, Actual,
 # Consequences, Blocks my next step, Reproduce. A field holding only an
@@ -38,6 +40,7 @@ REQUIREMENT=""
 LAYER=""
 WORKED_BEFORE=""
 VERDICT=""
+REVIEW=""
 TAGS=""
 HAVE_STDIN=0
 
@@ -48,6 +51,7 @@ while [ $# -gt 0 ]; do
     --layer=*) LAYER="${1#*=}" ;;
     --worked-before=*) WORKED_BEFORE="${1#*=}" ;;
     --verdict=*) VERDICT="${1#*=}" ;;
+    --review=*) REVIEW="${1#*=}" ;;
     --tags=*) TAGS="${1#*=}" ;;
     --stdin) HAVE_STDIN=1 ;;
   esac
@@ -79,12 +83,12 @@ CAPTURED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # succeeds. The symptom line comes back through a file.
 python3 - "$WORK_DIR/body.txt" "$WORK_DIR/record.md" "$WORK_DIR/symptom.txt" \
   "$DATE" "$CAPTURED_AT" "$FOUND_DURING" "$REQUIREMENT" "$LAYER" \
-  "$WORKED_BEFORE" "$VERDICT" "$TAGS" <<'PYEOF'
+  "$WORKED_BEFORE" "$VERDICT" "$TAGS" "$REVIEW" <<'PYEOF'
 import re
 import sys
 
 (body_path, out_path, symptom_path, date, captured_at, found_during,
- requirement, layer, worked_before, verdict, tags) = sys.argv[1:12]
+ requirement, layer, worked_before, verdict, tags, review) = sys.argv[1:13]
 
 with open(body_path, encoding='utf-8', errors='replace', newline='') as f:
     raw = f.read()
@@ -195,6 +199,7 @@ front = [
     'status: open',
     field('verdict', verdict),
     field('found_during', found_during),
+] + ([field('review', review)] if one_line(review) else []) + [
     field('requirement', requirement),
     field('layer', layer),
     field('worked_before', worked_before),

@@ -123,6 +123,15 @@ class TestBugVocabulary(unittest.TestCase):
         no_cons = body.split("## Consequences")[0]
         self.assertEqual(summary.extract("bug", {}, no_cons), "It threw on an empty string.")
 
+    def test_review_yields_one_out_of_scope_type_annotation_and_no_link(self):
+        text = '---\ntype: bug\ncreated: 2026-10-18\nstatus: open\nreview: 2026-10-18-branch-feature-x\n---\n\nThe widget crashes\n'
+        _, links, annotations = registry.parse_file('bug', 'bugs/2026-10-18-inline-review.md', text)
+        review = [a for a in annotations if a["field"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["value"], '2026-10-18-branch-feature-x')
+        self.assertEqual(review[0]["reason"], "out-of-scope-type")
+        self.assertNotIn('2026-10-18-branch-feature-x', [l["raw_value"] for l in links])
+
 
 if __name__ == "__main__":
     unittest.main()

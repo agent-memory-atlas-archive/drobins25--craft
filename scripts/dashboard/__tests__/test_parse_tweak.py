@@ -78,6 +78,15 @@ class TestParseTweak(unittest.TestCase):
         matches = [l for l in links if l["kind"] == "satisfied_todo"]
         self.assertEqual([l["raw_value"] for l in matches], ["sample-todo"])
 
+    def test_review_yields_one_out_of_scope_type_annotation_and_no_link(self):
+        text = '---\nname: tweak-inline-review\ncreated: 2026-10-18\nstatus: accepted\nreview: 2026-10-18-branch-feature-x\n---\n\nBody.\n'
+        _, links, annotations = registry.parse_file('tweak', 'tweaks/tweak-inline-review.md', text)
+        review = [a for a in annotations if a["field"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["value"], '2026-10-18-branch-feature-x')
+        self.assertEqual(review[0]["reason"], "out-of-scope-type")
+        self.assertNotIn('2026-10-18-branch-feature-x', [l["raw_value"] for l in links])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,17 @@ def field_link(nid, fields, record_type, key, links, annotations):
     return link, note
 
 
+def review_annotation(nid, fields, annotations):
+    """A review record's back-link is a files-only pointer: always an
+    out-of-scope annotation, never a link. Absent, blank, or sentinel adds
+    nothing."""
+    value = fields.get("review")
+    if value is not None and not sentinels.is_sentinel(value):
+        annotations.append(
+            resolve.annotation(nid, "review", value, "out-of-scope-type")
+        )
+
+
 def parse(path, craft_rel, fields, body):
     stem = os.path.splitext(os.path.basename(craft_rel))[0]
     nid = identity.node_id("fix", craft_rel)
@@ -81,4 +92,5 @@ def parse(path, craft_rel, fields, body):
     field_link(nid, fields, "fix", "source_story", links, annotations)
     field_link(nid, fields, "fix", "source_cycle", links, annotations)
     field_link(nid, fields, "fix", "satisfied_todo", links, annotations)
+    review_annotation(nid, fields, annotations)
     return node, links, annotations

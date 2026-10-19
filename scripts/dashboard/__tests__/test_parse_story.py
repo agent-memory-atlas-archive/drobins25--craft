@@ -294,6 +294,15 @@ class TestMembershipAndBody(unittest.TestCase):
         self.assertNotIn("-", values)
         self.assertNotIn("color.border", values)
 
+    def test_review_yields_one_out_of_scope_type_annotation_and_no_link(self):
+        text = '---\nname: inline-review-story\ncreated: 2026-10-18\nstatus: planning\nreview: 2026-10-18-branch-feature-x\n---\n\n# Story\n'
+        _, links, annotations = registry.parse_file('story', 'backlog/inline-review-story.md', text)
+        review = [a for a in annotations if a["field"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["value"], '2026-10-18-branch-feature-x')
+        self.assertEqual(review[0]["reason"], "out-of-scope-type")
+        self.assertNotIn('2026-10-18-branch-feature-x', [l["raw_value"] for l in links])
+
 
 if __name__ == "__main__":
     unittest.main()

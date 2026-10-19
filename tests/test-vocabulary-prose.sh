@@ -30,7 +30,7 @@ for doc in "${VOCAB_PROSE_DOCS[@]}"; do
   [ -n "$found" ] && D1_FINDINGS="$D1_FINDINGS
 $found"
 done
-assert_eq "no unregistered field named in any of the four reference docs" "" "$D1_FINDINGS"
+assert_eq "no unregistered field named in any reference doc in scope" "" "$D1_FINDINGS"
 
 # --- Test 2: every field the definition knows for a doc's owned record
 #     type is named in that doc (direction 2 - the one that rots) ---

@@ -363,6 +363,11 @@ FIELDS = {
     ("riff", "body_wikilink"):
         {"kind": "references", "inventory": "body_wikilinks"},
     ("mockup", "solidify_outcome"): {},
+    ("fix", "review"): {},
+    ("tweak", "review"): {},
+    ("bug", "review"): {},
+    ("story", "review"): {},
+    ("notebook", "review"): {},
 }
 
 # Stored status value -> display word. Every Content Direction row verbatim,

@@ -1,6 +1,6 @@
 ---
 name: review
-description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit."
+description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit. Every run on your own work leaves a record in .craft/reviews/, clean or not, and every finding gets a proposed door; a review of someone else's PR leaves nothing behind."
 ---
 
 # Review
@@ -31,6 +31,8 @@ Optional review strategy: `--maze` enables perpendicular maze review (architect 
 
 Extract `--focus` flag if present. Default focus is `correctness,security`.
 
+**Whose code:** when the user asked to review a contribution that is not this project's own work (another author's PR, a fork, an upstream change), this is an **outside review**. Say so once and run Steps 2 through 5 the same way. An outside review ends at Step 5: Steps 5a, 5b and 6 do not run, nothing is written under `.craft/`, and the findings are the user's to carry to the PR. The user's words decide this; never infer it from commit authors.
+
 ### Step 2: Gather Context
 
 **Always pre-load these files (read them, include relevant content in agent prompt):**
@@ -60,6 +62,8 @@ git log --oneline origin/${DEFAULT_BRANCH}..HEAD
 If there are no commits ahead of origin, tell the user:
 
 > "No commits ahead of origin/${DEFAULT_BRANCH}. Nothing to review."
+
+Stop there. No reviewer ran, so this exit writes no record.
 
 **If diff exceeds ~500 lines**, split by directory or subsystem. Run the agent multiple times with scoped diffs rather than one massive prompt. Tell the user:
 
@@ -144,6 +148,7 @@ PLUGIN_ROOT: ${CLAUDE_PLUGIN_ROOT}
 - Focus on: [focus areas]
 - Do NOT comment on formatting/style if linters exist
 - If the diff is clean and you have no real findings, say so - do not manufacture issues
+- Report in this shape: a `Gates run:` line (what you ran on your own initiative and the result, or `none`), a `## Verified` list (one line per check you made and found clean), then `## Findings` with each finding under `### N. <Issue|Suggestion|Pattern> (<category>): <title>`, and `**Withdrawn.** <why>` on any finding you raised and then disproved
 ```
 
 Then skip to **Step 5: Present Findings**.
@@ -270,6 +275,7 @@ from the codebase. You have full context - use it.
 - Breadcrumbs are always suggestions unless they're security/data-loss critical
 - Do NOT free-roam beyond the questions + breadcrumbs. When you've answered all questions, stop.
 - Do NOT comment on formatting/style if linters exist
+- Report in this shape: a `Gates run:` line (what you ran on your own initiative and the result, or `none`), a `## Verified` list with one line per NO answer (the check you made, in your words), then `## Findings` with one finding per YES or breadcrumb under `### N. <Issue|Suggestion|Pattern> (<category>): <title>`, and `**Withdrawn.** <why>` on any finding you raised and then disproved
 ```
 
 #### Step 4b.5: Cross-Slice Questions (large diffs only)
@@ -341,7 +347,9 @@ Then show each finding in detail with the agent's fix diffs.
 
 ### Step 5a: Drop Doc Findings
 
-After presenting findings, check if any have category `doc-drift`. If none, skip to Step 6.
+**Outside review (Step 1):** stop here. Steps 5a, 5b and 6 do not run.
+
+After presenting findings, check if any have category `doc-drift`. If none, skip to Step 5b.
 
 If doc-drift findings exist:
 
@@ -370,26 +378,24 @@ If the file already exists, append a new `## Review:` section. Each review run g
 
 **The docs command (craft:docs) handles consumption and clearing.** This step only writes.
 
-### Step 6: Act on Findings (Optional)
+### Step 5b: Write the Record
 
-After presenting findings, ask what the user wants to do:
+Every run that reached a reviewer leaves one record in `.craft/reviews/`, whether or not it found anything. This is a separate per-run file written by `review-capture.sh`; Step 5a's docs hand-off above is unchanged and keeps its own role.
 
-Use **AskUserQuestion**:
-```
-question: "What would you like to do with these findings?"
-header: "Review"
-options:
-  - label: "Apply fixes"
-    description: "I'll apply the suggested fixes to the code"
-  - label: "Create stories for issues"
-    description: "Add issue findings to backlog"
-  - label: "Just informational"
-    description: "I've seen what I need to see"
-```
+Make one capture call per `/craft:review` invocation, after every batch, maze slice and the cross-slice pass has returned. Number the findings 1..N in the order Step 5 presented them across all of them, so the number in the table, the number in the record and the number in the user's answer ("3 bug") are the same number.
 
-**If "Apply fixes":** Apply the fix diffs from findings the user selects. Use AskUserQuestion with multiSelect to let them pick which fixes to apply.
+Pass the flags to `hooks/scripts/review-capture.sh` from these sources:
 
-**If "Create stories":** Create backlog stories for selected findings using the create-story.sh script, similar to craft-analyze.
+- `--ref` is `git rev-parse --short` of the diff's base and of HEAD joined as `<base>..<head>`; in project mode it is HEAD alone.
+- `--lines` is insertions plus deletions from `git diff --shortstat` (omit it in project mode).
+- `--gates` is the result of the reviewer's `Gates run:` line, and `not reported` when the report has none. Never write `none` for an unknown.
+- The body is the reviewer's `## Verified` list and `## Findings`. With several reports (batches, slices, the cross-slice pass), concatenate their Verified lists under one `## Verified`, renumber only the `### N.` headings 1..N, and keep every other line as written. Join the `Gates run:` results with `; ` for `--gates`. When the report has no Verified list, write the single line `- None reported - the reviewer's report listed no checks it found clean.` under `## Verified`, never an invented check.
+
+Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` for the full capture call and the body grammar, then write the record. Note the record's path (the script's last line) and its name (the file name without `.md`) for Step 6.
+
+### Step 6: Close Out
+
+Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` and run its close-out: a Proposed paths table with one row per finding, answered in a word, with each answer running the door it names. Nothing is created until the user answers, and no path in this command edits project code outside the adhoc flow. A clean run (`outcome: clean`) has no findings and shows no table; the record is its whole close-out.
 
 ## Quick Commands
 
@@ -411,11 +417,13 @@ options:
 3. **Always include a fix** - every finding has an actionable diff, not just a complaint
 4. **Respect the 500-line cap** - large diffs get split by subsystem
 5. **Two severities for changes, three for audits** - issue/suggestion for diffs, add pattern for project-wide
+6. **Every run on your own work leaves a record, clean or not** - a clean review that leaves nothing is indistinguishable from no review at all, so the record lists what the reviewer verified as well as what it found. An outside review leaves nothing, so other people's contributions never enter your records.
+7. **Every finding gets a proposed door** - each finding goes to the door that fits it, answered in a word, and the review record points at what it became
 
 ## Maze Mode Principles
 
-6. **Naive-about-intent** - the architect NEVER sees commit messages, PR descriptions, or story files. It asks "what does this code do?" not "did the developer do what they intended?"
-7. **Questions over exploration** - the runner answers specific questions instead of free-roaming. This prevents infinite issue regression (the CodeRabbit problem).
-8. **Breadcrumbs are secondary** - findings the runner discovers along the way are recorded but don't change the mission. They're suggestions, not blockers.
-9. **Cross-slice awareness** - for large diffs, a meta-architect pass catches contract mismatches between subsystems that per-slice architects can't see.
-10. **Convergence by design** - the review ends when all questions are answered. No open-ended "let me look around more."
+8. **Naive-about-intent** - the architect NEVER sees commit messages, PR descriptions, or story files. It asks "what does this code do?" not "did the developer do what they intended?"
+9. **Questions over exploration** - the runner answers specific questions instead of free-roaming. This prevents infinite issue regression (the CodeRabbit problem).
+10. **Breadcrumbs are secondary** - findings the runner discovers along the way are recorded but don't change the mission. They're suggestions, not blockers.
+11. **Cross-slice awareness** - for large diffs, a meta-architect pass catches contract mismatches between subsystems that per-slice architects can't see.
+12. **Convergence by design** - the review ends when all questions are answered. No open-ended "let me look around more."

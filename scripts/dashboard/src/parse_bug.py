@@ -4,20 +4,23 @@ Status derives from the folder first: anything outside closed/ is open,
 whatever the frontmatter says. A closed record carries the verdict the
 close script stamped (fixed or wont-fix); a closed record with any other
 status word gets None rather than a guessed one. Bug records link to
-nothing, so there are no edges and no annotations. The title is the first
+nothing, so there are no edges; a `review` back-link to a review record
+becomes an out-of-scope annotation and nothing else. The title is the first
 non-blank body line (the symptom); found_during falls back to the older
 found_by field.
 """
 
 from . import identity
+from .parse_fix import review_annotation
 
 _TITLE_LIMIT = 120
 _CLOSED_STATUSES = ("fixed", "wont-fix")
 
 
 def parse(path, craft_rel, fields, body):
+    nid = identity.node_id("bug", craft_rel)
     node = {
-        "id": identity.node_id("bug", craft_rel),
+        "id": nid,
         "type": "bug",
         "title": _first_body_line(body),
         "date": fields.get("created") or None,
@@ -29,7 +32,9 @@ def parse(path, craft_rel, fields, body):
         "_name": "",
         "_warnings": [],
     }
-    return node, [], []
+    annotations = []
+    review_annotation(nid, fields, annotations)
+    return node, [], annotations
 
 
 def _status(craft_rel, fields):

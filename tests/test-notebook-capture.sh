@@ -95,6 +95,19 @@ OUT=$(bash "$SCRIPT" idea "session note #verifier" --tags="cycle-9,verifier")
 grep -q "^tags: \[verifier, cycle-9\]$" "$OUT" && pass "inline+extra deduped" || fail "inline+extra deduped"
 rm -rf "$ROOT"
 
+echo "-- Test: todo --review stamps the frontmatter between source and tags --"
+fresh_root
+OUT=$(bash "$SCRIPT" todo "tidy the reviewer wording #docs" --source="review close-out" --review=2026-10-18-branch-x)
+grep -q "^review: 2026-10-18-branch-x$" "$OUT" && pass "review line present" || fail "review line present"
+KEYS=$(awk '/^---$/{c++; next} c==1{print}' "$OUT" | sed 's/:.*//' | tr '\n' ' ')
+[ "$KEYS" = "type created captured_at status source review tags " ] && pass "review sits after source, before tags" || fail "review key order" "type created captured_at status source review tags " "$KEYS"
+tail -1 "$OUT" | grep -q "^tidy the reviewer wording$" && pass "body unchanged" || fail "body unchanged"
+
+echo "-- Test: todo without --review has no review line --"
+fresh_root
+OUT=$(bash "$SCRIPT" todo "no review here")
+grep -q "^review:" "$OUT" && fail "no review line" || pass "no review line"
+
 echo ""
 echo "-- Summary --"
 echo "Total:  $TOTAL"

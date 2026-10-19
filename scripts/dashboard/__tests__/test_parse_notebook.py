@@ -80,6 +80,15 @@ class TestParseNotebook(unittest.TestCase):
         graduated = [l for l in links if l["kind"] == "graduated_to"]
         self.assertEqual([l["raw_value"] for l in graduated], ["orphan-idea"])
 
+    def test_review_yields_one_out_of_scope_type_annotation_and_no_link(self):
+        text = '---\ntype: idea\ncreated: 2026-10-18\nreview: 2026-10-18-branch-feature-x\n---\n\nAn idea\n'
+        _, links, annotations = registry.parse_file('notebook', 'notebook/ideas/2026-10-18-inline-review.md', text)
+        review = [a for a in annotations if a["field"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["value"], '2026-10-18-branch-feature-x')
+        self.assertEqual(review[0]["reason"], "out-of-scope-type")
+        self.assertNotIn('2026-10-18-branch-feature-x', [l["raw_value"] for l in links])
+
 
 if __name__ == "__main__":
     unittest.main()

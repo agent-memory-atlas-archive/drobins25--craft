@@ -11,7 +11,7 @@
 # Field names are read live from src/vocabulary.FIELDS via python - nothing
 # about the DEFINITION's expected values is hardcoded here, per the iron
 # rule at the top of check-doc-drift.sh. What IS a literal list, with
-# reasons, is the doc SCOPE (which four reference docs this check reads and
+# reasons, is the doc SCOPE (which reference docs this check reads and
 # which record type each one is the sole authority for) and the small set
 # of bookkeeping frontmatter keys (name, status, taste...) that are
 # structurally never a relationship to another record - scope, not values.
@@ -19,7 +19,7 @@
 VOCAB_PROSE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 VOCAB_PROSE_DASHBOARD="$VOCAB_PROSE_ROOT/scripts/dashboard"
 
-# The four reference docs where craft's record-linking fields are
+# The reference docs where craft's record-linking fields are
 # documented in prose. templates/story-full.md is deliberately absent - it
 # names dependency markers ("Blocked by:", "Blocks:") as bold headers, never
 # as backticked field names, so it carries nothing this check can read.
@@ -28,6 +28,7 @@ VOCAB_PROSE_DOCS=(
   "skills/adhoc/references/tweak.md"
   "commands/references/mockup-inline.md"
   "commands/references/story-from-mockup.md"
+  "commands/references/review-record.md"
 )
 
 # path -> the one record type this doc is the SOLE reference for; every
@@ -35,7 +36,7 @@ VOCAB_PROSE_DOCS=(
 # direction). story-from-mockup.md owns nothing here on purpose: it only
 # documents the two lineage fields a mockup graduation writes onto a story
 # (mockup, grew_from), not the story's full field grammar, which lives in
-# templates/story-full.md - outside this check's four-doc scope.
+# templates/story-full.md - outside this check's scope.
 VOCAB_PROSE_OWNERS=(
   "skills/adhoc/references/fix.md|fix"
   "skills/adhoc/references/tweak.md|tweak"
@@ -59,6 +60,9 @@ VOCAB_PROSE_NONLINK=(
   "subagent_type:an Agent tool invocation parameter, not a field"
   "tweak:a commit-message prefix convention mentioned in prose"
   "alignment:the story alignment-gate field, unrelated to record links"
+  "dismissed:a review finding's dismissal line (who and why), never a link"
+  "outcome:a review record's clean|findings word, never a link"
+  "found_during:a bug's free-text place of discovery, never a link"
 )
 
 _vocab_prose_is_nonlink() {
