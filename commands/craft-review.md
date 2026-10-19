@@ -1,6 +1,6 @@
 ---
 name: review
-description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit. Every run leaves a record in .craft/reviews/, clean or not, and findings graduate one at a time."
+description: "PR review skill - invokes pr-reviewer-expert agent against branch diff, story commits, or full project audit. Every run leaves a record in .craft/reviews/, clean or not, and every finding gets a proposed door."
 ---
 
 # Review
@@ -385,13 +385,13 @@ Pass the flags to `hooks/scripts/review-capture.sh` from these sources:
 - `--ref` is `git rev-parse --short` of the diff's base and of HEAD joined as `<base>..<head>`; in project mode it is HEAD alone.
 - `--lines` is insertions plus deletions from `git diff --shortstat` (omit it in project mode).
 - `--gates` is the result of the reviewer's `Gates run:` line, and `not reported` when the report has none. Never write `none` for an unknown.
-- The body is the reviewer's `## Verified` list and `## Findings`, verbatim. When the report has no Verified list, write the single line `- None reported - the reviewer's report listed no checks it found clean.` under `## Verified`, never an invented check.
+- The body is the reviewer's `## Verified` list and `## Findings`. With several reports (batches, slices, the cross-slice pass), concatenate their Verified lists under one `## Verified`, renumber only the `### N.` headings 1..N, and keep every other line as written. Join the `Gates run:` results with `; ` for `--gates`. When the report has no Verified list, write the single line `- None reported - the reviewer's report listed no checks it found clean.` under `## Verified`, never an invented check.
 
 Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` for the full capture call and the body grammar, then write the record. Note the record's path (the script's last line) and its name (the file name without `.md`) for Step 6.
 
 ### Step 6: Close Out
 
-Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` and run its close-out: a Proposed paths table with one row per finding, answered in a word, with each answer running the door it names. Nothing is created until the user answers, and no path in this command edits project code outside the adhoc flow.
+Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` and run its close-out: a Proposed paths table with one row per finding, answered in a word, with each answer running the door it names. Nothing is created until the user answers, and no path in this command edits project code outside the adhoc flow. A clean run (`outcome: clean`) has no findings and shows no table; the record is its whole close-out.
 
 ## Quick Commands
 
@@ -414,7 +414,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/commands/references/review-record.md` and run its cl
 4. **Respect the 500-line cap** - large diffs get split by subsystem
 5. **Two severities for changes, three for audits** - issue/suggestion for diffs, add pattern for project-wide
 6. **Every run leaves a record, clean or not** - a clean review that leaves nothing is indistinguishable from no review at all, so the record lists what the reviewer verified as well as what it found
-7. **Findings graduate one at a time** - each finding goes to the door that fits it, answered in a word, and the review record points at what it became
+7. **Every finding gets a proposed door** - each finding goes to the door that fits it, answered in a word, and the review record points at what it became
 
 ## Maze Mode Principles
 
