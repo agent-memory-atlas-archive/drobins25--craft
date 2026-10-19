@@ -232,6 +232,208 @@ assert_empty "$output" "--scan honors VOCAB_GATE: no output"
 [ "$SCAN_EXIT" -eq 0 ] && pass "--scan honors VOCAB_GATE: exit 0" || fail "--scan honors VOCAB_GATE: exit 0" "0" "$SCAN_EXIT"
 rm "$PROJ/.craft/.global-state"
 
+# ── Tests 12+: --scan scope (added lines vs HEAD) ─────────────────
+#
+# Real git repos under $WORK (outside the exempt plugin repo). Every lookup
+# failure must scan the whole file, never report clean. The "git hangs" case
+# costs about 10 seconds by design: it waits out the scanner's real timeout.
+
+# Commits must work with no global identity, signing, or hooks.
+tg() {
+  git -C "$1" -c user.name=test -c user.email=test@example.invalid \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null "${@:2}"
+}
+
+# Run --scan with extra args; output in SCAN_OUT, exit code in SCAN_EXIT.
+SCAN_OUT=""
+SCAN_EXIT=0
+run_scan() {
+  set +e
+  SCAN_OUT=$(python3 "$HOOK" --scan "$@" 2>/dev/null)
+  SCAN_EXIT=$?
+  set -e
+}
+
+assert_lacks() {
+  local output="$1" unexpected="$2" label="$3"
+  if echo "$output" | grep -qF -- "$unexpected"; then
+    fail "$label" "(no '$unexpected')" "$output"
+  else
+    pass "$label"
+  fi
+}
+
+assert_exit_nonzero() {
+  [ "$SCAN_EXIT" -ne 0 ] && pass "$1" || fail "$1" "non-zero" "$SCAN_EXIT"
+}
+
+assert_exit_zero() {
+  [ "$SCAN_EXIT" -eq 0 ] && pass "$1" || fail "$1" "0" "$SCAN_EXIT"
+}
+
+OLD_LEAK='// Chunk 4 old'
+NEW_LEAK='// story 5 new'
+
+R="$WORK/scope"
+mkdir -p "$R/src dir"
+tg "$R" init -q
+printf '%s\nconst a = 1;\n' "$OLD_LEAK" > "$R/src dir/a.ts"
+printf '%s\nconst a = 1;\n' "$OLD_LEAK" > "$R/b.ts"
+tg "$R" add -A
+tg "$R" commit -q -m base
+BASE_A=$(cat "$R/src dir/a.ts")
+
+echo ""
+echo "Test 12: Scoped scan - old leak silent when a clean line is added"
+
+A="$R/src dir/a.ts"
+printf 'x = 2;\n' >> "$A"
+run_scan "$A"
+assert_empty "$SCAN_OUT" "scoped: old leak not reported"
+assert_exit_zero "scoped: exit 0"
+
+echo ""
+echo "Test 13: Scoped scan - added leak reported alone"
+
+printf '%s\n' "$BASE_A" > "$A"
+printf '%s\n' "$NEW_LEAK" >> "$A"
+run_scan "$A"
+assert_contains "$SCAN_OUT" "$A:3: $NEW_LEAK" "scoped: new leak printed with its line"
+assert_lacks "$SCAN_OUT" ":1:" "scoped: old leak line not printed"
+assert_exit_nonzero "scoped: exit non-zero on the new leak"
+
+echo ""
+echo "Test 14: Relative path from the repo root scopes like the absolute path"
+
+(cd "$R" && run_scan "src dir/a.ts" && printf '%s\n%s\n' "$SCAN_EXIT" "$SCAN_OUT" > "$WORK/rel.out") || true
+REL_EXIT=$(sed -n 1p "$WORK/rel.out")
+REL_OUT=$(sed -n '2,$p' "$WORK/rel.out")
+assert_contains "$REL_OUT" "src dir/a.ts:3: $NEW_LEAK" "relative: new leak printed with the path as passed"
+assert_lacks "$REL_OUT" ":1:" "relative: old leak line not printed"
+[ "$REL_EXIT" -ne 0 ] && pass "relative: exit non-zero" || fail "relative: exit non-zero" "non-zero" "$REL_EXIT"
+
+echo ""
+echo "Test 15: --scan --all reads the whole file"
+
+run_scan --all "$A"
+assert_contains "$SCAN_OUT" "$A:1: $OLD_LEAK" "--all: old leak reported"
+assert_contains "$SCAN_OUT" "$A:3:" "--all: new leak reported"
+run_scan "$A" --all
+assert_contains "$SCAN_OUT" "$A:1:" "--all after the path works too"
+
+echo ""
+echo "Test 16: Untracked file scanned whole"
+
+printf '%s\nconst u = 1;\n' "$OLD_LEAK" > "$R/u.ts"
+run_scan "$R/u.ts"
+assert_contains "$SCAN_OUT" "$R/u.ts:1:" "untracked: leak reported"
+
+echo ""
+echo "Test 17: Repo with no commits scanned whole"
+
+NC="$WORK/nocommit"
+mkdir -p "$NC"
+tg "$NC" init -q
+printf '%s\nconst n = 1;\n' "$OLD_LEAK" > "$NC/n.ts"
+run_scan "$NC/n.ts"
+assert_contains "$SCAN_OUT" "$NC/n.ts:1:" "no commits, unstaged: leak reported"
+tg "$NC" add n.ts
+run_scan "$NC/n.ts"
+assert_contains "$SCAN_OUT" "$NC/n.ts:1:" "no commits, staged: leak reported"
+
+echo ""
+echo "Test 18: Outside git scanned whole"
+
+BARE="$WORK/bare"
+mkdir -p "$BARE"
+printf '%s\nconst o = 1;\n' "$OLD_LEAK" > "$BARE/o.ts"
+run_scan "$BARE/o.ts"
+assert_contains "$SCAN_OUT" "$BARE/o.ts:1:" "outside git: leak reported"
+
+echo ""
+echo "Test 19: Deletion-only change is clean"
+
+printf 'x\n%s\ny\nz\n' "$OLD_LEAK" > "$R/d.ts"
+tg "$R" add d.ts
+tg "$R" commit -q -m d
+printf 'x\n%s\nz\n' "$OLD_LEAK" > "$R/d.ts"
+run_scan "$R/d.ts"
+assert_empty "$SCAN_OUT" "deletion-only: no output"
+assert_exit_zero "deletion-only: exit 0"
+
+echo ""
+echo "Test 20: Assume-unchanged file scanned whole"
+
+tg "$R" update-index --assume-unchanged b.ts
+printf '%s\n' "$NEW_LEAK" >> "$R/b.ts"
+run_scan "$R/b.ts"
+assert_contains "$SCAN_OUT" "$R/b.ts:3: $NEW_LEAK" "assume-unchanged: new leak reported"
+assert_contains "$SCAN_OUT" "$R/b.ts:1:" "assume-unchanged: whole file scanned"
+
+echo ""
+echo "Test 21: Line numbering that git and Python disagree on scans whole"
+
+printf 'a\fb\n' > "$R/ff.ts"
+tg "$R" add ff.ts
+tg "$R" commit -q -m ff
+printf '%s\n' "$NEW_LEAK" >> "$R/ff.ts"
+run_scan "$R/ff.ts"
+assert_contains "$SCAN_OUT" "$R/ff.ts:" "form feed: new leak reported"
+assert_contains "$SCAN_OUT" "$NEW_LEAK" "form feed: reports the new line's text"
+
+printf 'a\r' > "$R/cr.ts"
+tg "$R" add cr.ts
+tg "$R" commit -q -m cr
+printf 'a\r// story 5\r' > "$R/cr.ts"
+run_scan "$R/cr.ts"
+assert_contains "$SCAN_OUT" "$R/cr.ts:2: // story 5" "lone CR: new leak reported"
+
+echo ""
+echo "Test 22: Files git treats as binary still report only the new line"
+
+printf 'const a = 1;\0\n' > "$R/nul.ts"
+printf '%s\n' "$OLD_LEAK" >> "$R/nul.ts"
+printf '* text\nnd.ts -diff\n' > "$R/.gitattributes"
+printf 'const a = 1;\n%s\n' "$OLD_LEAK" > "$R/nd.ts"
+tg "$R" add nul.ts nd.ts .gitattributes
+tg "$R" commit -q -m binary
+printf '%s\n' "$NEW_LEAK" >> "$R/nul.ts"
+run_scan "$R/nul.ts"
+assert_contains "$SCAN_OUT" "$R/nul.ts:3:" "NUL byte: new leak reported"
+assert_lacks "$SCAN_OUT" "nul.ts:2:" "NUL byte: old leak not reported"
+printf '%s\n' "$NEW_LEAK" >> "$R/nd.ts"
+run_scan "$R/nd.ts"
+assert_contains "$SCAN_OUT" "$R/nd.ts:3:" "-diff attribute: new leak reported"
+assert_lacks "$SCAN_OUT" "nd.ts:2:" "-diff attribute: old leak not reported"
+assert_exit_nonzero "-diff attribute: exit non-zero"
+
+echo ""
+echo "Test 23: Git missing, failing, or hanging scans whole"
+
+# $A holds the old leak at line 1 and the new leak at line 3; a whole-file
+# scan reports line 1, a scoped scan never would.
+PYBIN=$(python3 -c 'import sys; print(sys.executable)')
+EMPTYBIN="$WORK/emptybin"
+mkdir -p "$EMPTYBIN"
+set +e
+MISSING_OUT=$(cd "$R" && PATH="$EMPTYBIN" "$PYBIN" "$HOOK" --scan "$A" 2>/dev/null)
+set -e
+assert_contains "$MISSING_OUT" "$A:1:" "git missing: whole file scanned"
+
+FAILBIN="$WORK/failbin"
+mkdir -p "$FAILBIN"
+printf '#!/bin/sh\nexit 1\n' > "$FAILBIN/git"
+chmod +x "$FAILBIN/git"
+PATH="$FAILBIN:$PATH" run_scan "$A"
+assert_contains "$SCAN_OUT" "$A:1:" "git exits non-zero: whole file scanned"
+
+HANGBIN="$WORK/hangbin"
+mkdir -p "$HANGBIN"
+printf '#!/bin/sh\nexec sleep 30\n' > "$HANGBIN/git"
+chmod +x "$HANGBIN/git"
+PATH="$HANGBIN:$PATH" run_scan "$A"
+assert_contains "$SCAN_OUT" "$A:1:" "git hangs: whole file scanned after the timeout"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""

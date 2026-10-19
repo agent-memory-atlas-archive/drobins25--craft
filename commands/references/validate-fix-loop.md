@@ -102,7 +102,8 @@ Task tool:
     PROJECT_ROOT: [PROJECT_ROOT value]
     PM: [PM value]
     STORY_FILE: [STORY_FILE value]
-    MODE: [per-chunk or story-final]"
+    MODE: [per-chunk or story-final]
+    PLUGIN_ROOT: [resolved ${CLAUDE_PLUGIN_ROOT} - the subagent cannot resolve the variable itself]"
 ```
 
 Parse the output:

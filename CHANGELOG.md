@@ -2,6 +2,10 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.11.1 - 2026-10-19
+
+- Fixed the end-of-story citation check failing a story for old planning comments it never wrote. It now checks only the lines the story added, and still checks a file in full when it cannot tell which lines are new. That check, and the re-check after a fix, now always get the path they need instead of being skipped.
+
 ## 2.11.0 - 2026-10-18
 
 - Added a record for every `/craft:review` run on your own work, clean or not. Each one keeps what was checked and what was found, so a review that finds nothing still leaves proof of what it looked at. Reviewing someone else's PR leaves no record, so their code never muddies yours.
