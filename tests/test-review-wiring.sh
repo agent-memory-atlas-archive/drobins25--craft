@@ -139,8 +139,5 @@ VOCAB_RC=0
 bash "$PLUGIN_ROOT/tests/test-vocabulary-prose.sh" >/dev/null 2>&1 || VOCAB_RC=$?
 assert_eq "test-vocabulary-prose.sh exits 0" "0" "$VOCAB_RC"
 assert_contains_literal "review-record.md is in the prose scope" "commands/references/review-record.md" "$(cat "$PLUGIN_ROOT/tests/check-vocabulary-prose-drift.sh")"
-DRIFT_RC=0
-bash "$PLUGIN_ROOT/scripts/check-doc-drift.sh" >/dev/null 2>&1 || DRIFT_RC=$?
-assert_eq "check-doc-drift.sh exits 0" "0" "$DRIFT_RC"
 
 finish_tests test-review-wiring

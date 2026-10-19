@@ -282,7 +282,7 @@ assert_eq "exit 0" "0" "$RC"
 D=$(diff "$COPY" "$REC" || true)
 assert_contains "graduated_to swapped" "^> graduated_to: dismissed$" "$D"
 assert_contains "dismissed line added" "^> dismissed: reviewer - false alarm$" "$D"
-assert_eq "exactly three diff body lines plus separators" "2" "$(printf '%s\n' "$D" | grep -c '^>')"
+assert_eq "exactly two added lines (graduated_to swapped, dismissed inserted)" "2" "$(printf '%s\n' "$D" | grep -c '^>')"
 assert_eq "dismissed line sits right under graduated_to" "dismissed: reviewer - false alarm" "$(grep -A2 '^### 2\. ' "$REC" | tail -1)"
 rm -f "$COPY"
 
