@@ -450,6 +450,23 @@ assert_contains "$SCAN_OUT" "$R/ln.ts:3: $NEW_LEAK" "tracked symlink: new leak i
 assert_contains "$SCAN_OUT" "$R/ln.ts:1:" "tracked symlink: whole file scanned"
 assert_exit_nonzero "tracked symlink: exit non-zero"
 
+echo ""
+echo "Test 25: File under a clean filter scanned whole"
+
+# A clean filter that drops lines makes git number the filtered content while
+# Python reads the raw file, so the byte-count guard cannot see the mismatch.
+# Any file with a filter attribute is scanned whole.
+printf '*.flt filter=drop\n' > "$R/.gitattributes"
+tg "$R" config filter.drop.clean 'grep -v DROPME || true'
+printf '%s\nb\n' "$OLD_LEAK" > "$R/f.flt"
+tg "$R" add .gitattributes f.flt
+tg "$R" commit -q -m filter
+printf 'DROPME\n%s\nb\n%s\n' "$OLD_LEAK" "$NEW_LEAK" > "$R/f.flt"
+run_scan "$R/f.flt"
+assert_contains "$SCAN_OUT" "$R/f.flt:4: $NEW_LEAK" "clean filter: new leak reported"
+assert_contains "$SCAN_OUT" "$R/f.flt:2:" "clean filter: whole file scanned"
+assert_exit_nonzero "clean filter: exit non-zero"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""

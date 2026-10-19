@@ -91,6 +91,14 @@ def added_lines(path):
         tracked = git("ls-files", "-v", "--error-unmatch", "--", target)
         if tracked.returncode != 0 or not tracked.stdout.startswith(b"H "):
             return None
+        # A clean filter changes what git diffs; its line numbers would not
+        # match the raw file Python reads. Any filter attribute: whole file.
+        attr = git("check-attr", "-z", "filter", "--", target)
+        if attr.returncode != 0:
+            return None
+        fields = attr.stdout.split(b"\0")
+        if len(fields) < 3 or fields[2] not in (b"unspecified", b"unset"):
+            return None
         diff = git("diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames",
                    "--text", "--inter-hunk-context=0", "-U0", "HEAD", "--", target)
         if diff.returncode != 0:
