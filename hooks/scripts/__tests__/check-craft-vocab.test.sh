@@ -386,7 +386,9 @@ tg "$R" add cr.ts
 tg "$R" commit -q -m cr
 printf 'a\r// story 5\r' > "$R/cr.ts"
 run_scan "$R/cr.ts"
-assert_contains "$SCAN_OUT" "$R/cr.ts:2: // story 5" "lone CR: new leak reported"
+# Git does not break a line on a lone CR, and the scan numbers lines as git does.
+assert_contains "$SCAN_OUT" "$R/cr.ts:1:" "lone CR: new leak reported on git's line"
+assert_contains "$SCAN_OUT" "story 5" "lone CR: reports the new text"
 
 echo ""
 echo "Test 22: Files git treats as binary still report only the new line"
@@ -435,27 +437,30 @@ PATH="$HANGBIN:$PATH" run_scan "$A"
 assert_contains "$SCAN_OUT" "$A:1:" "git hangs: whole file scanned after the timeout"
 
 echo ""
-echo "Test 24: Tracked symlink scanned whole"
+echo "Test 24: Tracked symlink scans as git sees it"
 
-# Git diffs the link's one-line target text; Python reads through the link to
-# the target's content. The two cannot share line numbers, so a symlink is
-# scanned whole, never scoped.
+# The scan reads git's diff, and git diffs a link's one-line target text, not
+# the file it points to. An unchanged link is clean under its own path; the
+# target's new line is reported under the target's path.
 printf '%s\nconst t = 1;\n' "$OLD_LEAK" > "$R/target.ts"
 ln -s target.ts "$R/ln.ts"
 tg "$R" add target.ts ln.ts
 tg "$R" commit -q -m symlink
 printf '%s\n' "$NEW_LEAK" >> "$R/target.ts"
 run_scan "$R/ln.ts"
-assert_contains "$SCAN_OUT" "$R/ln.ts:3: $NEW_LEAK" "tracked symlink: new leak in the target reported"
-assert_contains "$SCAN_OUT" "$R/ln.ts:1:" "tracked symlink: whole file scanned"
-assert_exit_nonzero "tracked symlink: exit non-zero"
+assert_empty "$SCAN_OUT" "tracked symlink: unchanged link text reports nothing"
+assert_exit_zero "tracked symlink: exit 0"
+run_scan "$R/target.ts"
+assert_contains "$SCAN_OUT" "$R/target.ts:3: $NEW_LEAK" "symlink target: new leak reported under its own path"
+assert_lacks "$SCAN_OUT" ":1:" "symlink target: old leak not reported"
+assert_exit_nonzero "symlink target: exit non-zero"
 
 echo ""
-echo "Test 25: File under a clean filter scanned whole"
+echo "Test 25: File under a clean filter scans what git would commit"
 
-# A clean filter that drops lines makes git number the filtered content while
-# Python reads the raw file, so the byte-count guard cannot see the mismatch.
-# Any file with a filter attribute is scanned whole.
+# A clean filter that drops lines changes what git diffs. The scan reads that
+# diff, so it reports the new leak at the line git would commit it on, and the
+# dropped line never shifts the count.
 printf '*.flt filter=drop\n' > "$R/.gitattributes"
 tg "$R" config filter.drop.clean 'grep -v DROPME || true'
 printf '%s\nb\n' "$OLD_LEAK" > "$R/f.flt"
@@ -463,9 +468,30 @@ tg "$R" add .gitattributes f.flt
 tg "$R" commit -q -m filter
 printf 'DROPME\n%s\nb\n%s\n' "$OLD_LEAK" "$NEW_LEAK" > "$R/f.flt"
 run_scan "$R/f.flt"
-assert_contains "$SCAN_OUT" "$R/f.flt:4: $NEW_LEAK" "clean filter: new leak reported"
-assert_contains "$SCAN_OUT" "$R/f.flt:2:" "clean filter: whole file scanned"
+assert_contains "$SCAN_OUT" "$R/f.flt:3: $NEW_LEAK" "clean filter: new leak reported on git's line"
+assert_lacks "$SCAN_OUT" ":1:" "clean filter: old leak not reported"
 assert_exit_nonzero "clean filter: exit non-zero"
+
+echo ""
+echo "Test 26: UTF-16 file under working-tree-encoding scans git's decoded text"
+
+# Git converts the working-tree bytes to UTF-8 before diffing, so the new line
+# reaches the scan as text the pattern can match. Reading the raw file would
+# see interleaved NUL bytes and match nothing.
+printf '*.u16 text working-tree-encoding=UTF-16LE-BOM\n' >> "$R/.gitattributes"
+python3 -c 'import sys; open(sys.argv[1], "wb").write(b"\xff\xfe" + sys.argv[2].encode("utf-16-le"))' \
+  "$R/u.u16" "const a = 1;
+"
+tg "$R" add .gitattributes u.u16
+tg "$R" commit -q -m utf16
+python3 -c 'import sys; open(sys.argv[1], "wb").write(b"\xff\xfe" + sys.argv[2].encode("utf-16-le"))' \
+  "$R/u.u16" "const a = 1;
+$NEW_LEAK
+"
+run_scan "$R/u.u16"
+assert_contains "$SCAN_OUT" "$R/u.u16:2: $NEW_LEAK" "utf-16: new leak reported"
+assert_lacks "$SCAN_OUT" ":1:" "utf-16: unchanged line not reported"
+assert_exit_nonzero "utf-16: exit non-zero"
 
 # ── Summary ──────────────────────────────────────────────────────
 

@@ -6,6 +6,7 @@ COMMENT = re.compile(r'^\s*(//|#|\*|/\*|<!--|"""|--)|\s//')
 VOCAB = re.compile(r'\b(chunk|spark|checkpoint|story|cycle)s?[\s-]+\d+\b', re.I)
 LITERALS = re.compile(r'tokens\.yaml|cycle\.yaml|\.craft/|chunk spec|pitch condition|story spec', re.I)
 HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
+DIFF_FLAGS = ["--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--text", "-U0"]
 GIT_TIMEOUT = 10
 
 OFF_SWITCH = (
@@ -57,10 +58,13 @@ def exempt(path):
     return False
 
 
-def find_hits(content):
+def match_line(line):
     """One shared match function serves hook mode and --scan mode."""
-    return [(i + 1, l.strip()) for i, l in enumerate(content.splitlines())
-            if COMMENT.search(l) and (VOCAB.search(l) or LITERALS.search(l))]
+    return bool(COMMENT.search(line) and (VOCAB.search(line) or LITERALS.search(line)))
+
+
+def find_hits(content):
+    return [(i + 1, l.strip()) for i, l in enumerate(content.splitlines()) if match_line(l)]
 
 
 def git_env():
@@ -70,15 +74,33 @@ def git_env():
     return env
 
 
+def parse_added(diff_output):
+    """(line number, text) for every line a diff marks added, numbered from its
+    hunk headers. Split on newline bytes only, as git does, so a form feed or a
+    lone CR inside a line never shifts the count."""
+    added, n, in_hunk = [], 0, False
+    for raw in diff_output.decode("utf-8", errors="replace").split("\n"):
+        m = HUNK.match(raw)
+        if m:
+            n, in_hunk = int(m.group(1)), True
+        elif in_hunk and raw.startswith("+"):
+            added.append((n, raw[1:]))
+            n += 1
+        elif in_hunk and raw.startswith(" "):
+            n += 1
+    return added
+
+
 def added_lines(path):
-    """Set of 1-based line numbers the working tree adds versus HEAD for a normally
-    tracked file, or None meaning "scan the whole file". Never raises: any failure
-    to find out (untracked, assume-unchanged, no commits, not a repo, git missing,
-    timeout, binary diff) means None, so a failed lookup is noisy rather than clean."""
+    """The lines git's diff marks as added, as (line number, text) pairs read from
+    the diff text itself - the file is never opened here, so nothing has to agree
+    with git's numbering. A normally tracked file diffs against HEAD. Anything
+    else (untracked, assume-unchanged, no commits, outside git, a failing diff)
+    diffs against /dev/null, so every line is added and the file scans whole:
+    noisy, never clean. None only when git is missing, hangs, or fails both
+    ways; the caller then reads the whole file."""
     try:
         full = os.path.abspath(path)
-        if os.path.islink(full):
-            return None  # git diffs the link text, Python reads the target
         directory = os.path.realpath(os.path.dirname(full))
         target = os.path.join(directory, os.path.basename(full))
         base = ["git", "-C", directory, "--literal-pathspecs"]
@@ -89,45 +111,20 @@ def added_lines(path):
                                   stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT)
 
         tracked = git("ls-files", "-v", "--error-unmatch", "--", target)
-        if tracked.returncode != 0 or not tracked.stdout.startswith(b"H "):
-            return None
-        # A clean filter changes what git diffs; its line numbers would not
-        # match the raw file Python reads. Any filter attribute: whole file.
-        attr = git("check-attr", "-z", "filter", "--", target)
-        if attr.returncode != 0:
-            return None
-        fields = attr.stdout.split(b"\0")
-        if len(fields) < 3 or fields[2] not in (b"unspecified", b"unset"):
-            return None
-        diff = git("diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames",
-                   "--text", "--inter-hunk-context=0", "-U0", "HEAD", "--", target)
-        if diff.returncode != 0:
-            return None
-        added = set()
-        for raw in diff.stdout.decode("utf-8", errors="replace").splitlines():
-            if raw.startswith("Binary files"):
-                return None
-            m = HUNK.match(raw)
-            if m:
-                start = int(m.group(1))
-                count = 1 if m.group(2) is None else int(m.group(2))
-                added.update(range(start, start + count))
-        return added
+        if tracked.returncode == 0 and tracked.stdout.startswith(b"H "):
+            diff = git("diff", *DIFF_FLAGS, "HEAD", "--", target)
+            if diff.returncode == 0:
+                return parse_added(diff.stdout)
+        # --no-index exits 1 when the two sides differ, and a real diff against
+        # /dev/null always carries a hunk; exit 1 with no hunk is a git that
+        # failed, not an empty file. An empty file (exit 0) falls through to the
+        # whole-file read, which finds nothing, so it is never trusted blindly.
+        whole = git("diff", *DIFF_FLAGS, "--no-index", "--", "/dev/null", target)
+        if whole.returncode == 1 and b"@@" in whole.stdout:
+            return parse_added(whole.stdout)
     except Exception:
-        return None
-
-
-def line_count_matches_git(path, content):
-    """True when Python's line splitting agrees with git's count of newline bytes."""
-    try:
-        with open(path, "rb") as f:
-            raw = f.read()
-    except OSError:
-        return False
-    newlines = raw.count(b"\n")
-    if raw and not raw.endswith(b"\n"):
-        newlines += 1
-    return len(content.splitlines()) == newlines
+        pass
+    return None
 
 
 def scan(paths, whole_files=False):
@@ -135,16 +132,15 @@ def scan(paths, whole_files=False):
     for p in paths:
         if exempt(p) or gate_off(p):
             continue
-        try:
-            with open(p, "r", errors="replace") as f:
-                content = f.read()
-        except OSError:
-            continue
-        hits = find_hits(content)
-        if hits and not whole_files:
-            added = added_lines(p)
-            if added is not None and line_count_matches_git(p, content):
-                hits = [(n, t) for n, t in hits if n in added]
+        lines = None if whole_files else added_lines(p)
+        if lines is None:
+            try:
+                with open(p, "r", errors="replace") as f:
+                    hits = find_hits(f.read())
+            except OSError:
+                continue
+        else:
+            hits = [(n, t.strip()) for n, t in lines if match_line(t)]
         for n, t in hits:
             print(f"{p}:{n}: {t}")
             found = True
