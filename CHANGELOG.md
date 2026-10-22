@@ -4,7 +4,7 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 ## 2.11.1 - 2026-10-19
 
-- Fixed the end-of-story citation check failing a story for old planning comments it never wrote. It now checks only the lines the story added - on a feature branch, everything since the branch left the main branch, earlier commits included - and still checks a file in full when it cannot tell which lines are new. That check, and the re-check after a fix, now always get the path they need instead of being skipped.
+- Fixed the end-of-story citation check failing a story for old planning comments it never wrote. It now checks only the lines the story added, and still checks a file in full when it cannot tell which lines are new. That check, and the re-check after a fix, now always get the path they need instead of being skipped.
 
 ## 2.11.0 - 2026-10-18
 
