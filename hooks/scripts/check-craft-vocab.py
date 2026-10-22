@@ -74,6 +74,23 @@ def git_env():
     return env
 
 
+_git_hung = []
+
+
+def run_git(directory, *args):
+    """One git call with the scan's timeout. After the first hang every later call
+    fails at once, so a stalled git costs one timeout per run, not one per file."""
+    if _git_hung:
+        raise subprocess.TimeoutExpired("git", GIT_TIMEOUT)
+    try:
+        return subprocess.run(["git", "-C", directory, "--literal-pathspecs", *args],
+                              env=git_env(), capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        _git_hung.append(True)
+        raise
+
+
 def parse_added(diff_output):
     """(line number, text) for every line a diff marks added, numbered from its
     hunk headers. Split on newline bytes only, as git does, so a form feed or a
@@ -103,12 +120,9 @@ def added_lines(path):
         full = os.path.abspath(path)
         directory = os.path.realpath(os.path.dirname(full))
         target = os.path.join(directory, os.path.basename(full))
-        base = ["git", "-C", directory, "--literal-pathspecs"]
-        env = git_env()
 
         def git(*args):
-            return subprocess.run(base + list(args), env=env, capture_output=True,
-                                  stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT)
+            return run_git(directory, *args)
 
         tracked = git("ls-files", "-v", "--error-unmatch", "--", target)
         if tracked.returncode == 0 and tracked.stdout.startswith(b"H "):
@@ -146,10 +160,8 @@ def deleted_in_git(path):
         directory = os.path.dirname(target)
         while not os.path.isdir(directory):
             directory = os.path.dirname(directory)
-        r = subprocess.run(["git", "-C", directory, "--literal-pathspecs", "diff", "--name-only",
-                            "--no-renames", "--diff-filter=D", "HEAD", "--", target],
-                           env=git_env(), capture_output=True, stdin=subprocess.DEVNULL,
-                           timeout=GIT_TIMEOUT)
+        r = run_git(directory, "diff", "--name-only", "--no-renames", "--diff-filter=D",
+                    "HEAD", "--", target)
         return r.returncode == 0 and bool(r.stdout.strip())
     except Exception:
         return False

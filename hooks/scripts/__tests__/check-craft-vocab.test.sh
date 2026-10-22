@@ -433,8 +433,17 @@ HANGBIN="$WORK/hangbin"
 mkdir -p "$HANGBIN"
 printf '#!/bin/sh\nexec sleep 30\n' > "$HANGBIN/git"
 chmod +x "$HANGBIN/git"
-PATH="$HANGBIN:$PATH" run_scan "$A"
+HANG_START=$SECONDS
+PATH="$HANGBIN:$PATH" run_scan "$A" "$R/b.ts" "$R/b.ts"
+HANG_SECS=$((SECONDS - HANG_START))
 assert_contains "$SCAN_OUT" "$A:1:" "git hangs: whole file scanned after the timeout"
+assert_contains "$SCAN_OUT" "$R/b.ts:1:" "git hangs: later files scanned whole too"
+# One timeout per run, not per file: three files must finish well under two.
+if [ "$HANG_SECS" -lt 18 ]; then
+  pass "git hangs: one timeout for the whole run (${HANG_SECS}s)"
+else
+  fail "git hangs: one timeout for the whole run" "< 18s" "${HANG_SECS}s"
+fi
 
 echo ""
 echo "Test 24: Tracked symlink scans as git sees it"

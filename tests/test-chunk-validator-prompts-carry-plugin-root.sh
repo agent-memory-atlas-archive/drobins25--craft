@@ -56,6 +56,14 @@ check_file "commands/craft-story-implement.md" 2
 check_file "commands/references/validate-fix-loop.md" 1
 check_file "skills/validate-chunk/SKILL.md" 2
 
+# Any other file that dispatches the validator must carry the line too.
+while IFS= read -r rel; do
+  case "$rel" in
+    commands/craft-story-implement.md|commands/references/validate-fix-loop.md|skills/validate-chunk/SKILL.md) continue ;;
+  esac
+  check_file "$rel" 1
+done < <(cd "$REPO" && grep -rlF 'subagent_type: "craft:chunk-validator"' commands skills agents hooks 2>/dev/null || true)
+
 echo "check 8 scan command"
 scan_line="$(grep -F 'check-craft-vocab.py --scan' "$REPO/agents/chunk-validator.md" | head -1 || true)"
 if [[ "$scan_line" == *"cd PROJECT_ROOT && "*"python3"* ]]; then
