@@ -516,6 +516,51 @@ run_scan "$B/a.ts"
 assert_contains "$SCAN_OUT" "$B/a.ts:4: $NEW_LEAK" "feature branch: this story's leak reported"
 assert_lacks "$SCAN_OUT" ":2:" "feature branch: earlier story's line still not reported"
 
+echo ""
+echo "Test 28: A scan that reads no file never passes"
+
+# The validator is handed one comma-separated list. A list passed whole, run
+# from the wrong folder, or naming only missing files must fail, never pass on
+# an empty read. One missing file beside readable ones is named, not failed: a
+# spec can list a file the story never needed to create.
+U="$WORK/unread"
+mkdir -p "$U"
+tg "$U" init -q
+printf 'const a = 1;\n' > "$U/a.ts"
+printf 'const c = 1;\n' > "$U/c.ts"
+printf 'const g = 1;\n' > "$U/gone.ts"
+tg "$U" add -A
+tg "$U" commit -q -m base
+printf '%s\n' "$NEW_LEAK" >> "$U/a.ts"
+printf '# notes\n' > "$U/README.md"
+
+run_scan "$U/a.ts,$U/c.ts"
+assert_contains "$SCAN_OUT" "$U/a.ts:2: $NEW_LEAK" "comma list: split and leak reported"
+assert_exit_nonzero "comma list: exit non-zero"
+
+run_scan "$U/a.ts,$U/README.md"
+assert_contains "$SCAN_OUT" "$U/a.ts:2: $NEW_LEAK" "comma list ending in .md: split before the doc-file skip"
+
+run_scan "$U/missing.ts"
+assert_contains "$SCAN_OUT" "$U/missing.ts: not scanned" "only path missing: named"
+assert_exit_nonzero "only path missing: exit non-zero"
+
+set +e
+SCAN_OUT=$(cd "$WORK" && python3 "$HOOK" --scan a.ts c.ts 2>/dev/null)
+SCAN_EXIT=$?
+set -e
+assert_contains "$SCAN_OUT" "a.ts: not scanned" "wrong folder: named"
+assert_exit_nonzero "wrong folder: exit non-zero"
+
+run_scan "$U/c.ts" "$U/missing.ts"
+assert_contains "$SCAN_OUT" "$U/missing.ts: not scanned" "one missing beside a readable file: named"
+assert_exit_zero "one missing beside a readable file: exit 0"
+
+tg "$U" rm -q gone.ts
+run_scan "$U/gone.ts"
+assert_empty "$SCAN_OUT" "staged deletion: no output"
+assert_exit_zero "staged deletion: exit 0"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""

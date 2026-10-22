@@ -239,10 +239,10 @@ Assignment is enforced primarily at plan time (the binding is a Contract the imp
 
 **How:**
 1. If FILES_CHANGED is empty, or PLUGIN_ROOT is absent → **SKIP** (never FAIL; an empty file list is a real story-final state, and without PLUGIN_ROOT never guess the path)
-2. Run: `cd PROJECT_ROOT && python3 <PLUGIN_ROOT>/hooks/scripts/check-craft-vocab.py --scan <FILES_CHANGED>`
-3. Exit 0 → **PASS**. Non-zero → **FAIL**, one error block per reported `path:line:` hit (Type: `citation-leak`)
+2. Run: `cd PROJECT_ROOT && python3 <PLUGIN_ROOT>/hooks/scripts/check-craft-vocab.py --scan <every FILES_CHANGED path, each as its own quoted argument>`. Pass the whole list, unpiped, so the exit code is the scan's own.
+3. Exit 0 → **PASS**; name any `path: not scanned` line in the report. Non-zero → **FAIL**, one error block per reported `path:line:` hit, or per `not scanned` line when the scan could read none of the files (Type: `citation-leak`)
 
-**Error detail:** the scan's `path:line: <text>` output lines, max 200 characters.
+**Error detail:** the scan's `path:line: <text>` or `path: not scanned` output lines, max 200 characters.
 
 ### Gates Coverage
 

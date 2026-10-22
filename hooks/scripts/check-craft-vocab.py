@@ -127,9 +127,40 @@ def added_lines(path):
     return None
 
 
+def split_lists(args):
+    """Validators pass one comma-separated list; an argument with a comma that is
+    not itself a path is that list, split before any other check reads it."""
+    paths = []
+    for a in args:
+        if "," in a and not os.path.exists(a):
+            paths.extend(p.strip() for p in a.split(",") if p.strip())
+        else:
+            paths.append(a)
+    return paths
+
+
+def deleted_in_git(path):
+    """True when git shows the path deleted against HEAD, staged or not."""
+    try:
+        target = os.path.realpath(os.path.abspath(path))
+        directory = os.path.dirname(target)
+        while not os.path.isdir(directory):
+            directory = os.path.dirname(directory)
+        r = subprocess.run(["git", "-C", directory, "--literal-pathspecs", "diff", "--name-only",
+                            "--no-renames", "--diff-filter=D", "HEAD", "--", target],
+                           env=git_env(), capture_output=True, stdin=subprocess.DEVNULL,
+                           timeout=GIT_TIMEOUT)
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
 def scan(paths, whole_files=False):
-    found = False
-    for p in paths:
+    """Exit 1 on any hit, or when paths were given and none could be read: a scan
+    that read nothing never passes. One unreadable path beside readable ones is
+    named but does not fail, since a story can list a file it never created."""
+    found, read, unread = False, 0, 0
+    for p in split_lists(paths):
         if exempt(p) or gate_off(p):
             continue
         lines = None if whole_files else added_lines(p)
@@ -138,13 +169,17 @@ def scan(paths, whole_files=False):
                 with open(p, "r", errors="replace") as f:
                     hits = find_hits(f.read())
             except OSError:
+                if not deleted_in_git(p):
+                    print(f"{p}: not scanned - cannot read this file")
+                    unread += 1
                 continue
         else:
             hits = [(n, t.strip()) for n, t in lines if match_line(t)]
+        read += 1
         for n, t in hits:
             print(f"{p}:{n}: {t}")
             found = True
-    return 1 if found else 0
+    return 1 if found or (unread and not read) else 0
 
 
 def main():
