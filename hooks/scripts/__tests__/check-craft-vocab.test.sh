@@ -493,6 +493,75 @@ assert_contains "$SCAN_OUT" "$R/u.u16:2: $NEW_LEAK" "utf-16: new leak reported"
 assert_lacks "$SCAN_OUT" ":1:" "utf-16: unchanged line not reported"
 assert_exit_nonzero "utf-16: exit non-zero"
 
+echo ""
+echo "Test 27: Feature branch diffs from the fork point, not the last commit"
+
+# "Lines the story added" on a feature branch means every line since the
+# branch left the default branch, committed or not. A leak committed earlier
+# on the branch is still reported; a leak that was already on the default
+# branch is not; a file first created on the branch is scanned whole.
+B="$WORK/branchrepo"
+mkdir -p "$B"
+tg "$B" init -q
+printf '%s\nconst a = 1;\n' "$OLD_LEAK" > "$B/a.ts"
+tg "$B" add -A
+tg "$B" commit -q -m base
+DEFAULT_BRANCH=$(tg "$B" symbolic-ref --short HEAD)
+tg "$B" checkout -q -b feature
+printf '%s\n' "$NEW_LEAK" >> "$B/a.ts"
+printf '%s\nconst b = 1;\n' "$OLD_LEAK" > "$B/b.ts"
+tg "$B" add -A
+tg "$B" commit -q -m "branch commit"
+printf 'x = 2;\n' >> "$B/a.ts"
+run_scan "$B/a.ts"
+assert_contains "$SCAN_OUT" "$B/a.ts:3: $NEW_LEAK" "feature branch: leak committed earlier on the branch reported"
+assert_lacks "$SCAN_OUT" ":1:" "feature branch: leak from the default branch not reported"
+assert_exit_nonzero "feature branch: exit non-zero"
+run_scan "$B/b.ts"
+assert_contains "$SCAN_OUT" "$B/b.ts:1: $OLD_LEAK" "feature branch: file created on the branch scanned whole"
+
+echo ""
+echo "Test 28: The default branch and a detached HEAD still diff from the last commit"
+
+tg "$B" checkout -q -- a.ts
+tg "$B" checkout -q "$DEFAULT_BRANCH"
+printf '%s\nconst a = 1;\n%s\n' "$OLD_LEAK" "$NEW_LEAK" > "$B/a.ts"
+tg "$B" commit -q -am "committed on the default branch"
+printf 'y = 3;\n' >> "$B/a.ts"
+run_scan "$B/a.ts"
+assert_empty "$SCAN_OUT" "default branch: committed lines not rescanned"
+assert_exit_zero "default branch: exit 0"
+tg "$B" checkout -q -- a.ts
+tg "$B" checkout -q --detach feature
+printf 'z = 4;\n' >> "$B/a.ts"
+run_scan "$B/a.ts"
+assert_empty "$SCAN_OUT" "detached HEAD: committed lines not rescanned"
+assert_exit_zero "detached HEAD: exit 0"
+tg "$B" checkout -q -- a.ts
+
+echo ""
+echo "Test 29: origin/HEAD names the default branch when the remote declares one"
+
+# No local main or master any more; only the remote's declared default can
+# resolve, and it points at the fork point under a name the scanner never
+# guesses.
+tg "$B" checkout -q feature
+tg "$B" branch -m "$DEFAULT_BRANCH" renamed-default
+tg "$B" update-ref refs/remotes/origin/trunk "$(tg "$B" rev-parse renamed-default)"
+tg "$B" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+run_scan "$B/a.ts"
+assert_contains "$SCAN_OUT" "$B/a.ts:3: $NEW_LEAK" "origin/HEAD: merge-base with the remote's default branch"
+assert_lacks "$SCAN_OUT" ":1:" "origin/HEAD: default-branch leak not reported"
+
+echo ""
+echo "Test 30: No default branch at all falls back to the last commit"
+
+tg "$B" symbolic-ref --delete refs/remotes/origin/HEAD
+printf 'w = 5;\n' >> "$B/a.ts"
+run_scan "$B/a.ts"
+assert_empty "$SCAN_OUT" "no default branch: diffs from HEAD, committed leak not rescanned"
+assert_exit_zero "no default branch: exit 0"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""

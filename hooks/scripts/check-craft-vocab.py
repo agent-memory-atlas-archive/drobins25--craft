@@ -91,35 +91,79 @@ def parse_added(diff_output):
     return added
 
 
+def run_git(directory, *args):
+    """One git call from inside the file's directory, with the scan's timeout."""
+    return subprocess.run(["git", "-C", directory, "--literal-pathspecs", *args],
+                          env=git_env(), capture_output=True,
+                          stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT)
+
+
+def git_text(result):
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+_BASE_CACHE = {}
+
+
+def diff_base(directory):
+    """The commit the scoped scan diffs against, resolved once per repository.
+    On a feature branch it is the merge-base with the default branch (origin/HEAD
+    when the remote declares one, else a local main, else a local master), so a
+    line committed earlier on the branch still counts as the story's. On the
+    default branch, on a detached HEAD, when no default branch resolves, or when
+    the two share no history, it is HEAD. Every failure lands on HEAD, so the
+    scan can only get wider, never narrower."""
+    top = run_git(directory, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        return "HEAD"
+    key = git_text(top)
+    if key in _BASE_CACHE:
+        return _BASE_CACHE[key]
+    base = "HEAD"
+    current = run_git(directory, "symbolic-ref", "-q", "--short", "HEAD")
+    branch = git_text(current) if current.returncode == 0 else ""
+    if branch:
+        default = ""
+        remote = run_git(directory, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+        if remote.returncode == 0 and git_text(remote):
+            default = git_text(remote)
+        else:
+            for name in ("main", "master"):
+                if run_git(directory, "rev-parse", "--verify", "-q", "refs/heads/" + name).returncode == 0:
+                    default = name
+                    break
+        local_name = default[len("origin/"):] if default.startswith("origin/") else default
+        if default and local_name != branch:
+            merge_base = run_git(directory, "merge-base", "HEAD", default)
+            if merge_base.returncode == 0 and git_text(merge_base):
+                base = git_text(merge_base)
+    _BASE_CACHE[key] = base
+    return base
+
+
 def added_lines(path):
     """The lines git's diff marks as added, as (line number, text) pairs read from
     the diff text itself - the file is never opened here, so nothing has to agree
-    with git's numbering. A normally tracked file diffs against HEAD. Anything
-    else (untracked, assume-unchanged, no commits, outside git, a failing diff)
-    diffs against /dev/null, so every line is added and the file scans whole:
-    noisy, never clean. None only when git is missing, hangs, or fails both
-    ways; the caller then reads the whole file."""
+    with git's numbering. A normally tracked file diffs against the branch's base
+    (see diff_base). Anything else (untracked, assume-unchanged, no commits,
+    outside git, a failing diff) diffs against /dev/null, so every line is added
+    and the file scans whole: noisy, never clean. None only when git is missing,
+    hangs, or fails both ways; the caller then reads the whole file."""
     try:
         full = os.path.abspath(path)
         directory = os.path.realpath(os.path.dirname(full))
         target = os.path.join(directory, os.path.basename(full))
-        base = ["git", "-C", directory, "--literal-pathspecs"]
-        env = git_env()
 
-        def git(*args):
-            return subprocess.run(base + list(args), env=env, capture_output=True,
-                                  stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT)
-
-        tracked = git("ls-files", "-v", "--error-unmatch", "--", target)
+        tracked = run_git(directory, "ls-files", "-v", "--error-unmatch", "--", target)
         if tracked.returncode == 0 and tracked.stdout.startswith(b"H "):
-            diff = git("diff", *DIFF_FLAGS, "HEAD", "--", target)
+            diff = run_git(directory, "diff", *DIFF_FLAGS, diff_base(directory), "--", target)
             if diff.returncode == 0:
                 return parse_added(diff.stdout)
         # --no-index exits 1 when the two sides differ, and a real diff against
         # /dev/null always carries a hunk; exit 1 with no hunk is a git that
         # failed, not an empty file. An empty file (exit 0) falls through to the
         # whole-file read, which finds nothing, so it is never trusted blindly.
-        whole = git("diff", *DIFF_FLAGS, "--no-index", "--", "/dev/null", target)
+        whole = run_git(directory, "diff", *DIFF_FLAGS, "--no-index", "--", "/dev/null", target)
         if whole.returncode == 1 and b"@@" in whole.stdout:
             return parse_added(whole.stdout)
     except Exception:
