@@ -4,7 +4,7 @@
 # The chunk-validator subagent cannot resolve ${CLAUDE_PLUGIN_ROOT}, so every
 # dispatch prompt must hand it the resolved path on a PLUGIN_ROOT line, and the
 # citation scan it runs must start from the project root. Without the line the
-# scan check is skipped; without the cd it reads the wrong relative paths.
+# scan check fails; without the cd it reads the wrong relative paths.
 
 set -euo pipefail
 
@@ -70,6 +70,15 @@ if [[ "$scan_line" == *"cd PROJECT_ROOT && "*"python3"* ]]; then
   pass "check 8 scan command runs from PROJECT_ROOT"
 else
   fail "check 8 scan command runs from PROJECT_ROOT" "cd PROJECT_ROOT && before python3" "${scan_line:-<no --scan line found>}"
+fi
+
+# A prompt written by hand can still leave the line out. With files to scan, the
+# check must fail rather than skip, because a skip counts as a pass.
+absent_line="$(grep -F 'If PLUGIN_ROOT is absent' "$REPO/agents/chunk-validator.md" | head -1 || true)"
+if [[ "$absent_line" == *"**FAIL**"* && "$absent_line" != *"**SKIP**"* ]]; then
+  pass "check 8 fails when PLUGIN_ROOT is absent"
+else
+  fail "check 8 fails when PLUGIN_ROOT is absent" "a line 'If PLUGIN_ROOT is absent → **FAIL**'" "${absent_line:-<no such line>}"
 fi
 
 echo ""
