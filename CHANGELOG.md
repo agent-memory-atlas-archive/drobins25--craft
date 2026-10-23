@@ -4,8 +4,8 @@ Notable, user-facing changes per version. Internal changes (tests, refactors, co
 
 ## 2.11.1 - 2026-10-22
 
-- Fixed the end-of-story check for planning notes left in code comments (like "Chunk 3") failing your story over comments it never wrote. It now looks only at the lines your story added, even on a branch earlier stories already used.
-- Fixed that same check quietly passing without reading anything. It was often handed its file list in a form it couldn't open, so it passed on an empty read. It now reads every file, names any it can't open, fails when it couldn't read any of them, and no longer gets skipped at the end of a story or after a fix.
+- Fixed the end-of-story check for planning notes left in code comments (like "Chunk 3") failing your story over old comments it never wrote. It now looks only at the lines your story added.
+- Fixed that same check sometimes passing, or being skipped, without checking anything. It now checks every file your story touched and tells you when it can't read one.
 
 ## 2.11.0 - 2026-10-18
 
