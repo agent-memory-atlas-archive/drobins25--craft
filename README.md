@@ -26,7 +26,7 @@ One comment sheet, built into three commands.
 |---|---|---|
 | Turn on COMMENT MODE on the tab you have open. Each pin lands as a live change while you watch. | Every round of options arrives with the comment sheet aboard. Pin what you'd change, and the next round reloads in place. | Say you want to point, and the comment sheet joins the A, B, C, D panel. Each pin knows which letter was on screen. |
 
-A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.
+Craft is a Claude Code plugin that asks you the product questions and works out the technical ones. Features get planned, built, and tested, with your codebase read-only until you approve the work. Point at a live page to change it. The calls you make - decisions, design tokens, the tweaks you loved - carry into every build after.
 
 Your codebase is read-only by default. Changes never land as a side effect of asking a question - every write goes through a channel you opened: a planned story, an investigated fix, a live tweak, or an approved one-off.
 
