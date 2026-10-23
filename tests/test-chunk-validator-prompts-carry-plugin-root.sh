@@ -81,6 +81,14 @@ else
   fail "check 8 fails when PLUGIN_ROOT is absent" "a line 'If PLUGIN_ROOT is absent → **FAIL**'" "${absent_line:-<no such line>}"
 fi
 
+# A dispatch prompt that describes the scan in its own words has led the
+# validator to run a grep or script of its own and report that as check 8.
+if grep -qF 'Only this command counts as check 8.' "$REPO/agents/chunk-validator.md"; then
+  pass "check 8 says only the scan command counts"
+else
+  fail "check 8 says only the scan command counts" "the line 'Only this command counts as check 8.'" "<no such line>"
+fi
+
 echo ""
 echo "$PASS_COUNT passed, $FAIL_COUNT failed ($TOTAL total)"
 [ "$FAIL_COUNT" -eq 0 ]
