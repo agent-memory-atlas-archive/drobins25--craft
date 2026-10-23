@@ -501,6 +501,8 @@ They live in `.craft/bugs/`, named `<date>-<slug>.md`, with `closed/` for the do
 > A week later, `/craft:bugs` - *the pile, newest first, the blocker marked.*
 > "The checkout one is fixed." *Craft names it, you say yes, it moves to `closed/`.*
 
+*What shipped in 2.8.0: [CHANGELOG](CHANGELOG.md#280---2026-10-04).*
+
 ## Adhoc
 
 Adhoc is a small change to something that already exists, made now, without the story ceremony.
