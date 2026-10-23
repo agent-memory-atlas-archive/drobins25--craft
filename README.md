@@ -1,21 +1,34 @@
-![Craft's dashboard rendering a real project as a living galaxy - records cluster into colored regions with glowing heat behind them, finished work cooled to quiet grey, observation cards quoting the project's own history with arrows into the sky, the whole thing swirling into place and settling still.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-galaxy.gif)
+<div align="center">
 
-**Not a demo - this ships with the plugin.** Run `/craft:dashboard` and it's your own project in here: every story, fix, riff, and idea you've worked through, linked and alive. Your second brain, filling itself in while you build.
+# Craft
 
-# Craft [![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdrobins25%2Fcraft%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue)](CHANGELOG.md)
+**Stop Vibing. Start Crafting.**
 
-> **Stop Vibing. Start Crafting.**
-
-A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.
-
-Your codebase is read-only by default. Changes never land as a side effect of asking a question - every write goes through a channel you opened: a planned story, an investigated fix, a live tweak, or an approved one-off.
-
+[![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdrobins25%2Fcraft%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue)](CHANGELOG.md)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![status](https://img.shields.io/badge/status-actively%20developed-brightgreen)
 ![requires](https://img.shields.io/badge/requires-Claude%20Code%202.1%2B-orange)
 [![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/drobins25-craft)](https://www.claudepluginhub.com/plugins/drobins25-craft?ref=badge)
 
 **[Install](#install)** · [Getting Started](#getting-started) · [Commands](#commands) · [How it works](#how-craft-work-flows) · [What's New](CHANGELOG.md)
+
+### Point at the page. Watch it change.
+
+One comment sheet, built into three commands.
+
+![A plain white profile card morphs pin by pin into a glowing dark terminal - comments drop onto the live page one after another, the last one asks to make CRAFT look like it's coming off the page, the letters pop out in 3D, and clearing the pins leaves the finished card.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-annotate.gif)
+
+<sub><code>/craft:annotate</code> on a real page, sped up. No file changes while you point.</sub>
+
+</div>
+
+| [`/craft:annotate`](docs/annotate.md) | [`/craft:mockup`](#the-mockup-funnel) | [`/craft:dial`](#the-mockup-funnel) |
+|---|---|---|
+| Turn on COMMENT MODE on the tab you have open. Each pin lands as a live change while you watch. | Every round of options arrives with the comment sheet aboard. Pin what you'd change, and the next round reloads in place. | Say you want to point, and the comment sheet joins the A, B, C, D panel. Each pin knows which letter was on screen. |
+
+A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.
+
+Your codebase is read-only by default. Changes never land as a side effect of asking a question - every write goes through a channel you opened: a planned story, an investigated fix, a live tweak, or an approved one-off.
 
 Install in about a minute:
 
@@ -107,8 +120,6 @@ And when the page is already in front of you, you don't describe anything. You p
 
 > `/craft:annotate`
 
-![A plain white profile card morphs pin by pin into a glowing dark terminal - comments drop onto the live page one after another, the last one asks to make CRAFT look like it's coming off the page, the letters pop out in 3D, and clearing the pins leaves the finished card.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-annotate.gif)
-
 Craft puts a comment sheet on the tab you have open. Turn on COMMENT MODE, click anything, type what you want, press SEND TO CLAUDE. The change lands on the page while you watch. No file changes while you point.
 
 One real run started on a plain white profile card:
@@ -155,6 +166,10 @@ The notebook is one-line capture for thoughts that aren't story-shaped yet. You 
 You didn't ask for that one. Craft was paying attention.
 
 That's the real reason the notebook exists: **your taste compounds.** Every design you love is recorded, not spent, and every move craft proposes from it links back to the tweak where it started. Most tools forget what you liked when the session ends. Craft keeps score.
+
+![Craft's dashboard rendering a real project as a living galaxy - records cluster into colored regions with glowing heat behind them, finished work cooled to quiet grey, observation cards quoting the project's own history with arrows into the sky, the whole thing swirling into place and settling still.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-galaxy.gif)
+
+**Not a demo - this ships with the plugin.** Run `/craft:dashboard` and it's your own project in here: every story, fix, riff, and idea you've worked through, linked and alive. Your second brain, filling itself in while you build.
 
 *Capture syntax, lifecycle, and where files live: [Notebook](#notebook), below.*
 
