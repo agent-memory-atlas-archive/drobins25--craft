@@ -89,6 +89,13 @@ else
   fail "check 8 says only the scan command counts" "the line 'Only this command counts as check 8.'" "<no such line>"
 fi
 
+# Check 3 drops test files from its list; the scan must still get them.
+if [[ "$scan_line" == *"test files included"* ]]; then
+  pass "check 8 scan list keeps test files"
+else
+  fail "check 8 scan list keeps test files" "'test files included' on the --scan line" "${scan_line:-<no --scan line found>}"
+fi
+
 echo ""
 echo "$PASS_COUNT passed, $FAIL_COUNT failed ($TOTAL total)"
 [ "$FAIL_COUNT" -eq 0 ]
