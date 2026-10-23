@@ -174,6 +174,7 @@ def scan(paths, whole_files=False):
     found, read, unread = False, 0, 0
     for p in split_lists(paths):
         if exempt(p) or gate_off(p):
+            read += 1  # nothing to scan counts as handled, not as unread
             continue
         lines = None if whole_files else added_lines(p)
         if lines is None:
@@ -219,6 +220,7 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--scan":
         try:
+            sys.stdout.reconfigure(errors="backslashreplace")
             args = sys.argv[2:]
             sys.exit(scan([a for a in args if a != "--all"], whole_files="--all" in args))
         except Exception:

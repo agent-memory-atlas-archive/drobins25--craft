@@ -570,6 +570,32 @@ run_scan "$U/gone.ts"
 assert_empty "$SCAN_OUT" "staged deletion: no output"
 assert_exit_zero "staged deletion: exit 0"
 
+echo ""
+echo "Test 29: A hit always prints, and a skipped doc file counts as handled"
+
+# A terminal that cannot encode a character in the hit must still see the hit
+# and a non-zero exit. A doc file beside a planned file the story never created
+# has nothing to scan, so it must not read as a scan that read nothing.
+E="$WORK/edge"
+mkdir -p "$E"
+tg "$E" init -q
+printf 'const a = 1;\n' > "$E/a.ts"
+tg "$E" add -A
+tg "$E" commit -q -m base
+printf '// Chunk 3 caf\xc3\xa9\n' >> "$E/a.ts"
+printf '# notes\n' > "$E/R.md"
+
+set +e
+SCAN_OUT=$(PYTHONIOENCODING=ascii python3 "$HOOK" --scan "$E/a.ts" 2>/dev/null)
+SCAN_EXIT=$?
+set -e
+assert_contains "$SCAN_OUT" "$E/a.ts:2: // Chunk 3 caf" "ascii output: hit printed"
+assert_exit_nonzero "ascii output: exit non-zero"
+
+run_scan "$E/R.md" "$E/missing.ts"
+assert_contains "$SCAN_OUT" "$E/missing.ts: not scanned" "doc file beside a missing file: missing one named"
+assert_exit_zero "doc file beside a missing file: exit 0"
+
 # ── Summary ──────────────────────────────────────────────────────
 
 echo ""
