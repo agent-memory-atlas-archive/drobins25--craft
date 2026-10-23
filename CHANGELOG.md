@@ -2,9 +2,10 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
-## 2.11.1 - 2026-10-19
+## 2.11.1 - 2026-10-22
 
-- Fixed the end-of-story citation check failing a story for old planning comments it never wrote. It now checks only the lines the story added, and still checks a file in full when it cannot tell which lines are new. That check, and the re-check after a fix, now always get the path they need instead of being skipped.
+- Fixed the end-of-story check for planning notes left in code comments (like "Chunk 3") failing your story over comments it never wrote. It now looks only at the lines your story added, even on a branch earlier stories already used.
+- Fixed that same check quietly passing without reading anything. It was often handed its file list in a form it couldn't open, so it passed on an empty read. It now reads every file, names any it can't open, fails when it couldn't read any of them, and no longer gets skipped at the end of a story or after a fix.
 
 ## 2.11.0 - 2026-10-18
 
