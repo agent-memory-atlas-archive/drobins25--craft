@@ -120,8 +120,6 @@ And when the page is already in front of you, you don't describe anything. You p
 
 > `/craft:annotate`
 
-![A plain white profile card morphs pin by pin into a glowing dark terminal - comments drop onto the live page one after another, the last one asks to make CRAFT look like it's coming off the page, the letters pop out in 3D, and clearing the pins leaves the finished card.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-annotate.gif)
-
 Craft puts a comment sheet on the tab you have open. Turn on COMMENT MODE, click anything, type what you want, press SEND TO CLAUDE. The change lands on the page while you watch. No file changes while you point.
 
 One real run started on a plain white profile card:
