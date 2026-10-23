@@ -2,6 +2,11 @@
 
 Notable, user-facing changes per version. Internal changes (tests, refactors, contributor tooling) bump the version without an entry, so version numbers here may skip.
 
+## 2.11.1 - 2026-10-22
+
+- Fixed the end-of-story check for planning notes left in code comments (like "Chunk 3") failing your story over old comments it never wrote. It now looks only at the lines your story added.
+- Fixed that same check sometimes passing, or being skipped, without checking anything. It now checks every file your story touched and tells you when it can't read one.
+
 ## 2.11.0 - 2026-10-18
 
 - Added a record for every `/craft:review` run on your own work, clean or not. Each one keeps what was checked and what was found, so a review that finds nothing still leaves proof of what it looked at. Reviewing someone else's PR leaves no record, so their code never muddies yours.

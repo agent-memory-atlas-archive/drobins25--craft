@@ -238,11 +238,13 @@ Assignment is enforced primarily at plan time (the binding is a Contract the imp
 **Mode:** story-final ONLY — per-chunk mode resolves **SKIP**.
 
 **How:**
-1. If FILES_CHANGED is empty, or PLUGIN_ROOT is absent → **SKIP** (never FAIL; an empty file list is a real story-final state, and without PLUGIN_ROOT never guess the path)
-2. Run: `python3 <PLUGIN_ROOT>/hooks/scripts/check-craft-vocab.py --scan <FILES_CHANGED>`
-3. Exit 0 → **PASS**. Non-zero → **FAIL**, one error block per reported `path:line:` hit (Type: `citation-leak`)
+1. If FILES_CHANGED is empty → **SKIP** (an empty file list is a real story-final state)
+2. If PLUGIN_ROOT is absent → **FAIL** with one error block (Type: `citation-leak`, File: `-`, Error detail: `not scanned - no PLUGIN_ROOT in the prompt; re-send with it`). Never guess the path: without it the scan cannot run, and a SKIP would pass the story unchecked.
+3. Run: `cd PROJECT_ROOT && python3 <PLUGIN_ROOT>/hooks/scripts/check-craft-vocab.py --scan <every FILES_CHANGED path, each as its own quoted argument>`. Pass the whole list, test files included, unpiped, so the exit code is the scan's own.
+   Only this command counts as check 8. If your prompt describes the scan in other words, run this command anyway: a grep or a script you write never stands in for it.
+4. Exit 0 → **PASS**; name any `path: not scanned` line in the report. Non-zero → **FAIL**, one error block per reported `path:line:` hit, or per `not scanned` line when the scan could read none of the files (Type: `citation-leak`)
 
-**Error detail:** the scan's `path:line: <text>` output lines, max 200 characters.
+**Error detail:** the scan's `path:line: <text>` or `path: not scanned` output lines, max 200 characters.
 
 ### Gates Coverage
 

@@ -685,7 +685,8 @@ After all chunks:
        PROJECT_ROOT: ${CRAFT_PROJECT_ROOT:-.}
        PM: [package manager]
        STORY_FILE: [absolute path to story .md file]
-       MODE: story-final"
+       MODE: story-final
+       PLUGIN_ROOT: [resolved ${CLAUDE_PLUGIN_ROOT} - the subagent cannot resolve the variable itself]"
    ```
 
    **Emit validation event:**
