@@ -16,7 +16,7 @@
 
 One comment sheet, built into three commands.
 
-![A plain white profile card morphs pin by pin into a glowing dark terminal - comments drop onto the live page one after another, the last one asks to make CRAFT look like it's coming off the page, the letters pop out in 3D, and clearing the pins leaves the finished card.](https://raw.githubusercontent.com/drobins25/craft/assets/craft-annotate.gif)
+<img src="https://raw.githubusercontent.com/drobins25/craft/assets/craft-annotate.gif" alt="A plain white profile card morphs pin by pin into a glowing dark terminal - comments drop onto the live page one after another, the last one asks to make CRAFT look like it's coming off the page, the letters pop out in 3D, and clearing the pins leaves the finished card." width="520">
 
 <sub><code>/craft:annotate</code> on a real page, sped up. No file changes while you point.</sub>
 
