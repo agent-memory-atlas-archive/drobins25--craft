@@ -26,9 +26,9 @@ One comment sheet, built into three commands.
 |---|---|---|
 | Turn on COMMENT MODE on the tab you have open. Each pin lands as a live change while you watch. | Every round of options arrives with the comment sheet aboard. Pin what you'd change, and the next round reloads in place. | Say you want to point, and the comment sheet joins the A, B, C, D panel. Each pin knows which letter was on screen. |
 
-A Claude Code plugin that acts as an intelligent harness for your development workflow: your codebase is read-only by default, every change passes through a Write Gate as planned and approved work, and craft tracks your project's history, design tokens, and decisions locally so Claude learns your taste and architectural preferences over time.
+Craft is a Claude Code plugin that asks you the product questions and works out the technical ones. Features get planned, built, and tested, with your codebase read-only until you approve the work. Point at a live page to change it. The calls you make - decisions, design tokens, the tweaks you loved - carry into every build after.
 
-Your codebase is read-only by default. Changes never land as a side effect of asking a question - every write goes through a channel you opened: a planned story, an investigated fix, a live tweak, or an approved one-off.
+Claude's Write and Edit tools stay gated until you open a channel: a planned story, an investigated fix, a live tweak, or an approved one-off. Shell commands aren't gated - the gate covers Claude's file tools, not the terminal.
 
 Install in about a minute:
 
@@ -38,6 +38,16 @@ claude plugin install craft@craft
 ```
 
 Then start Claude Code and run `/craft` - [full install notes](#install).
+
+## A Write Gate, decision memory, and a taste engine for Claude Code
+
+| **Write Gate** | **Decision memory** |
+|---|---|
+| Write and Edit stay blocked on every project file until you open a story, an adhoc fix or tweak, the approve skill, or a workflow. Shell isn't gated - a workflow gate, not a sandbox. | Name the rulings a story carries in `/craft:decisions`; the planner reads them first. Waiving a locked decision always asks. |
+| **Taste engine** | **QA that files its own bugs** |
+| `/craft:adhoc` tweaks stamp loved or routine; three loved and craft offers to spread the look. Accepted mockups can become tokens - tokens and locks guide every mockup after. | `/craft:analyze qa` drives a real browser - clicks, forms, console. Confirmed and likely findings file into `/craft:bugs`; repeats add sightings. |
+
+Same Claude Code session. Less re-explaining what you already decided, more building on top of it.
 
 **It steals your best ideas back.** You say "that's it!" after working through a tweak, and craft remembers. It waits, then brings that same taste back on a completely different feature - elevated. Keep going, and you'll catch yourself asking, "how did I do this?"
 
@@ -147,7 +157,9 @@ Along the way:
 
 The step-by-step guide is [docs/annotate.md](docs/annotate.md).
 
-## The Notebook
+<a id="the-notebook"></a>
+
+## The Notebook: project memory across sessions
 
 The notebook is one-line capture for thoughts that aren't story-shaped yet. You never fill out a form. You just talk:
 
@@ -429,7 +441,11 @@ Entries link. `graduated_to` can point at a story, fix, tweak or dial, and a `so
 
 ## Decisions
 
-A decision is the one thing you're already sure of about a feature before it has a cycle, a story, or even a name. Craft keeps those rulings in one place, so nothing gets decided twice.
+Already decided what a feature should do, but Claude Code keeps asking again?
+
+- **The Shelf keeps the ruling.** `/craft:decisions` holds every decision by where it stands: pending with you, ruled and unclaimed, claimed by a story, or done.
+- **A story carries only the decisions you name for it.** Its planner reads them first, so the plan starts from what you already ruled - even one from three sessions ago.
+- **Locked decisions always ask.** Waiving one takes your yes, every time - a planning check, not a write-blocking hook.
 
 ```
 /craft:decisions              # bare → the Shelf
@@ -500,6 +516,26 @@ They live in `.craft/bugs/`, named `<date>-<slug>.md`, with `closed/` for the do
 > "Place Order does nothing with one item in the cart - log a bug." *Mid-story. One line: filed, and where. The story carries on.*
 > A week later, `/craft:bugs` - *the pile, newest first, the blocker marked.*
 > "The checkout one is fixed." *Craft names it, you say yes, it moves to `closed/`.*
+
+*What shipped in 2.8.0: [CHANGELOG](CHANGELOG.md#280---2026-10-04).*
+
+### QA that opens a browser and files the bugs
+
+Point it at the thing you want tested:
+
+```
+/craft:analyze qa
+```
+
+Name the scope in your own words - a story, the current cycle, a few pages, the whole app - and craft confirms it before anything runs.
+
+- **It drives a real browser.** Navigating, clicking, filling forms, watching the console - in your running app, not a code guess. No app running? It reviews the code instead.
+- **Confirmed and likely findings file as bugs.** Each one lands in `/craft:bugs`, checked against the open pile first: a repeat adds a sighting to the bug you already have, not a duplicate.
+- **What it couldn't verify stays out of the pile.** "Needs verification" findings are named in the report, not filed.
+
+(Run `/craft:analyze` bare to choose between QA, UX, Creative, Style, Walkthrough, or all of them.)
+
+From there the fix path is the one above: `/craft:bugs` shows the pile, `/craft:adhoc` fixes.
 
 ## Adhoc
 
